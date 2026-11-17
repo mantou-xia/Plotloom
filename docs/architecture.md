@@ -1,6 +1,6 @@
 # Plotloom 小说创作 Agent 架构方案
 
-初稿日期：2026-11-16；修订日期：2026-11-17。状态：SDK 1.5.2 的本地及真实模型接入验收通过，P0 完成。应用后端与前端尚未初始化；实测进度见 [P0 验证记录](p0-validation.md)，可视化说明保留架构规划阶段快照。
+初稿日期：2026-11-16；修订日期：2026-11-17。状态：P0、P1 已完成，本机通用 Agent 后端已通过确定性 HTTP / SSE 及真实模型验收。P2 和前端尚未开始；实测进度见 [P0 验证记录](p0-validation.md)、[P1 验证记录](p1-validation.md)，可视化说明保留架构规划阶段快照。
 
 ## 1. 目标与运行前提
 
@@ -265,7 +265,7 @@ P3 用提示词、业务工具和必要的顺序调用实现续写与改写；�
 | 提示词和工具 | SDK 配置、资源加载、自定义工具 | P1 提供测试工具，P3 增加小说工具 |
 | 编辑器 | @tiptap/react、@tiptap/pm、@tiptap/starter-kit | P2 确定正文数据契约，P7 接入编辑器 [R8] |
 | 小说存储 | node:fs/promises；按需 SQLite / better-sqlite3 | P2 按正文、版本和提案需要选择；不为 P1 会话提前建数据库 [R7][R9] |
-| 日志与验证 | Fastify 日志；vitest、@playwright/test | P1—P6 接口测试；P7 浏览器流程与体验验收 |
+| 日志与验证 | Fastify 日志；node:test、fetch；P7 按需 @playwright/test | P1 已使用 Node 内置测试及真实端口验证接口，P7 再验证浏览器流程 |
 | 桌面交付 | electron、@electron-forge/cli | 后续实现；原生依赖兼容性届时验证 |
 | 工程组织 | pnpm workspace | 包有实际代码和调用方时才创建 |
 

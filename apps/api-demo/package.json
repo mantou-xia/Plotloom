@@ -1,0 +1,12 @@
+{
+  "name": "@plotloom/api-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": { "@plotloom/contracts": "workspace:*" },
+  "devDependencies": { "vite": "8.3.8" }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@plotloom/agent-pi",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@plotloom/contracts": "workspace:*",
+    "typebox": "1.3.27"
+  }
+}

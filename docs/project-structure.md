@@ -1,6 +1,6 @@
 # Plotloom 项目目录结构
 
-更新日期：2026-11-17。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。`experiments/pi-sdk` 已建立；下述应用目录仍是规划，尚未初始化应用。
+更新日期：2026-11-17。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。P0 实验及 P1 最小后端均已实现；第 4 节为后续规划。
 
 ## 1. 组织原则
 
@@ -16,8 +16,10 @@
 - docs/architecture.md：架构与能力归属。
 - docs/project-structure.md：本文件。
 - docs/roadmap.md：阶段任务与验收。
-- docs/p0-validation.md：SDK 本地实测及真实模型待验收记录。
-- docs/api/p1-agent.md：P1 最小接口草案与实施任务。
+- docs/p0-validation.md：SDK 本地及真实模型实测记录。
+- docs/p1-validation.md：P1 公开接口及真实模型验收记录。
+- docs/api/p1-agent.md：P1 已实现的最小接口契约。
+- docs/api/p1-requests.http：模型、会话、流式和停止请求示例。
 - experiments/pi-sdk：P0 独立实验、固定依赖、合成资料及验证命令。
 - docs/plotloom-agent-architecture.html：完整可视化说明。
 - docs/plotloom-agent-architecture.diagram.json / .html：架构图源与独立交互图。
@@ -31,17 +33,19 @@
 Plotloom/
 ├─ apps/
 │  └─ server/src/
-│     ├─ bootstrap.ts            # 本机服务装配，创建和管理 SDK 会话实例
+│     ├─ main.ts                 # 环境配置、本机监听与关闭
+│     ├─ bootstrap.ts            # 服务装配、错误边界与关闭钩子
 │     ├─ routes/                 # 会话、消息、停止、配置接口
-│     └─ streaming/              # SDK 事件转发、当前消息快照
+│     └─ streaming/              # 公开事件编码为 SSE，断流不停止
 ├─ packages/
 │  ├─ agent-pi/src/              # SDK 薄适配、提示词配置、测试工具
 │  └─ contracts/src/             # 公开接口的请求、响应、消息、事件与错误结构
 ├─ tests/api/                    # HTTP / SSE 接口测试，独立于前端执行
 ├─ experiments/                  # P0 小验证，按需创建
-├─ scripts/                      # 本地启动等实际需要的脚本
+├─ scripts/verify-real.ts         # 真实模型 HTTP 验收
 ├─ docs/api/                     # 接口契约、请求示例、测试运行说明
 ├─ .env.example
+├─ models.json                   # 非敏感模型配置
 ├─ package.json
 ├─ pnpm-workspace.yaml
 ├─ pnpm-lock.yaml
@@ -51,6 +55,8 @@ Plotloom/
 SDK 适配只封装当前需要的创建/打开会话、发消息、订阅、停止与配置。工具注册、参数格式校验、压缩、重试、会话落盘直接调用 SDK，不实现通用 AgentExecutor 框架或空仓储接口。
 
 P1 不创建 apps/web；接口测试客户端先验证请求、流式响应、停止和重新查询。前端在 P7 使用同一套接口。
+
+按接口调试需求新增 `apps/api-demo`，使用 Vite + 原生 TypeScript 独立运行。`packages/contracts/src/catalog.ts` 登记公开接口的模块、用途、字段、示例和检查信息；`tests/demo` 验证目录覆盖及流解析。浏览器只调用 HTTP / SSE，不依赖后端内部实现；该测试页不改变 P7 产品前端的范围。使用说明见 [接口测试 Demo](api/demo.md)。
 
 会话文件存放在配置指定的本机数据目录，不提交到 Git。浏览器断线重新读取会话消息与当前状态，不建立持久化 token 事件回放表。
 

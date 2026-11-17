@@ -1,0 +1,10 @@
+{
+  "name": "@plotloom/server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@plotloom/agent-pi": "workspace:*",
+    "@plotloom/contracts": "workspace:*",
+    "fastify": "5.12.8"
+  }
+}

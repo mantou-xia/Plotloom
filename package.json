@@ -1,0 +1,21 @@
+{
+  "name": "plotloom",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env apps/server/src/main.ts",
+    "demo": "pnpm --filter @plotloom/api-demo dev",
+    "demo:build": "pnpm --filter @plotloom/api-demo build",
+    "demo:preview": "pnpm --filter @plotloom/api-demo preview",
+    "test:demo": "node --test tests/demo/*.test.ts",
+    "typecheck": "tsc -p tsconfig.base.json",
+    "test": "node --test tests/api/*.test.ts",
+    "verify:real": "node --env-file-if-exists=.env scripts/verify-real.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

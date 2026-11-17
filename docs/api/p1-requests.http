@@ -1,0 +1,47 @@
+@base = http://127.0.0.1:4317
+@sessionId = 填入创建接口返回的ID
+
+### 模型列表（仅公开信息）
+GET {{base}}/api/models
+
+### 当前默认模型
+GET {{base}}/api/model-config
+
+### 选择已配置的模型，只影响新会话
+PUT {{base}}/api/model-config
+Content-Type: application/json
+
+{"provider":"krill-ai-codex","model":"gpt-5.6-sol"}
+
+### 创建空会话，预期 201；将返回 id 填入上方 sessionId
+POST {{base}}/api/sessions
+Content-Type: application/json
+
+{}
+
+### 列出会话，空会话也应出现
+GET {{base}}/api/sessions
+
+### 查询历史及当前生成快照
+GET {{base}}/api/sessions/{{sessionId}}
+
+### 提交消息，响应为 SSE；预期工具、文本及 completed
+POST {{base}}/api/sessions/{{sessionId}}/messages
+Content-Type: application/json
+
+{"text":"请调用 read_fixture 读取 scene，写出核对标记并给出 A、B 两个行动候选，然后等待我选择。"}
+
+### 重启服务后沿用相同 ID 继续，预期使用历史资料
+POST {{base}}/api/sessions/{{sessionId}}/messages
+Content-Type: application/json
+
+{"text":"我选择 A。复述资料核对标记，再继续约 100 字，不重新读取工具。"}
+
+### 生成中从另一请求调用停止，预期 idle；原 SSE 最终为 aborted
+POST {{base}}/api/sessions/{{sessionId}}/stop
+
+### 参数错误，预期 400 INVALID_REQUEST
+POST {{base}}/api/sessions/{{sessionId}}/messages
+Content-Type: application/json
+
+{"text":"   "}
