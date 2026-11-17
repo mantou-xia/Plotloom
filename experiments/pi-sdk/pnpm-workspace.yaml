@@ -1,0 +1,5 @@
+# 两项脚本均非运行时构建：genai 为 no-op，protobufjs 仅检查版本写法。
+# 显式跳过已核对的脚本，使锁文件安装可重复且无需交互审批。
+allowBuilds:
+  '@google/genai': false
+  protobufjs: false

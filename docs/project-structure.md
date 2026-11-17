@@ -1,6 +1,6 @@
 # Plotloom 项目目录结构
 
-更新日期：2026-11-17。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。目录是规划，尚未初始化应用。
+更新日期：2026-11-17。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。`experiments/pi-sdk` 已建立；下述应用目录仍是规划，尚未初始化应用。
 
 ## 1. 组织原则
 
@@ -16,6 +16,9 @@
 - docs/architecture.md：架构与能力归属。
 - docs/project-structure.md：本文件。
 - docs/roadmap.md：阶段任务与验收。
+- docs/p0-validation.md：SDK 本地实测及真实模型待验收记录。
+- docs/api/p1-agent.md：P1 最小接口草案与实施任务。
+- experiments/pi-sdk：P0 独立实验、固定依赖、合成资料及验证命令。
 - docs/plotloom-agent-architecture.html：完整可视化说明。
 - docs/plotloom-agent-architecture.diagram.json / .html：架构图源与独立交互图。
 - 同名前缀的 validation / visual-check 文件：图与页面校验记录、截图。
