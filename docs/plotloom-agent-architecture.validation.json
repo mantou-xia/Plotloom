@@ -1,0 +1,45 @@
+{
+  "diagram_type": "architecture",
+  "output": "D:/git-depository/Plotloom/docs/plotloom-agent-architecture.html",
+  "artifact_sha256": "c28311210278d5b6dcd1527ae208a0797f0bf403657a809dcc2cc179550c1ffc",
+  "artifact_bytes": 978560,
+  "diagram": {
+    "output": "D:/git-depository/Plotloom/docs/plotloom-agent-architecture.diagram.html",
+    "specification_sha256": "cd07850b14db0eaeb26292e55644f9a200a4ac09cdf24fbb7351d3a24faee71c",
+    "artifact_sha256": "92e4f1f2c60a547f2a65e16c8c6d4049f12845fa9b99098bc85996e9a6d6c6b9",
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "correction_rounds": 1,
+    "browser_receipt": "plotloom-agent-architecture.diagram.visual-check.json",
+    "viewports": [
+      "1440x900",
+      "1600x1000",
+      "1920x1080",
+      "2048x1320"
+    ],
+    "artifact_bytes": 712370
+  },
+  "guide_checks": {
+    "chapter_switches": 5,
+    "layer_switches": 7,
+    "responsive_checks": 25,
+    "viewports": [
+      "1440x900",
+      "1600x1000",
+      "1920x1080",
+      "2048x1320",
+      "390x844"
+    ],
+    "horizontal_overflow": false,
+    "page_errors": [],
+    "offline_navigation": "passed",
+    "light_dark": "visually reviewed",
+    "embedded_diagram_navigation": "passed",
+    "note": "说明页按文档自然纵向滚动；独立架构图通过四种桌面窗口首屏无溢出检查。框架运行与模型接入未验证。",
+    "local_markdown_links_checked": 9,
+    "broken_local_links": [],
+    "embedded_diagram_matches_delivered_artifact": true
+  },
+  "updated_at": "2026-11-17"
+}

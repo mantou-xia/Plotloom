@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# 校验记录绑定生成文件的原始字节，检出时保留换行和 SHA-256。
+docs/plotloom-agent-architecture*.html -text
+docs/plotloom-agent-architecture.diagram.json -text

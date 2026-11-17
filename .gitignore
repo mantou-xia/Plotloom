@@ -1,0 +1,10 @@
+# 本机依赖、凭据与实验运行数据
+node_modules/
+.env
+.env.*
+!.env.example
+.p0-data/
+
+# 浏览器检查的临时输出；docs 中的正式校验附件保留
+.playwright-cli/
+output/

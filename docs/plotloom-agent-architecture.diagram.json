@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Plotloom · Pi SDK 直接接入",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1380,
+      730
+    ],
+    "views": [
+      {
+        "id": "execution",
+        "label": "P1 后端接口",
+        "focus": [
+          "local_api",
+          "pi_session",
+          "model_api"
+        ],
+        "note": "P1 先通过接口测试 SDK 能力；P2—P6 完成业务后端，P7 再接入 Web。"
+      },
+      {
+        "id": "persistence",
+        "label": "会话直接复用",
+        "focus": [
+          "pi_session",
+          "transcript"
+        ],
+        "note": "JSONL 保存会话，重启后打开继续对话；未完成请求由用户重新发起。"
+      },
+      {
+        "id": "business",
+        "label": "后续小说业务",
+        "focus": [
+          "local_api",
+          "application",
+          "local_store",
+          "desktop_shell"
+        ],
+        "note": "P2—P3 按实际业务加入保存、提案和上下文；Electron 后续打包。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "workbench",
+      "type": "frontend",
+      "label": "① Web 创作工作台",
+      "sublabel": "React · Vite",
+      "tag": "P7 集中开发与接入",
+      "pos": [
+        60,
+        90
+      ],
+      "size": [
+        220,
+        86
+      ]
+    },
+    {
+      "id": "local_api",
+      "type": "backend",
+      "label": "② 本机接口",
+      "sublabel": "Fastify · HTTP / SSE",
+      "tag": "会话操作 / 事件转发",
+      "pos": [
+        390,
+        90
+      ],
+      "size": [
+        220,
+        86
+      ]
+    },
+    {
+      "id": "pi_session",
+      "type": "backend",
+      "label": "③ Pi SDK",
+      "sublabel": "pi-coding-agent",
+      "tag": "对话 / 工具 / 压缩 / 重试",
+      "pos": [
+        720,
+        90
+      ],
+      "size": [
+        220,
+        86
+      ]
+    },
+    {
+      "id": "model_api",
+      "type": "cloud",
+      "label": "④ 云端模型 API",
+      "sublabel": "经 Pi 模型接口调用",
+      "tag": "允许云端推理",
+      "pos": [
+        1050,
+        90
+      ],
+      "size": [
+        250,
+        86
+      ]
+    },
+    {
+      "id": "desktop_shell",
+      "type": "frontend",
+      "label": "后续 Electron 外壳",
+      "sublabel": "Electron · Electron Forge",
+      "tag": "复用 Web 和本地核心",
+      "pos": [
+        60,
+        330
+      ],
+      "size": [
+        220,
+        86
+      ]
+    },
+    {
+      "id": "application",
+      "type": "backend",
+      "label": "小说用例与工具",
+      "sublabel": "P2—P3 · 按需自研",
+      "tag": "保存 / 上下文 / 提案采纳",
+      "pos": [
+        390,
+        330
+      ],
+      "size": [
+        220,
+        86
+      ]
+    },
+    {
+      "id": "transcript",
+      "type": "database",
+      "label": "Pi 会话文件",
+      "sublabel": "SessionManager · JSONL",
+      "tag": "少量状态可用扩展条目",
+      "pos": [
+        720,
+        330
+      ],
+      "size": [
+        220,
+        86
+      ]
+    },
+    {
+      "id": "local_store",
+      "type": "database",
+      "label": "小说业务数据",
+      "sublabel": "文件 / SQLite · P2 起",
+      "tag": "正文 / 设定 / 版本 / 提案",
+      "pos": [
+        390,
+        570
+      ],
+      "size": [
+        220,
+        86
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "submit",
+      "from": "workbench",
+      "to": "local_api",
+      "label": "HTTP / SSE",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sdk",
+      "from": "local_api",
+      "to": "pi_session",
+      "label": "SDK 调用",
+      "variant": "emphasis"
+    },
+    {
+      "id": "model",
+      "from": "pi_session",
+      "to": "model_api",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "session",
+      "from": "pi_session",
+      "to": "transcript",
+      "label": "保存与打开",
+      "labelDy": 90
+    },
+    {
+      "id": "business",
+      "from": "local_api",
+      "to": "application",
+      "label": "业务操作",
+      "variant": "dashed",
+      "labelDy": 90
+    },
+    {
+      "id": "save",
+      "from": "application",
+      "to": "local_store",
+      "label": "保存与查询",
+      "labelDy": 90
+    },
+    {
+      "id": "desktop",
+      "from": "desktop_shell",
+      "to": "workbench",
+      "label": "复用界面",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "先验收后端接口",
+      "items": [
+        "P1—P6 封装后端能力",
+        "HTTP / SSE 用例逐阶段验证"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "等待就是下一轮",
+      "items": [
+        "本轮输出候选后结束",
+        "打开历史会话，由用户继续"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "P7 前端重点交付",
+      "items": [
+        "交互设计 / 编辑 / 候选对比",
+        "P8 完整产品试用"
+      ]
+    }
+  ]
+}
