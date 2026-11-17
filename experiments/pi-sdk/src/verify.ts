@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { createRuntime, openExperimentSession } from './session.ts';
 
@@ -19,9 +20,15 @@ async function main() {
   const provider = process.env.P0_PROVIDER;
   const model = process.env.P0_MODEL;
   if (!provider || !model) throw new Error('缺少 P0_PROVIDER / P0_MODEL；真实模型验证未执行。');
-  const runtime = await createRuntime(dataDir);
+  const apiKey = process.env.P0_API_KEY?.trim();
+  if (!apiKey || apiKey === '你的API Key') {
+    throw new Error('缺少有效 P0_API_KEY，请在本机 .env 填写真实密钥；尚未发送模型请求。');
+  }
+  const modelsPath = fileURLToPath(new URL('../models.json', import.meta.url));
+  const runtime = await createRuntime(dataDir, modelsPath);
+  if (runtime.getError()) throw new Error('models.json 加载失败，请检查 SDK 配置格式。');
   // 只使用调用方明确指定的凭据，不扫描或复制其他应用的登录数据。
-  if (process.env.P0_API_KEY) await runtime.setRuntimeApiKey(provider, process.env.P0_API_KEY);
+  await runtime.setRuntimeApiKey(provider, apiKey);
   const auth = await runtime.getAuth(provider);
   if (!auth) throw new Error('未配置指定供应商的凭据；请在本机 .env 中配置 P0_API_KEY。');
   const pointerPath = resolve(dataDir, 'last-session.json');
@@ -79,6 +86,7 @@ async function main() {
     }
     const report = {
       mode, passed: true, checkedAt: new Date().toISOString(), provider, model,
+      thinkingLevel: session.thinkingLevel,
       sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
       textDeltas, toolSucceeded, aborted, eventCounts, usage: last.usage,
       durationMs: Math.round(performance.now() - startedAt),

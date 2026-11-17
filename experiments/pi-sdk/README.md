@@ -20,8 +20,8 @@ pnpm.cmd test
 
 ## 真实模型验证
 
-1. 将 `.env.example` 复制为 `.env`，填写明确选定的 `P0_PROVIDER`、`P0_MODEL` 和本机密钥 `P0_API_KEY`。
-2. 当前程序使用 SDK 内置模型目录。自定义网关须先确认 Base URL、协议与模型参数，再配置接入；不要把任意兼容网关默认为某一家供应商。
+1. 将 `.env.example` 复制为 `.env`（已有文件不要覆盖），填写本机密钥 `P0_API_KEY`。供应商与模型已按用户指定设置为 `krill-ai-codex` / `gpt-5.6-sol`。
+2. SDK 显式加载本目录 `models.json`：使用用户指定的 `openai-responses` 协议和 `https://api.kbsfdxc.net/codex/v1` 地址；模型参数与推理等级映射沿用用户配置。密钥只从 `P0_API_KEY` 注入，不写进 `models.json`。
 3. 依次执行以下命令；每条命令退出后再执行下一条，确保继续对话来自磁盘记录。
 
 ```powershell
@@ -42,10 +42,13 @@ pnpm.cmd verify abort
 
 生成结果仍需人工检查是否确实提供 A/B 候选、继续的是所选候选、遵守人物知情约束。程序中的核对标记只验证资料被读到/保留，不替代内容验收。
 
+`models.json` 中的价格为用户配置的 0，不能据此判断供应商免费或真实费用；用量以返回 token 数为准。上下文上限、输出上限和推理等级是配置声明，尚未验证网关全部支持。本次只发送小型合成测试资料，不测试百万上下文或超长输出。
+
 ## 接入边界
 
 - `src/session.ts`：显式系统提示、唯一只读工具、独立运行目录、SDK 会话创建/打开。
 - `src/verify.ts`：真实模型的分阶段验证入口。
+- `models.json`：用户指定的供应商和模型参数，不含密钥。
 - `src/session.test.ts`、`tests/worker.ts`：本地协议替身与跨进程接入测试。
 - `fixtures/scene.md`：合成资料，无用户小说内容。
 - `.p0-data/agent`、`workspace`、`sessions`：实验运行数据，与个人 Pi 目录隔离；均不提交到 Git。

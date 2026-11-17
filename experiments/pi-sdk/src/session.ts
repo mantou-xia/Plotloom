@@ -61,13 +61,13 @@ export function createSettings() {
   });
 }
 
-/** 模型配置留给调用方；实验仅负责建立与个人 Pi 目录隔离的运行环境。 */
-export async function createRuntime(dataDir: string) {
+/** 仅加载调用方显式指定的模型文件；测试可省略，始终不扫描个人 Pi 配置。 */
+export async function createRuntime(dataDir: string, modelsPath: string | null = null) {
   const agentDir = resolve(dataDir, 'agent');
   await mkdir(agentDir, { recursive: true });
   return ModelRuntime.create({
     authPath: resolve(agentDir, 'auth.json'),
-    modelsPath: null,
+    modelsPath,
     modelsStorePath: resolve(agentDir, 'models-cache.json'),
     allowModelNetwork: false,
     refreshOnCreate: false,
