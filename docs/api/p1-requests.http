@@ -45,3 +45,36 @@ POST {{base}}/api/sessions/{{sessionId}}/messages
 Content-Type: application/json
 
 {"text":"   "}
+
+### 查询当前会话模型与思考能力
+GET {{base}}/api/sessions/{{sessionId}}/config
+
+### 修改会话思考强度；具体可选值先查询模型能力
+PUT {{base}}/api/sessions/{{sessionId}}/config
+Content-Type: application/json
+
+{"thinkingLevel":"low"}
+
+### 会话命名
+PUT {{base}}/api/sessions/{{sessionId}}/name
+Content-Type: application/json
+
+{"name":"灯塔创作"}
+
+### 工具清单与参数结构
+GET {{base}}/api/sessions/{{sessionId}}/tools
+
+### 上下文估算
+GET {{base}}/api/sessions/{{sessionId}}/context
+
+### 累计消息、工具与 token 统计
+GET {{base}}/api/sessions/{{sessionId}}/stats
+
+### 手动压缩；内容不足为 409，长请求等待 JSON 结果
+POST {{base}}/api/sessions/{{sessionId}}/compact
+Content-Type: application/json
+
+{"instructions":"保留人物、时间线和未解决线索。"}
+
+### 从另一个请求取消进行中的手动压缩
+POST {{base}}/api/sessions/{{sessionId}}/compact/stop

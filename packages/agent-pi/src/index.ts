@@ -1,11 +1,14 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { clampThinkingLevel, getSupportedThinkingLevels, type Model, type Api } from '@earendil-works/pi-ai/compat';
 import {
   createAgentSession, ModelRuntime, SessionManager,
   type AgentSession, type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentEvent, ModelConfig, ModelInfo, ModelSelection, SessionDetail, SessionListItem, SessionSummary, Outcome,
+  ThinkingLevel, ModelSettings, ModelCapabilities, SessionActivity, SessionConfig, SessionConfigRequest,
+  CreateSessionRequest, SessionContext, SessionStats, SessionTools, CompactionResult,
 } from '@plotloom/contracts';
 import { AgentError, modelFailure } from './errors.ts';
 import { readMessages, TURN_START, TURN_END, turnUsage } from './messages.ts';
@@ -28,6 +31,7 @@ interface RecordState {
   activeTurn?: string;
   current?: AgentSession['messages'][number];
   job?: Promise<void>;
+  activity?: Exclude<SessionActivity, 'idle'>;
   stopRequested: boolean;
 }
 
@@ -38,7 +42,7 @@ export class AgentService {
   readonly cwd: string;
   readonly sessionDir: string;
   private readonly records = new Map<string, RecordState>();
-  private selection: ModelSelection | undefined;
+  private selection: ModelSettings | undefined;
   private closing = false;
 
   private constructor(options: AgentOptions, runtime: ModelRuntime) {
@@ -73,40 +77,64 @@ export class AgentService {
   async models(): Promise<ModelInfo[]> {
     const available = new Set((await this.runtime.getAvailable()).map((model) => `${model.provider}\0${model.id}`));
     return this.runtime.getModels().map((model) => ({ provider: model.provider, id: model.id, name: model.name,
-      configured: available.has(`${model.provider}\0${model.id}`) }));
+      configured: available.has(`${model.provider}\0${model.id}`), ...this.capabilities(model) }));
+  }
+
+  /** 能力取自 SDK 模型定义，不硬编码供应商支持的思考档位。 */
+  private capabilities(model: Model<Api>): ModelCapabilities {
+    return { reasoning: model.reasoning, thinkingLevels: getSupportedThinkingLevels(model),
+      contextWindow: model.contextWindow, maxTokens: model.maxTokens, input: [...model.input] };
+  }
+
+  private registeredModel(selection?: ModelSelection) {
+    if (!selection) throw new AgentError(422, 'MODEL_NOT_SELECTED', '请先选择默认模型。');
+    const model = this.runtime.getModel(selection.provider, selection.model);
+    if (!model) throw new AgentError(422, 'MODEL_NOT_FOUND', '指定模型尚未注册。');
+    return model;
+  }
+
+  /** 显式指定不支持的档位应报错；未指定时才沿用原值并按目标模型能力调整。 */
+  private thinking(model: Model<Api>, requested: ThinkingLevel | undefined, fallback: ThinkingLevel = 'off'): ThinkingLevel {
+    if (requested !== undefined && !getSupportedThinkingLevels(model).includes(requested)) {
+      throw new AgentError(422, 'THINKING_LEVEL_UNSUPPORTED', '当前模型不支持该思考档位，请查询模型能力后选择。');
+    }
+    return clampThinkingLevel(model, requested ?? fallback);
   }
 
   async modelConfig(): Promise<ModelConfig> {
     const selected = this.selection;
     return { provider: selected?.provider ?? null, model: selected?.model ?? null,
+      thinkingLevel: selected?.thinkingLevel ?? 'off',
       configured: !!selected && !!this.runtime.getModel(selected.provider, selected.model) && !!(await this.runtime.getAuth(selected.provider)) };
   }
 
   private async requireModel(selection?: ModelSelection) {
-    if (!selection) throw new AgentError(422, 'MODEL_NOT_SELECTED', '请先选择默认模型。');
-    const model = this.runtime.getModel(selection.provider, selection.model);
-    if (!model) throw new AgentError(422, 'MODEL_NOT_FOUND', '指定模型尚未注册。');
-    if (!(await this.runtime.getAuth(selection.provider))) throw new AgentError(422, 'MODEL_NOT_CONFIGURED', '指定模型未配置凭据。');
+    const model = this.registeredModel(selection);
+    if (!(await this.runtime.getAuth(model.provider))) throw new AgentError(422, 'MODEL_NOT_CONFIGURED', '指定模型未配置凭据。');
     return model;
   }
 
-  async setModelConfig(selection: ModelSelection): Promise<ModelConfig> {
-    await this.requireModel(selection);
+  async setModelConfig(selection: ModelSettings): Promise<ModelConfig> {
+    const model = await this.requireModel(selection);
+    const saved = { ...selection, thinkingLevel: this.thinking(model, selection.thinkingLevel, this.selection?.thinkingLevel) };
     // 先写入完整临时文件再替换，重启不会读取半截 JSON。
     const path = resolve(this.options.dataDir, 'model-config.json');
     const temporary = `${path}.${crypto.randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(selection), 'utf8');
+    await writeFile(temporary, JSON.stringify(saved), 'utf8');
     await rename(temporary, path);
-    this.selection = selection;
+    this.selection = saved;
     return this.modelConfig();
   }
 
   /** SDK 1.5.2 延迟到首条消息才写盘；用其公开头和条目初始化同一 JSONL，再交还 SDK。 */
-  async createSession(selection = this.selection): Promise<SessionSummary> {
-    await this.requireModel(selection);
+  async createSession(request: CreateSessionRequest = {}): Promise<SessionSummary> {
+    const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : this.selection;
+    const model = await this.requireModel(selection);
+    const thinkingLevel = this.thinking(model, request.thinkingLevel, this.selection?.thinkingLevel);
     const manager = SessionManager.create(this.cwd, this.sessionDir);
     manager.appendModelChange(selection!.provider, selection!.model);
-    manager.appendSessionInfo('Plotloom');
+    manager.appendThinkingLevelChange(thinkingLevel);
+    manager.appendSessionInfo(request.name?.trim() ?? 'Plotloom');
     const path = manager.getSessionFile()!;
     await writeFile(path, [manager.getHeader(), ...manager.getEntries()].map((entry) => JSON.stringify(entry)).join('\n') + '\n', { encoding: 'utf8', flag: 'wx' });
     const record: RecordState = { manager: SessionManager.open(path, this.sessionDir), selection: selection!, stopRequested: false };
@@ -115,7 +143,20 @@ export class AgentService {
   }
 
   private summary(record: RecordState): SessionSummary {
-    return { id: record.manager.getSessionId(), ...record.selection, status: record.job ? 'running' : 'idle' };
+    return { id: record.manager.getSessionId(), ...record.selection, status: record.job ? 'running' : 'idle',
+      activity: record.activity ?? 'idle', name: record.manager.getSessionName() ?? 'Plotloom',
+      thinkingLevel: (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel };
+  }
+
+  /** 在任何异步工作前占用会话，消息、配置和压缩共用同一互斥边界，结束时统一释放。 */
+  private reserve(record: RecordState, activity: Exclude<SessionActivity, 'idle'>): () => void {
+    if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
+    if (record.job) throw new AgentError(409, 'SESSION_BUSY', '会话正在处理请求，请等待或停止。');
+    const finished = Promise.withResolvers<void>();
+    record.job = finished.promise;
+    record.activity = activity;
+    record.stopRequested = false;
+    return () => { record.job = undefined; record.activity = undefined; finished.resolve(); };
   }
 
   /** ID 只能从服务管理的目录解析；客户端永远不能把路径交给 SessionManager.open。 */
@@ -146,14 +187,112 @@ export class AgentService {
     return { ...this.summary(record), messages: readMessages(record.manager, record.activeTurn, record.current) };
   }
 
+  async getSessionConfig(id: string): Promise<SessionConfig> {
+    const record = await this.getRecord(id);
+    return { id, ...record.selection, thinkingLevel: this.summary(record).thinkingLevel,
+      capabilities: this.capabilities(this.registeredModel(record.selection)) };
+  }
+
+  /** SDK 负责历史中的模型与思考条目；只影响当前会话，不改全局默认或复制消息。 */
+  async setSessionConfig(id: string, request: SessionConfigRequest): Promise<SessionConfig> {
+    const record = await this.getRecord(id);
+    const release = this.reserve(record, 'configuring');
+    try {
+      const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : record.selection;
+      const model = await this.requireModel(selection);
+      const thinking = this.thinking(model, request.thinkingLevel, this.summary(record).thinkingLevel);
+      const session = await this.open(record);
+      if (selection.provider !== record.selection.provider || selection.model !== record.selection.model) {
+        await session.setModel(model);
+        record.selection = selection;
+      }
+      session.setThinkingLevel(thinking);
+      return await this.getSessionConfig(id);
+    } finally { release(); }
+  }
+
+  /** 名称直接保存到 SDK 元信息；空会话和缺少凭据的会话也可命名。 */
+  async renameSession(id: string, name: string): Promise<SessionSummary> {
+    const record = await this.getRecord(id);
+    const release = this.reserve(record, 'configuring');
+    try { record.manager.appendSessionInfo(name.trim()); } finally { release(); }
+    return this.summary(record);
+  }
+
+  async getContext(id: string): Promise<SessionContext> {
+    const record = await this.getRecord(id);
+    const session = await this.open(record);
+    const usage = session.getContextUsage();
+    return { id, status: this.summary(record).status, activity: record.activity ?? 'idle',
+      tokens: usage?.tokens ?? null, contextWindow: usage?.contextWindow ?? session.model?.contextWindow ?? 0,
+      percent: usage?.percent ?? null, autoCompaction: session.autoCompactionEnabled };
+  }
+
+  /** 只投影 SDK 统计中的公开计数，排除本机路径和未配置真实价格的费用。 */
+  async getStats(id: string): Promise<SessionStats> {
+    const record = await this.getRecord(id);
+    const stats = (await this.open(record)).getSessionStats();
+    return { id, userMessages: stats.userMessages, assistantMessages: stats.assistantMessages,
+      toolCalls: stats.toolCalls, toolResults: stats.toolResults, totalMessages: stats.totalMessages,
+      usage: turnUsage(record.manager, 0) };
+  }
+
+  async getTools(id: string): Promise<SessionTools> {
+    const session = await this.open(await this.getRecord(id));
+    const active = new Set(session.getActiveToolNames());
+    return { id, tools: session.getAllTools().map((tool) => ({ name: tool.name, description: tool.description,
+      parameters: tool.parameters as Record<string, unknown>, active: active.has(tool.name) })) };
+  }
+
+  /** 手动压缩复用 SDK，独立于消息请求；断开 HTTP 不取消，只由取消/停止接口中止。 */
+  async compact(id: string, instructions?: string): Promise<CompactionResult> {
+    const record = await this.getRecord(id);
+    const release = this.reserve(record, 'compacting');
+    let unsubscribe = () => {};
+    try {
+      await this.requireModel(record.selection);
+      const session = await this.open(record);
+      // compact() 内部先 await abort 再创建取消控制器，监听 start 可覆盖刚开始时的取消。
+      unsubscribe = session.subscribe((event) => {
+        if (event.type === 'compaction_start' && record.stopRequested) session.abortCompaction();
+      });
+      if (record.stopRequested) return { id, status: 'idle', outcome: 'aborted' };
+      const startIndex = record.manager.getEntryCount();
+      const result = await session.compact(instructions);
+      return { id, status: 'idle', outcome: 'completed', summary: result.summary,
+        tokensBefore: result.tokensBefore, estimatedTokensAfter: result.estimatedTokensAfter,
+        usage: turnUsage(record.manager, startIndex) };
+    } catch (error) {
+      if (record.stopRequested) return { id, status: 'idle', outcome: 'aborted' };
+      if (error instanceof AgentError) throw error;
+      if (error instanceof Error && ['Already compacted', 'Nothing to compact (session too small)'].includes(error.message)) {
+        throw new AgentError(409, 'COMPACTION_UNAVAILABLE', '当前会话没有可压缩内容，请先完成更多对话。');
+      }
+      throw new AgentError(502, 'COMPACTION_FAILED', '上下文压缩失败，已保留原历史，请检查模型配置后重试。');
+    } finally { unsubscribe(); release(); }
+  }
+
+  /** 仅取消手动压缩，普通生成不受影响；返回时取消操作已经收尾。 */
+  async stopCompaction(id: string): Promise<{ id: string; status: SessionSummary['status'] }> {
+    const record = await this.getRecord(id);
+    if (record.activity === 'compacting') {
+      const job = record.job;
+      record.stopRequested = true;
+      record.session?.abortCompaction();
+      await job;
+    }
+    return { id, status: this.summary(record).status };
+  }
+
   private async open(record: RecordState): Promise<AgentSession> {
     if (record.session) return record.session;
     if (!record.opening) record.opening = (async () => {
-      const model = await this.requireModel(record.selection);
+      // 查询上下文、统计和工具不发模型请求，因此不要求凭据；生成和压缩另行验证。
+      const model = this.registeredModel(record.selection);
       const customTools = this.options.tools ?? [createFixtureTool()];
       const { session } = await createAgentSession({
         cwd: this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: this.runtime, model,
-        thinkingLevel: 'off', sessionManager: record.manager,
+        thinkingLevel: this.summary(record).thinkingLevel, sessionManager: record.manager,
         settingsManager: createSettings(), resourceLoader: createResources(this.options.systemPrompt ?? SYSTEM_PROMPT),
         customTools, tools: customTools.map((tool) => tool.name),
       });
@@ -167,14 +306,13 @@ export class AgentService {
   async prepareMessage(id: string, text: string): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
     if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
     const record = await this.getRecord(id);
-    if (record.job) throw new AgentError(409, 'SESSION_BUSY', '会话正在生成，请等待或停止。');
-    const session = await this.open(record);
-    await this.requireModel(record.selection);
-    if (record.job) throw new AgentError(409, 'SESSION_BUSY', '会话正在生成，请等待或停止。');
-    const finished = Promise.withResolvers<void>();
-    record.activeTurn = record.manager.appendCustomEntry(TURN_START);
-    record.job = finished.promise;
-    record.stopRequested = false;
+    const release = this.reserve(record, 'generating');
+    let session: AgentSession;
+    try {
+      await this.requireModel(record.selection);
+      session = await this.open(record);
+      record.activeTurn = record.manager.appendCustomEntry(TURN_START);
+    } catch (error) { release(); throw error; }
     const startIndex = record.manager.getEntryCount();
     return async (emit) => {
       let accepted = false;
@@ -194,6 +332,7 @@ export class AgentService {
         if (event.type === 'message_update') {
           record.current = event.message;
           if (event.assistantMessageEvent.type === 'text_delta') emit({ type: 'text_delta', sessionId: id, delta: event.assistantMessageEvent.delta });
+          if (event.assistantMessageEvent.type === 'thinking_delta') emit({ type: 'thinking_delta', sessionId: id, delta: event.assistantMessageEvent.delta });
         }
         if (event.type === 'tool_execution_start') emit({ type: 'tool_start', sessionId: id, callId: event.toolCallId, name: event.toolName });
         if (event.type === 'tool_execution_end') emit({ type: 'tool_end', sessionId: id, callId: event.toolCallId, name: event.toolName, outcome: event.isError ? 'failed' : 'completed' });
@@ -218,8 +357,7 @@ export class AgentService {
         }
         record.current = undefined;
         record.activeTurn = undefined;
-        record.job = undefined;
-        finished.resolve();
+        release();
       }
       if (outcome === 'completed') emit({ type: 'completed', sessionId: id, usage: turnUsage(record.manager, startIndex) });
       else if (outcome === 'aborted') emit({ type: 'aborted', sessionId: id });
@@ -233,6 +371,7 @@ export class AgentService {
     if (record.job) {
       const job = record.job;
       record.stopRequested = true;
+      record.session?.abortCompaction();
       await record.session?.abort();
       await job;
     }

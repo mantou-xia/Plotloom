@@ -11,6 +11,7 @@ export async function createModelFixture() {
   const errors: unknown[] = [];
   const waiting = new Map<string, ServerResponse>();
   const attempts = new Map<string, number>();
+  let compactionMode: 'complete' | 'wait' | 'fail' = 'complete';
   const server = createServer(async (request, response) => {
     try {
       assert.equal(request.url, '/v1/chat/completions');
@@ -22,6 +23,11 @@ export async function createModelFixture() {
       const prompt = contentText(body.messages.findLast((message: any) => message.role === 'user')?.content);
       const count = (attempts.get(prompt) ?? 0) + 1;
       attempts.set(prompt, count);
+      if (!body.tools?.length && compactionMode === 'fail') {
+        response.writeHead(401, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: `upstream secret ${TEST_KEY}`, type: 'server_error' } }));
+        return;
+      }
       if (prompt === 'FAIL' || (prompt === 'RETRY' && count === 1) || prompt === 'RETRY_FAIL' || prompt === 'RETRY_STOP') {
         response.writeHead(prompt === 'FAIL' ? 401 : 503, { 'Content-Type': 'application/json' });
         response.end(JSON.stringify({ error: { message: `upstream secret ${TEST_KEY} Authorization credential/path`, type: 'server_error' } }));
@@ -31,6 +37,11 @@ export async function createModelFixture() {
       writeChunk(response, { role: 'assistant' });
       if (!body.tools?.length) {
         // SDK 压缩使用自己的摘要提示与无工具请求，不是产品聊天提示。
+        if (compactionMode === 'wait') {
+          waiting.set('COMPACTION', response);
+          response.once('close', () => waiting.delete('COMPACTION'));
+          return;
+        }
         writeChunk(response, { content: '已保留测试材料，用户继续当前会话。' }, 'stop');
         finish(response);
         return;
@@ -51,6 +62,7 @@ export async function createModelFixture() {
         response.once('close', () => waiting.delete(prompt));
         return;
       }
+      if (prompt === 'THINK') writeChunk(response, { reasoning_content: '这是模型返回的可见思考文本。' });
       if (last.role === 'tool') {
         if (prompt === 'BAD_TOOL') {
           writeChunk(response, { content: '工具参数无效，已停止读取。' }, 'stop');
@@ -81,6 +93,8 @@ export async function createModelFixture() {
   assert(address && typeof address !== 'string');
   return {
     baseUrl: `http://127.0.0.1:${address.port}/v1`, requests, errors, attempts,
+    setCompactionMode(mode: typeof compactionMode) { compactionMode = mode; },
+    isWaiting(prompt: string) { return waiting.has(prompt); },
     release(prompt: string) {
       const response = waiting.get(prompt);
       assert(response, '应有等待中的模型请求');

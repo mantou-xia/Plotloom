@@ -5,7 +5,7 @@ export const TURN_START = 'plotloom.turn.start';
 export const TURN_END = 'plotloom.turn.end';
 type SdkMessage = AgentSession['messages'][number];
 
-/** 从 SDK 消息提取公开内容；不返回推理块、工具参数、原始错误或供应商元数据。 */
+/** 仅公开正文、可见思考文本和工具结果；签名、加密思考、工具参数及原始错误不进入契约。 */
 export function mapMessage(id: string, message: SdkMessage, running = false): Message | undefined {
   if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'toolResult') return;
   const content: MessageBlock[] = [];
@@ -22,6 +22,7 @@ export function mapMessage(id: string, message: SdkMessage, running = false): Me
   } else {
     for (const part of message.content) {
       if (part.type === 'text') content.push({ type: 'text', text: part.text });
+      if (part.type === 'thinking' && !part.redacted && part.thinking) content.push({ type: 'thinking', text: part.thinking });
       if (part.type === 'toolCall') content.push({ type: 'tool', callId: part.id, name: part.name, status: 'running' });
     }
   }

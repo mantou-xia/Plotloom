@@ -39,7 +39,7 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
   try {
     await t.test('模型、空会话立即保存、默认选择重启保留', async () => {
       const config = await server.json('/api/model-config');
-      assert.deepEqual(config, { provider: 'p1-test', model: 'fixture', configured: true });
+      assert.deepEqual(config, { provider: 'p1-test', model: 'fixture', configured: true, thinkingLevel: 'off' });
       const { models } = await server.json('/api/models');
       assert(models.some((model: any) => model.provider === 'p1-test' && model.id === 'fixture' && model.configured));
       const first = await create();
@@ -222,7 +222,7 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
       await server.json(`/api/sessions/${firstId}/messages`, 'POST', { text: '不应发送' }, 422);
       const fresh = await startServer({ ...env, PLOTLOOM_DATA_DIR: join(directory, 'unconfigured'), PLOTLOOM_PROVIDER: '', PLOTLOOM_MODEL: '', PLOTLOOM_API_KEY: '' });
       try {
-        assert.deepEqual(await fresh.json('/api/model-config'), { provider: null, model: null, configured: false });
+        assert.deepEqual(await fresh.json('/api/model-config'), { provider: null, model: null, configured: false, thinkingLevel: 'off' });
         await fresh.json('/api/sessions', 'POST', {}, 422);
       } finally { await fresh.close(); }
     });

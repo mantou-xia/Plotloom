@@ -6,9 +6,9 @@
 
 服务仅监听本机。前端只依赖本契约，不导入 Pi 类型、不访问本机 JSONL、不知道 Pi 内部目录。SDK 的模型、会话与工具接入放在后端适配层。
 
-会话使用不透明 `id`；客户端不提交文件路径。每个会话一次只处理一条生成请求，忙时返回冲突，避免增加消息队列。用户等待和候选选择都是普通消息。会话运行状态只有 `idle` / `running`；已结束消息另有 `completed` / `aborted` / `failed` 结果。
+会话使用不透明 `id`；客户端不提交文件路径。生成、配置修改、命名和手动压缩共用会话互斥边界，忙时返回 409，不排队。用户等待和候选选择都是普通消息。状态仍为 `idle` / `running`，另有 `activity: idle | generating | configuring | compacting` 区分操作；已结束消息提供 `completed` / `aborted` / `failed` 结果。
 
-消息公开结构：`{ id, role, content, outcome? }`。`role` 为 `user` / `assistant` / `tool`；`content` 是内容块数组，文本块为 `{ type: "text", text }`，工具块为 `{ type: "tool", callId, name, status, text? }`，`status` 为 `running` / `completed` / `failed`。已保存消息 ID 来自 SDK 条目，重启后稳定。生成中的临时消息使用 `stream:` 前缀 ID，不作为保存标识；完成后以 GET 返回的已保存消息替换快照。
+消息公开结构：`{ id, role, content, outcome? }`。`role` 为 `user` / `assistant` / `tool`；`content` 是内容块数组，正文为 `{ type: "text", text }`，模型可见思考为 `{ type: "thinking", text }`，工具块为 `{ type: "tool", callId, name, status, text? }`。工具 `status` 为 `running` / `completed` / `failed`。思考签名、加密数据和已隐去内容不公开；没有 thinking 块不表示模型没有推理。已保存消息 ID 重启后稳定，临时快照以 `stream:` 开头；完成后以 GET 返回的保存结果为准。
 
 用户消息的 `outcome` 表示该次请求的最终结果，运行中省略；assistant 消息也提供已知结果。工具状态为对应工具执行结果，工具失败后模型仍可解释问题并正常结束。强制退出后未完成请求标为 `aborted`，未保存的 token 不保证恢复。
 
@@ -18,20 +18,40 @@
 
 | 方法与路径 | 请求 | 成功响应 |
 | --- | --- | --- |
-| `GET /api/models` | 无 | `{ models: [{ provider, id, name, configured }] }`；不返回密钥 |
-| `GET /api/model-config` | 无 | `{ provider, model, configured }`；未选择时 provider/model 为 null |
-| `PUT /api/model-config` | `{ provider, model }` | 同 GET；选择供新会话使用的默认模型，凭据从本机配置读取 |
-| `POST /api/sessions` | `{ provider?, model? }`；两者同时提供或均省略 | `201 { id, provider, model, status: "idle" }` |
-| `GET /api/sessions` | 无 | `{ sessions: [{ id, provider, model, updatedAt, status }] }` |
-| `GET /api/sessions/:id` | 无 | `{ id, provider, model, status, messages }`；必要时从磁盘重开 |
+| `GET /api/models` | 无 | `{ models: [{ provider, id, name, configured, reasoning, thinkingLevels, contextWindow, maxTokens, input }] }` |
+| `GET /api/model-config` | 无 | `{ provider, model, configured, thinkingLevel }`；未选择时 provider/model 为 null |
+| `PUT /api/model-config` | `{ provider, model, thinkingLevel? }` | 同 GET；只影响以后新会话 |
+| `POST /api/sessions` | `{ provider?, model?, thinkingLevel?, name? }`；模型标识成对 | `201 { id, provider, model, thinkingLevel, name, status, activity }` |
+| `GET /api/sessions` | 无 | `{ sessions: [{ id, provider, model, thinkingLevel, name, updatedAt, status, activity }] }` |
+| `GET /api/sessions/:id` | 无 | 会话摘要字段加 `messages`；必要时从磁盘重开 |
+| `GET /api/sessions/:id/config` | 无 | `{ id, provider, model, thinkingLevel, capabilities }` |
+| `PUT /api/sessions/:id/config` | `{ provider?, model?, thinkingLevel? }`，至少一项，模型标识成对 | 同 GET；只改变此会话并保存 |
+| `PUT /api/sessions/:id/name` | `{ name }`，1–120 字符，不能全空白 | 会话摘要，名称去除首尾空白 |
+| `GET /api/sessions/:id/tools` | 无 | `{ id, tools: [{ name, description, parameters, active }] }`；parameters 为 JSON Schema |
+| `GET /api/sessions/:id/context` | 无 | `{ id, status, activity, tokens, contextWindow, percent, autoCompaction }` |
+| `GET /api/sessions/:id/stats` | 无 | `{ id, userMessages, assistantMessages, toolCalls, toolResults, totalMessages, usage? }` |
+| `POST /api/sessions/:id/compact` | `{ instructions? }`，最多 2000 字符；默认发送 `{}` | `{ id, status: "idle", outcome, summary?, tokensBefore?, estimatedTokensAfter?, usage? }` |
+| `POST /api/sessions/:id/compact/stop` | 无 | `{ id, status }`；只取消手动压缩，不干扰普通生成 |
 | `POST /api/sessions/:id/messages` | `{ text }` | `200 text/event-stream`，见下文 |
-| `POST /api/sessions/:id/stop` | 无 | 等待 SDK 停止后返回 `{ id, status: "idle" }`；空闲时同样返回当前状态 |
+| `POST /api/sessions/:id/stop` | 无 | 停止当前生成或手动压缩，等待收尾后返回 `{ id, status: "idle" }` |
 
 新建会话立即保存并可查询，重启后仍存在。SDK 1.5.2 不持久化仅有元信息的空会话，因此创建时将 SDK 公共 API 返回的头和元信息写入同一 JSONL，再交给 SessionManager 打开；之后消息、工具结果与压缩全部由 SDK 保存，没有第二份聊天历史。
 
 P1 模型配置只选择已注册且已配置凭据的模型。PUT 的默认选择保存于数据目录 `model-config.json`，重启后优先于环境默认值；不改变已有会话的模型。`configured` 表示存在可用凭据，不保证供应商一定接受凭据。无凭据仍可读取历史。自定义供应商通过根目录 `models.json` 按 SDK 格式登记，密钥由 `.env` / 本进程环境提供，不提供密钥写入接口。
 
 创建请求必须有 JSON 对象，使用默认模型发送 `{}`。消息 `text` 必须是非空白字符串，最多 100000 字符；请求体上限 1 MiB。未知字段、类型错误和缺少必要参数返回 400。
+
+### P1.1 配置与上下文语义
+
+思考档位全集为 `off/minimal/low/medium/high/xhigh/max`，具体支持值取 `thinkingLevels`。能力来自 SDK 模型定义；`reasoning` 不保证上游返回可见思考。显式不支持的档位返回 422，不静默忽略；只换模型而省略档位时，由 SDK 按新模型能力调整旧档位，响应返回实际值。创建时省略档位继承默认设置，未配置则从 `off` 开始。
+
+会话模型、档位和名称直接保存在 SDK 会话记录，空会话修改也可跨进程恢复；默认设置独立保存，不回写已有会话。配置/生成/压缩要求凭据；已注册模型的历史、配置、上下文、统计、工具查询和命名不要求凭据。
+
+`capabilities` 为 `{ reasoning, thinkingLevels, contextWindow, maxTokens, input }`。窗口和最大输出是注册模型定义，输入类型只是能力说明，当前消息接口仍仅接受文本。
+
+上下文 `tokens` 和 `percent` 是 SDK 估算，未知时为 null；`percent` 单位为百分比，不是 0–1 小数。压缩后等待新回复期间可能未知。`autoCompaction` 表示 SDK 自动压缩开关，本轮只读。统计提供 SDK 消息计数与已保存的已知用量，包括已记录的压缩；进行中未保存的用量不保证包含，也不返回费用估算。
+
+手动压缩是等待结束的 JSON 请求，客户端应允许较长等待。`outcome` 为 `completed` 或 `aborted`，成功返回摘要及压缩前后估算。断开 HTTP 不停止压缩；取消接口或通用停止接口会等待取消收尾，原请求返回 `aborted`。压缩不删除原历史，失败保持原记录；空会话、内容不足或刚压缩过返回 `COMPACTION_UNAVAILABLE`。
 
 ## 流式事件与重新查询
 
@@ -43,6 +63,7 @@ P1 模型配置只选择已注册且已配置凭据的模型。PUT 的默认选�
 | --- | --- | --- |
 | `accepted` | `messageId` | 用户消息已接受，后续生成开始 |
 | `text_delta` | `delta` | 正文增量 |
+| `thinking_delta` | `delta` | 模型实际返回的可见思考文本；与正文独立累加 |
 | `tool_start` | `callId, name` | 工具开始 |
 | `tool_end` | `callId, name, outcome` | 工具成功或失败；完整结果通过消息查询 |
 | `retrying` | `attempt, maxAttempts` | SDK 正在有限重试，不代表最终失败 |
@@ -69,8 +90,11 @@ SSE 每 15 秒发送注释心跳，可忽略。慢客户端待发送缓冲超过
 | 403 | `ORIGIN_FORBIDDEN` | 使用本机同源访问；无页面的测试客户端可不发送 Origin |
 | 404 | `SESSION_NOT_FOUND` / `NOT_FOUND` | 刷新列表或核对路径 |
 | 409 | `SESSION_BUSY` | 等待或显式停止后重新发消息 |
+| 409 | `COMPACTION_UNAVAILABLE` | 当前无可压缩内容，继续对话后再试 |
 | 422 | `MODEL_NOT_SELECTED` / `MODEL_NOT_FOUND` / `MODEL_NOT_CONFIGURED` | 选择有效模型或补充本机凭据 |
+| 422 | `THINKING_LEVEL_UNSUPPORTED` | 查询模型可用档位后选择 |
 | 500 | `INTERNAL_ERROR` / `SESSION_INVALID` | 检查本机服务及数据 |
+| 502 | `COMPACTION_FAILED` | 压缩失败，原历史保留，检查模型配置后再试 |
 | 503 | `SERVER_CLOSING` | 服务重启后重新查询 |
 | SSE failed | `MODEL_FAILED` | 查询已保存消息，再由用户重新发起 |
 

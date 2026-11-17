@@ -1,12 +1,12 @@
 import { API_CATALOG, API_MODULES, API_ERRORS, SSE_EVENTS, type EndpointDoc, type FieldDoc } from '@plotloom/contracts/catalog';
-import type { AgentEvent, ModelConfig, SessionListItem } from '@plotloom/contracts';
+import type { AgentEvent, ModelConfig, ModelInfo, SessionListItem } from '@plotloom/contracts';
 import { checkFields, checkJson, checkStream, consumeSse, isObject, type CheckResult, type StreamItem } from './client.ts';
 import './style.css';
 
 type Phase = 'running' | 'success' | 'error' | 'stopped' | 'disconnected';
 interface Run {
   phase: Phase; url: string; sessionId: string; started: number; elapsed: number; status?: number;
-  body?: unknown; headers: Record<string, string>; events: StreamItem[]; text: string;
+  body?: unknown; headers: Record<string, string>; events: StreamItem[]; text: string; thinking: string;
   checks: CheckResult[]; error?: string; controller: AbortController;
 }
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
@@ -14,6 +14,7 @@ let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('ses
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
 let sessions: SessionListItem[] = [];
 let config: ModelConfig | undefined;
+let models: ModelInfo[] = [];
 let connection: 'checking' | 'online' | 'offline' = 'checking';
 let docsTab = 'request';
 let resultTab = 'result';
@@ -31,7 +32,7 @@ app.innerHTML = `
   <a class="skip-link" href="#endpoint-title">跳到接口内容</a>
   <header class="topbar">
     <a class="brand" href="#sessions.create"><span class="brand-mark" aria-hidden="true">P<span>/</span></span><span>Plotloom<span class="brand-sub">开发者工作台</span></span></a>
-    <div class="top-title">接口试验台 <span class="tag">P1 · DEMO</span></div>
+    <div class="top-title">接口试验台 <span class="tag">P1.1 · DEMO</span></div>
     <div class="top-actions"><span id="connection" role="status"></span><button id="refresh" class="button quiet">重新检测</button></div>
   </header>
   <div class="workspace">
@@ -59,7 +60,7 @@ app.innerHTML = `
           <div class="response-footer"><span class="status-dot"></span><span>结果来自实际接口调用</span><button id="copy-result" class="text-button">复制结果</button></div>
         </aside>
       </div>
-      <footer class="page-footer"><span>Plotloom / API Explorer</span><span>3 个模块 · ${API_CATALOG.length} 个接口 · 本机环境</span></footer>
+      <footer class="page-footer"><span>Plotloom / API Explorer</span><span>${API_MODULES.length} 个模块 · ${API_CATALOG.length} 个接口 · 本机环境</span></footer>
     </main>
   </div><div id="notice" class="notice" role="status" aria-live="polite"></div>`;
 
@@ -96,13 +97,14 @@ function renderEndpoint() {
       ${pathFields.length ? `<h3>路径参数 <span class="inline-meta">使用上方测试会话</span></h3>${fieldTable(pathFields)}` : ''}
       <h3>请求参数 <span class="inline-meta">${selected.examples.length ? 'application/json' : '无需请求体'}</span></h3>
       ${bodyFields.length ? fieldTable(bodyFields) : `<p class="no-params">${selected.examples.length ? '使用默认模型时，发送空对象即可。' : '该接口不需要请求体，可以直接发起检查。'}</p>`}
+      ${selected.request.some((item) => item.name === 'thinkingLevel') ? '<div id="model-controls"></div>' : ''}
       ${selected.examples.length ? `<div class="editor-heading"><label for="request-body">请求体</label><select id="example-picker" aria-label="选择参数示例">${selected.examples.map((item, i) => `<option value="${i}">${item.name}</option>`).join('')}</select></div><textarea id="request-body" spellcheck="false" aria-describedby="body-help" rows="7">${escape(drafts.get(selected.id))}</textarea><div class="editor-footer"><span id="body-help">可编辑 JSON · 仅在点击后发送</span><button id="format-json" class="text-button">格式化</button><button id="reset-json" class="text-button">恢复示例</button></div>` : ''}
       <p id="request-error" class="request-error" role="alert"></p>
       <div class="request-actions"><button id="send-request" class="button primary">发送请求 <span aria-hidden="true">↗</span></button><span class="request-hint">预期 ${selected.success} ${selected.stream ? '· 流式响应' : '· JSON'}</span></div>
       <div class="next-step"><span>建议流程</span><a href="#models.get-config">检查模型</a><span>→</span><a href="#sessions.create">创建会话</a><span>→</span><a href="#generation.send">发送消息</a><span>→</span><a href="#sessions.get">查询结果</a></div></section>`;
     const examplePicker = byId<HTMLSelectElement>('example-picker');
     if (examplePicker) examplePicker.value = String(exampleSelections.get(selected.id) ?? 0);
-    byId<HTMLTextAreaElement>('request-body')?.addEventListener('input', (event) => drafts.set(selected.id, (event.target as HTMLTextAreaElement).value));
+    byId<HTMLTextAreaElement>('request-body')?.addEventListener('input', (event) => { drafts.set(selected.id, (event.target as HTMLTextAreaElement).value); renderModelControls(); });
     byId<HTMLSelectElement>('example-picker')?.addEventListener('change', (event) => setExample(Number((event.target as HTMLSelectElement).value)));
     byId('reset-json')?.addEventListener('click', () => setExample(Number(byId<HTMLSelectElement>('example-picker').value)));
     byId('format-json')?.addEventListener('click', () => {
@@ -110,6 +112,7 @@ function renderEndpoint() {
       catch { showRequestError('JSON 格式错误，请检查引号、逗号和括号。'); }
     });
     byId('send-request').addEventListener('click', () => void execute(selected));
+    renderModelControls();
   }
   updateButtons();
 }
@@ -119,10 +122,41 @@ function setExample(index: number) {
   if (!body) return;
   exampleSelections.set(selected.id, index);
   // 模型示例优先沿用服务返回的当前选择，避免硬编码示例与本机配置不一致。
-  const example = 'provider' in body && config?.provider && config.model ? { provider: config.provider, model: config.model } : body;
+  const example = 'provider' in body && config?.provider && config.model ? { ...body, provider: config.provider, model: config.model } : body;
   drafts.set(selected.id, pretty(example));
   byId<HTMLTextAreaElement>('request-body').value = pretty(example);
   byId('request-error').textContent = '';
+  renderModelControls();
+}
+
+/** 选择器仅编辑请求草稿，能力来自公开模型接口；以请求 JSON 和服务返回的有效值为准。 */
+function renderModelControls() {
+  const container = byId('model-controls');
+  if (!container) return;
+  let body: Record<string, unknown>;
+  try { const parsed = JSON.parse(drafts.get(selected.id) || '{}'); if (!isObject(parsed)) throw new Error(); body = parsed; }
+  catch { container.innerHTML = '<p class="section-note">修正 JSON 后可使用模型选择器。</p>'; return; }
+  const fallback = selected.id === 'sessions.set-config' ? sessions.find((s) => s.id === sessionId) : config;
+  const effective = models.find((m) => m.provider === (body.provider ?? fallback?.provider) && m.id === (body.model ?? fallback?.model));
+  const explicitIndex = models.findIndex((m) => m.provider === body.provider && m.id === body.model);
+  container.innerHTML = `<div class="editor-heading"><label for="model-choice">模型</label><select id="model-choice"><option value="" ${selected.id === 'models.set-config' ? 'disabled' : ''}>${selected.id === 'models.set-config' ? '请选择模型（必填）' : selected.id === 'sessions.set-config' ? '沿用当前会话' : '使用默认配置'}</option>${models.map((m, i) => `<option value="${i}" ${!m.configured ? 'disabled' : ''}>${escape(m.name)} · ${escape(m.provider)}${m.configured ? '' : '（未配置）'}</option>`).join('')}</select></div>
+    <div class="editor-heading"><label for="thinking-choice">思考强度</label><select id="thinking-choice"><option value="">沿用已有设置</option>${(effective?.thinkingLevels ?? []).map((level) => `<option value="${level}">${level}</option>`).join('')}</select></div>
+    <p class="section-note">${effective ? `有效模型：${escape(effective.id)} · 窗口 ${effective.contextWindow.toLocaleString()} tokens` : '尚未取得当前模型能力，请选择模型或重新检测。'}。选择后仍需点击发送请求。</p>`;
+  byId<HTMLSelectElement>('model-choice').value = explicitIndex >= 0 ? String(explicitIndex) : '';
+  const thinkingChoice = byId<HTMLSelectElement>('thinking-choice');
+  if (typeof body.thinkingLevel === 'string' && !effective?.thinkingLevels.some((level) => level === body.thinkingLevel)) {
+    const option = new Option(`${body.thinkingLevel}（当前不支持）`, body.thinkingLevel); option.disabled = true; thinkingChoice.add(option);
+  }
+  thinkingChoice.value = typeof body.thinkingLevel === 'string' ? body.thinkingLevel : '';
+  const save = () => { drafts.set(selected.id, pretty(body)); byId<HTMLTextAreaElement>('request-body').value = pretty(body); renderModelControls(); };
+  byId('model-choice').addEventListener('change', (event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === '') { delete body.provider; delete body.model; }
+    else { const m = models[Number(value)]; body.provider = m.provider; body.model = m.id; }
+    // 换模型时不强塞旧档位，让后端按新模型能力调整，避免产生无效选项。
+    delete body.thinkingLevel; save();
+  });
+  thinkingChoice.addEventListener('change', () => { if (thinkingChoice.value) body.thinkingLevel = thinkingChoice.value; else delete body.thinkingLevel; save(); });
 }
 
 function showRequestError(message: string) {
@@ -143,11 +177,11 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
   }
   if (byId('request-error')) byId('request-error').textContent = '';
   const url = endpoint.path.replace(':id', encodeURIComponent(targetSession));
-  const run: Run = { phase: 'running', url, sessionId: targetSession, started: performance.now(), elapsed: 0, headers: {}, events: [], text: '', checks: [], controller: new AbortController() };
+  const run: Run = { phase: 'running', url, sessionId: targetSession, started: performance.now(), elapsed: 0, headers: {}, events: [], text: '', thinking: '', checks: [], controller: new AbortController() };
   runs.set(endpoint.id, run);
   renderCatalog(); updateButtons(); renderResult();
   try {
-    const signal = endpoint.stream ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
+    const signal = endpoint.stream || endpoint.id === 'context.compact' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
     const response = await fetch(url, { method: endpoint.method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
     run.status = response.status;
     run.headers = Object.fromEntries(response.headers.entries());
@@ -156,6 +190,7 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       await consumeSse(response, (event) => {
         run.events.push({ event, elapsedMs: Math.round(performance.now() - run.started) });
         if (event.type === 'text_delta') run.text += event.delta;
+        if (event.type === 'thinking_delta') run.thinking += event.delta;
         run.elapsed = Math.round(performance.now() - run.started);
         scheduleResult();
       });
@@ -177,12 +212,13 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       run.phase = run.checks.every((check) => check.passed) ? 'success' : 'error';
       if (isObject(run.body) && isObject(run.body.error)) run.error = String(run.body.error.message ?? '接口返回错误。');
       if (response.ok && isObject(run.body)) {
+        if (endpoint.id === 'context.compact' && run.body.outcome === 'aborted' && run.phase === 'success') run.phase = 'stopped';
         if (endpoint.id === 'sessions.create' && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
         if (endpoint.id === 'models.get-config' || endpoint.id === 'models.set-config') config = run.body as unknown as ModelConfig;
       }
     }
   } catch (error) {
-    if (run.controller.signal.aborted) { run.phase = 'disconnected'; run.error = endpoint.stream ? '已断开本页订阅，后端生成仍可能继续。可停止生成或重新查询会话。' : '已取消本次请求。'; }
+    if (run.controller.signal.aborted) { run.phase = 'disconnected'; run.error = endpoint.id === 'context.compact' ? '已断开请求，后端压缩仍可能继续；请查询上下文或取消压缩。' : endpoint.stream ? '已断开本页订阅，后端生成仍可能继续。可停止生成或重新查询会话。' : '已取消本次请求。'; }
     else { run.phase = 'error'; run.error = error instanceof Error && error.name === 'TimeoutError' ? '请求超时，请检查本机后端并重新查询。' : `请求未完成：${error instanceof Error ? error.message : '网络异常'}。请确认后端已启动。`; }
   } finally {
     run.elapsed = Math.round(performance.now() - run.started);
@@ -225,12 +261,20 @@ function renderResult() {
     content.innerHTML = `${run.phase === 'running' ? '<div class="run-progress"><span></span></div><p class="running-label">正在等待接口返回…</p>' : ''}
       ${run.error ? `<div class="result-error" role="alert">${escape(run.error)}${selected.stream ? '<button class="text-button" data-read-session>读取本次会话</button>' : ''}</div>` : ''}
       ${run.text ? `<section class="generated"><h3>生成文本</h3><div class="generated-text">${escape(run.text)}</div></section>` : ''}
-      ${run.events.length ? `<section class="event-list"><h3>事件时间线 <span>${run.events.length}</span></h3>${run.events.filter((item) => item.event.type !== 'text_delta').map(({ event, elapsedMs }) => `<div class="event-row"><span class="event-dot"></span><div><code>${escape(event.type)}</code><p>${escape(eventDescription(event))}</p></div><time>+${elapsedMs}ms</time></div>`).join('')}${run.events.some((item) => item.event.type === 'text_delta') ? `<div class="delta-summary">${run.events.filter((item) => item.event.type === 'text_delta').length} 个文本增量已合并展示 · 原始数据中可逐条查看</div>` : ''}</section>` : ''}
+      ${selected.stream ? `<section class="generated"><h3>模型思考</h3><div class="generated-text">${escape(run.thinking || (run.phase === 'running' ? '等待模型返回可见思考文本…' : '模型未返回可见思考文本；这不代表没有进行推理。'))}</div></section>` : ''}
+      ${run.events.length ? `<section class="event-list"><h3>事件时间线 <span>${run.events.length}</span></h3>${run.events.filter((item) => !['text_delta', 'thinking_delta'].includes(item.event.type)).map(({ event, elapsedMs }) => `<div class="event-row"><span class="event-dot"></span><div><code>${escape(event.type)}</code><p>${escape(eventDescription(event))}</p></div><time>+${elapsedMs}ms</time></div>`).join('')}<div class="delta-summary">${run.events.filter((item) => item.event.type === 'text_delta').length} 个正文增量 · ${run.events.filter((item) => item.event.type === 'thinking_delta').length} 个思考增量 · 原始数据可逐条查看</div></section>` : ''}
+      ${selected.id === 'sessions.get' ? renderHistory(run.body) : ''}
       ${run.body !== undefined ? `<pre class="result-code">${escape(pretty(run.body))}</pre>` : ''}
       ${run.checks.length ? `<details class="checks" open><summary>响应检查 <span>${run.checks.filter((check) => check.passed).length} / ${run.checks.length}</span></summary>${run.checks.map((check) => `<div class="check-row"><span class="check-icon ${check.passed ? 'pass' : 'fail'}">${check.passed ? '✓' : '!'}</span><div><strong>${escape(check.name)}</strong><span>${escape(check.detail)}</span></div></div>`).join('')}</details>` : ''}
-      ${run.phase === 'running' ? `<div class="stream-controls"><button class="button secondary" data-disconnect>断开订阅</button>${selected.stream ? '<button class="button secondary" data-stop-run>停止本次生成</button>' : ''}</div>` : ''}`;
+      ${run.phase === 'running' ? `<div class="stream-controls"><button class="button secondary" data-disconnect>断开订阅</button>${selected.stream ? '<button class="button secondary" data-stop-run>停止本次生成</button>' : ''}${selected.id === 'context.compact' ? '<button class="button secondary" data-stop-compact>取消本次压缩</button>' : ''}</div>` : ''}`;
   }
   byId<HTMLButtonElement>('copy-result').disabled = !run;
+}
+
+/** 历史中的思考和正文分别呈现，所有模型文本均转义，原始 JSON 仍可核对。 */
+function renderHistory(body: unknown): string {
+  if (!isObject(body) || !Array.isArray(body.messages)) return '';
+  return body.messages.filter(isObject).map((message) => `<section class="generated"><h3>${escape(message.role)} · ${escape(message.id)}</h3>${Array.isArray(message.content) ? message.content.filter(isObject).map((block) => `<p class="section-note">${block.type === 'thinking' ? '模型思考' : block.type === 'tool' ? '工具结果' : '正文'}</p><div class="generated-text">${escape(block.text ?? block.name ?? '')}</div>`).join('') : ''}</section>`).join('');
 }
 
 function eventDescription(event: AgentEvent): string {
@@ -248,6 +292,7 @@ function setSession(value: string) {
   sessionStorage.setItem('plotloom.demo.session', value);
   byId<HTMLInputElement>('session-id').value = value;
   updateButtons();
+  renderModelControls();
 }
 
 /** 仅自动发起读取请求；设置模型、创建会话与生成始终由用户按钮触发。 */
@@ -256,13 +301,17 @@ async function refreshContext(showLoading = true) {
   const results = await Promise.allSettled([
     fetch('/api/model-config', { signal: AbortSignal.timeout(5000) }).then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<ModelConfig>; }),
     fetch('/api/sessions', { signal: AbortSignal.timeout(5000) }).then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<{ sessions: SessionListItem[] }>; }),
+    fetch('/api/models', { signal: AbortSignal.timeout(5000) }).then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<{ models: ModelInfo[] }>; }),
   ]);
   if (results[0].status === 'fulfilled') { config = results[0].value; connection = 'online'; }
   else connection = 'offline';
   if (results[1].status === 'fulfilled') {
     sessions = results[1].value.sessions;
-    byId('session-picker').innerHTML = `<option value="">选择已有会话（${sessions.length}）</option>${sessions.map((session) => `<option value="${escape(session.id)}">${escape(session.id.slice(0, 8))}… · ${escape(session.model)} · ${session.status}</option>`).join('')}`;
+    byId('session-picker').innerHTML = `<option value="">选择已有会话（${sessions.length}）</option>${sessions.map((session) => `<option value="${escape(session.id)}">${escape(session.name)} · ${escape(session.id.slice(0, 8))}… · ${escape(session.model)} · ${session.thinkingLevel} · ${session.activity}</option>`).join('')}`;
+    byId<HTMLSelectElement>('session-picker').value = sessionId;
   }
+  if (results[2].status === 'fulfilled') models = results[2].value.models;
+  renderModelControls();
   renderConnection();
 }
 
@@ -303,6 +352,7 @@ byId('result-content').addEventListener('click', (event) => {
   const run = runs.get(selected.id);
   if (target.closest('[data-disconnect]')) run?.controller.abort();
   if (target.closest('[data-stop-run]') && run) void execute(endpointById.get('generation.stop')!, run.sessionId);
+  if (target.closest('[data-stop-compact]') && run) void execute(endpointById.get('context.stop')!, run.sessionId);
   if (target.closest('[data-read-session]') && run) { setSession(run.sessionId); location.hash = 'sessions.get'; }
 });
 byId('copy-result').addEventListener('click', async () => {
