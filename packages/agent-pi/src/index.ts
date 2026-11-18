@@ -15,6 +15,8 @@ import { readMessages, TURN_START, TURN_END, turnUsage } from './messages.ts';
 import { createFixtureTool, createResources, createSettings, SYSTEM_PROMPT } from './resources.ts';
 import type { SessionSkillProfile } from '@plotloom/contracts/skills';
 import { createSkillTool, skillPrompt, type SkillSnapshot } from './skills.ts';
+import { adaptBusinessTool, type RequestResources } from './request-resources.ts';
+export type { RequestResources, BusinessTool } from './request-resources.ts';
 export { AgentError, publicError } from './errors.ts';
 
 export interface AgentOptions {
@@ -25,6 +27,7 @@ export interface AgentOptions {
   systemPrompt?: string;
   tools?: ToolDefinition[];
   resolveSkills?: (sessionId: string, explicit: string[]) => Promise<SkillSnapshot[]>;
+  resolveResources?: (sessionId: string, text: string) => Promise<RequestResources | undefined>;
 }
 interface RecordState {
   manager: SessionManager;
@@ -38,6 +41,7 @@ interface RecordState {
   stopRequested: boolean;
   skills?: SkillSnapshot[];
   resourceKey?: string;
+  resources?: RequestResources;
 }
 
 /** 管理单进程中的会话实例；持久化权威记录始终是 SDK JSONL。 */
@@ -213,6 +217,14 @@ export class AgentService {
       capabilities: this.capabilities(this.registeredModel(record.selection)) };
   }
 
+  /** 业务状态复用 SDK 元数据；仅供后端装配调用，不暴露任意元数据写入 HTTP 接口。 */
+  async appendMetadata(id: string, kind: string, data: unknown): Promise<void> {
+    (await this.getRecord(id)).manager.appendCustomEntry(kind, data);
+  }
+  async metadata(id: string, kind: string): Promise<unknown[]> {
+    return (await this.getRecord(id)).manager.getEntries().flatMap(e => e.type === 'custom' && e.customType === kind ? [e.data] : []);
+  }
+
   /** SDK 负责历史中的模型与思考条目；只影响当前会话，不改全局默认或复制消息。 */
   async setSessionConfig(id: string, request: SessionConfigRequest): Promise<SessionConfig> {
     const record = await this.getRecord(id);
@@ -309,11 +321,13 @@ export class AgentService {
     if (!record.opening) record.opening = (async () => {
       // 查询上下文、统计和工具不发模型请求，因此不要求凭据；生成和压缩另行验证。
       const model = this.registeredModel(record.selection);
-      const customTools = [...(this.options.tools ?? [createFixtureTool()]), ...(record.skills?.length ? [createSkillTool(record.skills)] : [])];
+      // 宿主业务资源接管默认演示提示与工具；普通会话仍保留 P1 的资料演示能力。
+      const customTools = [...(this.options.tools ?? (record.resources ? [] : [createFixtureTool()])), ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(adaptBusinessTool) ?? [])];
+      const prompt = record.resources ? (this.options.systemPrompt ?? '') + record.resources.systemPrompt : this.options.systemPrompt ?? SYSTEM_PROMPT;
       const { session } = await createAgentSession({
         cwd: this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: this.runtime, model,
         thinkingLevel: this.summary(record).thinkingLevel, sessionManager: record.manager,
-        settingsManager: createSettings(), resourceLoader: createResources((this.options.systemPrompt ?? SYSTEM_PROMPT) + skillPrompt(record.skills ?? [])),
+        settingsManager: createSettings(), resourceLoader: createResources(prompt + skillPrompt(record.skills ?? [])),
         customTools, tools: customTools.map((tool) => tool.name),
       });
       record.session = session;
@@ -323,22 +337,26 @@ export class AgentService {
   }
 
   /** 先验证、再原子占用会话，忙时不排队；返回执行入口供 HTTP 在写 SSE 头后启动。 */
-  async prepareMessage(id: string, text: string, explicitSkills: string[] = []): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
+  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], resourcesFactory?: () => Promise<RequestResources>): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
     if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'generating');
     let session: AgentSession;
+    let resources: RequestResources | undefined;
     try {
       await this.requireModel(record.selection);
+      // 占用会话后才编译业务上下文，避免两个创作请求并发建立相互覆盖的资源。
+      resources = resourcesFactory ? await resourcesFactory() : await this.options.resolveResources?.(id, text);
       const skills = await this.options.resolveSkills?.(id, explicitSkills) ?? [];
-      const key = JSON.stringify(skills.map(s => [s.id, s.version, s.autoLoad]));
+      const key = JSON.stringify([resources?.key, skills.map(s => [s.id, s.version, s.autoLoad])]);
       if (record.resourceKey !== key) {
         // 用同一权威 SessionManager 重建 SDK 资源，保留历史和压缩状态；不改 SDK 内部 prompt。
         await record.opening;
         record.session?.dispose(); record.session = undefined;
-        record.skills = skills; record.resourceKey = key;
+        record.skills = skills; record.resources = resources; record.resourceKey = key;
       }
       session = await this.open(record);
+      await resources?.start?.();
       record.activeTurn = record.manager.appendCustomEntry(TURN_START);
     } catch (error) { release(); throw error; }
     const startIndex = record.manager.getEntryCount();
@@ -379,6 +397,7 @@ export class AgentService {
       } finally {
         unsubscribe();
         try {
+          await resources?.finish?.(outcome);
           record.manager.appendCustomEntry(TURN_END, { turnId: record.activeTurn, outcome });
         } catch {
           outcome = 'failed';

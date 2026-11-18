@@ -10,6 +10,7 @@ export async function createModelFixture() {
   const requests: any[] = [];
   const errors: unknown[] = [];
   const waiting = new Map<string, ServerResponse>();
+  const waitingActions = new Map<string, () => void>();
   const attempts = new Map<string, number>();
   let compactionMode: 'complete' | 'wait' | 'fail' = 'complete';
   const server = createServer(async (request, response) => {
@@ -63,6 +64,23 @@ export async function createModelFixture() {
         return;
       }
       if (prompt === 'THINK') writeChunk(response, { reasoning_content: '这是模型返回的可见思考文本。' });
+      if (prompt.startsWith('WRITE:')) {
+        // 按公开工具协议逐步执行测试计划；只替换模型决策，工具/存储/权限走生产实现。
+        const plan = JSON.parse(prompt.slice(6));
+        const start = body.messages.findLastIndex((m: any) => m.role === 'user');
+        const step = body.messages.slice(start + 1).filter((m: any) => m.role === 'tool').length;
+        const next = () => {
+          const call = plan.steps[step];
+          if (call) writeChunk(response, { tool_calls: [{ index: 0, id: `writing-${requests.length}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } }] }, 'tool_calls');
+          else writeChunk(response, { content: plan.finalText ?? '本轮结束，请查看候选或待确认问题。' }, 'stop');
+          finish(response);
+        };
+        if (plan.waitBefore === step) {
+          writeChunk(response, { content: '等待测试继续。' }); waiting.set(prompt, response); waitingActions.set(prompt, next);
+          response.once('close', () => { waiting.delete(prompt); waitingActions.delete(prompt); });
+        } else next();
+        return;
+      }
       if (prompt.startsWith('SKILL:') || prompt.startsWith('WAIT_SKILL:')) {
         if (last.role === 'tool') { writeChunk(response, { content: `技能资源：${last.content}` }, 'stop'); finish(response); return; }
         if (prompt.startsWith('WAIT_SKILL:')) {
@@ -107,6 +125,8 @@ export async function createModelFixture() {
     release(prompt: string) {
       const response = waiting.get(prompt);
       assert(response, '应有等待中的模型请求');
+      const next = waitingActions.get(prompt);
+      if (next) { waitingActions.delete(prompt); next(); return; }
       if (prompt.startsWith('WAIT_SKILL:')) writeChunk(response, { tool_calls: [{ index: 0, id: `skill-${requests.length}`, type: 'function', function: { name: 'read_skill', arguments: prompt.slice('WAIT_SKILL:'.length) } }] }, 'tool_calls');
       else writeChunk(response, { content: '生成完成。' }, 'stop');
       finish(response);

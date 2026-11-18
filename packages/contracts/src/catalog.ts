@@ -1,5 +1,6 @@
 import { WORKSPACE_CATALOG } from './workspace-catalog.ts';
 import { SKILL_CATALOG } from './skill-catalog.ts';
+import { WRITING_CATALOG } from './writing-catalog.ts';
 /** 公开接口目录：供测试台和契约覆盖检查共用，只登记 HTTP 知识，不导入后端实现。 */
 export interface FieldDoc {
   name: string;
@@ -10,7 +11,7 @@ export interface FieldDoc {
 }
 export interface EndpointDoc {
   id: string;
-  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats';
+  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing';
   name: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
@@ -55,6 +56,7 @@ const sessionConfig = [id, provider, model, thinking, field('capabilities', 'obj
 const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', capabilities: capabilityExample };
 
 export const API_MODULES = [
+  { id: 'writing', name: '内容创作', description: '大纲留档、上下文、创作与来源', number: '11' },
   { id: 'skills', name: '技能库', description: '内置、自定义与完整目录导入', number: '08' },
   { id: 'skill-settings', name: '技能启用', description: '工作区默认、聊天覆盖和依赖诊断', number: '09' },
   { id: 'chats', name: '小说聊天', description: '聊天归属与最近列表', number: '10' },
@@ -68,6 +70,7 @@ export const API_MODULES = [
 ] as const;
 
 export const API_CATALOG: readonly EndpointDoc[] = [
+  ...WRITING_CATALOG,
   ...SKILL_CATALOG,
   ...WORKSPACE_CATALOG,
   {
@@ -191,7 +194,7 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   {
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
     description: '向指定会话提交一条消息，并实时接收文本、工具调用和最终状态。',
-    note: '同一会话一次只处理一条请求。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
+    note: '同一会话一次只处理一条请求。小说聊天自动获得当前书籍读取、搜索、审校与候选工具，生成记录可从 writing 查询；普通聊天没有小说工具。新章节及精确选区请用内容创作接口。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
     request: [id, field('text', 'string', true, '非空白文本，最多 100000 字符；请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]')],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
     examples: [
@@ -225,6 +228,8 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
 ];
 
 export const API_ERRORS = [
+  { status: '422', code: 'NOVEL_SESSION_REQUIRED / WRITING_SOURCE_MISSING / WRITING_CONTEXT_TOO_LARGE', description: '创作需要小说聊天、存在的正式资料和预算内上下文。' },
+  { status: '工具失败', code: 'WRITING_REVIEW_REQUIRED / WRITING_NEEDS_INPUT / WRITING_TARGET_MISMATCH / WRITING_OUTPUT_TOO_LARGE', description: '审校未完成、待确认冲突、目标不符或超预算时不生成候选；结果通过工具消息与创作查询查看。' },
   { status: '404', code: 'SKILL_NOT_FOUND / SKILL_FILE_NOT_FOUND', description: '技能或资源不存在；重新查询技能列表和资源路径。' },
   { status: '409', code: 'SKILL_NAME_EXISTS / SKILL_READ_ONLY / SKILL_VERSION_CONFLICT', description: '名称已存在、内置只读或版本已变化；换名、复制或重新读取。' },
   { status: '422', code: 'SKILL_IMPORT_FAILED / SKILL_UNAVAILABLE / SKILL_BINARY_RESOURCE', description: '导入目录不可读、显式技能未启用/依赖缺失，或资源不是 UTF-8 文本；检查来源、启用诊断或文件编码。' },

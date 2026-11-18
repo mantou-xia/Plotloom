@@ -16,8 +16,9 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 48);
-  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 21);
+  assert.equal(routes.length, 52);
+  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 22);
+  assert.equal(routes.filter((route) => route.includes('/writing')).length, 3);
   assert.equal(routes.filter((route) => route.includes('/api/skills')).length, 8);
   assert.deepEqual(registered, routes);
   assert.equal(new Set(API_CATALOG.map((item) => item.id)).size, API_CATALOG.length);

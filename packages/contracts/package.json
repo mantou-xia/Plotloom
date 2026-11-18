@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./catalog": "./src/catalog.ts",
     "./workspaces": "./src/workspaces.ts",
-    "./skills": "./src/skills.ts"
+    "./skills": "./src/skills.ts",
+    "./writing": "./src/writing.ts"
   }
 }

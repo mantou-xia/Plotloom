@@ -56,9 +56,10 @@ export class WorkspaceService {
   }
   proposals(id: string) { return this.store.run(id, async (s) => ({ proposals: s.proposals })); }
   proposal(id: string, proposalId: string) { return this.store.run(id, async (s) => s.proposals.find((p) => p.id === proposalId) ?? missing()); }
-  createProposal(id: string, input: ProposalRequest) {
+  createProposal(id: string, input: ProposalRequest, options?: { origin: Proposal['origin']; signal?: AbortSignal }) {
     if (!input.content.isWellFormed()) invalid('Markdown 不能含有未配对的 UTF-16 代理字符。');
     return this.store.run(id, async (s) => {
+      options?.signal?.throwIfAborted();
       const base = await this.readObserved(s, input.path);
       checkVersion(base.version, input.baseVersion);
       if (input.selection) checkSelection(base.content, input.selection);
@@ -70,7 +71,9 @@ export class WorkspaceService {
       if (!changes.length) invalid('候选没有实际修改。');
       const proposal: Proposal = { id: randomUUID(), path: input.path, baseVersion: base.version, baseContent: base.content,
         content: selection ? base.content.slice(0, selection.start) + input.content + base.content.slice(selection.end) : input.content,
-        changes, references, createdAt: new Date().toISOString(), status: 'pending' };
+        changes, references, createdAt: new Date().toISOString(), status: 'pending', ...(options?.origin ? { origin: options.origin } : {}) };
+      // 工具可能在工作区队列等待期间被停止；落候选前再次检查，不写入迟到产物。
+      options?.signal?.throwIfAborted();
       s.proposals.push(proposal); await this.store.persist(s); return proposal;
     });
   }

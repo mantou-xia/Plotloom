@@ -1,6 +1,6 @@
 # Plotloom 项目目录结构
 
-更新日期：2026-11-18。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。P0、P1/P1.1、P2 和 P2.1 已实现；第 4 节为后续规划。
+更新日期：2026-11-18。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。P0、P1/P1.1、P2/P2.1 和 P3 已实现；P3 验收状态见专项记录，第 4 节为后续规划。
 
 ## 1. 组织原则
 
@@ -22,6 +22,8 @@
 - docs/api/p2-workspaces.md：P2 的 17 个接口、调用链、冲突与备份恢复。
 - docs/p2.1-validation.md：技能加载、小说聊天、48 项回归与试验台验收。
 - docs/api/p2.1-skills.md：15 个新增接口、启用规则、资源与错误说明。
+- docs/api/p3-writing.md：大纲留档、创作上下文、候选与联调样本。
+- docs/p3-validation.md：独立接口、试验台与真实模型对照。
 - docs/api/p1-agent.md：P1 已实现的最小接口契约。
 - docs/api/p1-requests.http：模型、会话、流式和停止请求示例。
 - experiments/pi-sdk：P0 独立实验、固定依赖、合成资料及验证命令。
@@ -31,7 +33,7 @@
 
 当前不存在 .cursor/rules，本轮无可用 .mdc 规则；未找到 space/README.md、space/guanwenbo/plan、space/guanwenbo/memory。后续加入时重新读取。
 
-## 3. 当前 P1/P2/P2.1 后端结构
+## 3. 当前 P1—P3 后端结构
 
 ```text
 Plotloom/
@@ -40,20 +42,22 @@ Plotloom/
 │  └─ server/src/
 │     ├─ main.ts                 # 环境配置、本机监听与关闭
 │     ├─ bootstrap.ts            # 服务装配、错误边界与关闭钩子
-│     ├─ routes/                 # Agent、workspaces 资产、skills 与小说聊天接口
+│     ├─ routes/                 # Agent、workspaces、skills、writing 接口
 │     └─ streaming/              # 公开事件编码为 SSE，断流不停止
 ├─ packages/
-│  ├─ agent-pi/src/              # SDK 薄适配、元数据、技能摘要与 read_skill
-│  ├─ contracts/src/             # 公开协议及 catalog/workspace-catalog/skill-catalog
+│  ├─ agent-pi/src/              # SDK 薄适配、元数据、技能与请求资源适配
+│  ├─ contracts/src/             # 公开协议及四个业务 catalog
 │  ├─ domain/src/                # 路径、选区、差异与技能格式/版本校验
-│  ├─ application/src/           # 工作区、候选、技能启用与聊天关联用例
+│  ├─ application/src/           # 工作区、候选、技能与创作上下文/审校用例
 │  └─ storage/
 │     ├─ src/                    # 文件仓储、技能版本、恢复与 Windows 提交助手
 │     └─ builtin/novel-writing/  # 内置 SKILL.md、人物参考及模板
 ├─ tests/api/                    # HTTP / SSE 接口测试，独立于前端执行
 ├─ tests/demo/                   # 全部路由登记覆盖、响应检查与 SSE 解析
 ├─ experiments/                  # P0 小验证，按需创建
-├─ scripts/verify-real.ts         # 真实模型 HTTP 验收
+├─ scripts/verify-real.ts         # 通用真实模型 HTTP 验收
+├─ scripts/evaluate-writing.ts    # 同模型普通聊天/创作对照
+├─ evals/writing-samples.ts        # 10 个可重复加载的合成小说样本
 ├─ docs/api/                     # 接口契约、请求示例、测试运行说明
 ├─ .env.example
 ├─ models.json                   # 非敏感模型配置
@@ -73,11 +77,12 @@ P1 不创建 apps/web；接口测试客户端先验证请求、流式响应、�
 
 技能存于 `<dataDir>/skills/packages/<id>/<version>/<name>/`，清单与工作区默认值在 `skills/state.json`；版本文件写完后发布清单。聊天归属和覆盖设置保存为 Pi 自定义条目。`application/skills` 通过端口获取会话元数据，`agent-pi` 只接收通用技能快照；两者由 server 装配。
 
+P3 的五个工具薄适配位于 `apps/server/src/writing.ts`，业务在 `application/writing.ts`。上下文规模尚小，未创建独立 context 包。业务记录复用 Pi 自定义条目，候选来源随 P2 候选保存；普通演示与小说请求使用各自提示和工具。
+
 ## 4. 后续按业务增加
 
 | 阶段 | 位置 | 具体职责 |
 | --- | --- | --- |
-| P3 | application/tools、application/writing、packages/context | 小说工具、上下文选材、创作与提案接口 |
 | P4—P5 | context/visibility、retrieval、provenance；storage/search | 时间、知情、来源及检索接口 |
 | P6（后置） | application/writing/prompts、domain/style、evals | 高级风格和偏好反馈；核心评测在 P3 |
 | P1—P6 | packages/contracts、tests/api、docs/api | 接口契约、连续接口测试与接入资料 |
@@ -101,7 +106,7 @@ application/writing 是小说业务代码，不是通用工作流执行器。没
 | agent-pi | 封装 Pi SDK；接收工具与提示词，不导入小说模块 |
 | domain（P2） | 纯小说规则，不依赖 Pi、HTTP 或数据库实现 |
 | application（P2） | 编排保存、采纳等业务动作；需要时声明存储和执行接口 |
-| context（P3） | 接收资料读取能力，处理选材；不反向调用业务写入用例 |
+| application/writing（P3） | 编译正式资料、审校证据和候选；通过会话元数据端口持久化，不依赖 Pi |
 | storage（P2） | 实现业务保存与查询，不驱动 Agent |
 | server | 装配 SDK 适配与后续业务模块，提供本机接口 |
 | desktop（后续） | 管理窗口与本地核心，不复制业务实现 |

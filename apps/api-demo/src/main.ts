@@ -37,7 +37,7 @@ app.innerHTML = `
   <a class="skip-link" href="#endpoint-title">跳到接口内容</a>
   <header class="topbar">
     <a class="brand" href="#sessions.create"><span class="brand-mark" aria-hidden="true">P<span>/</span></span><span>Plotloom<span class="brand-sub">开发者工作台</span></span></a>
-    <div class="top-title">接口试验台 <span class="tag">P2.1 · DEMO</span></div>
+    <div class="top-title">接口试验台 <span class="tag">P3 · DEMO</span></div>
     <div class="top-actions"><span id="connection" role="status"></span><button id="refresh" class="button quiet">重新检测</button></div>
   </header>
   <div class="workspace">
@@ -360,7 +360,7 @@ byId('session-picker').addEventListener('change', (event) => { const value = (ev
 byId('refresh').addEventListener('click', () => void refreshContext());
 byId('stop-active').addEventListener('click', () => {
   void execute(endpointById.get('generation.stop')!);
-  if (selected.id !== 'generation.send') location.hash = 'generation.stop';
+  if (!selected.stream) location.hash = 'generation.stop';
 });
 byId('doc-tabs').addEventListener('click', (event) => { const button = (event.target as HTMLElement).closest<HTMLElement>('[data-doc-tab]'); if (button) { docsTab = button.dataset.docTab!; renderEndpoint(); } });
 byId('result-tabs').addEventListener('click', (event) => { const button = (event.target as HTMLElement).closest<HTMLElement>('[data-result-tab]'); if (button) { resultTab = button.dataset.resultTab!; renderResult(); } });

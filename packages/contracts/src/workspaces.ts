@@ -10,6 +10,7 @@ export interface Proposal {
   id: string; path: string; baseVersion: string | null; baseContent: string; content: string;
   changes: Change[]; references: Reference[]; createdAt: string;
   status: 'pending' | 'partial' | 'accepted' | 'rejected' | 'resolved';
+  origin?: { sessionId: string; requestId: string; reason: string };
 }
 export interface SaveDocumentRequest { path: string; baseVersion: string | null; content: string }
 export interface ExportRequest { files: Array<{ path: string; revisionId?: string }> }

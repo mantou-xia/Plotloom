@@ -31,13 +31,13 @@ export class SkillService {
   private readonly store: SkillRepository;
   private readonly sessions: SkillSessions;
   private readonly checkWorkspace: (id: string) => Promise<unknown>;
-  private readonly tools: string[];
-  constructor(store: SkillRepository, sessions: SkillSessions, checkWorkspace: (id: string) => Promise<unknown>, tools: string[]) {
+  private readonly tools: (workspaceId?: string | null) => string[];
+  constructor(store: SkillRepository, sessions: SkillSessions, checkWorkspace: (id: string) => Promise<unknown>, tools: (workspaceId?: string | null) => string[]) {
     this.store = store; this.sessions = sessions; this.checkWorkspace = checkWorkspace; this.tools = tools;
   }
 
-  private view(skill: StoredSkill): SkillInfo {
-    const missingTools = skill.declaredTools.filter(name => !this.tools.includes(name));
+  private view(skill: StoredSkill, workspaceId?: string | null): SkillInfo {
+    const missingTools = skill.declaredTools.filter(name => !this.tools(workspaceId).includes(name));
     const warnings = [
       ...(missingTools.length ? ['缺少声明工具；此技能不会加载到模型。'] : []),
       ...(skill.compatibility ? ['环境说明尚需人工核对，应用不会安装运行环境。'] : []),
@@ -113,7 +113,7 @@ export class SkillService {
   }
   private activation(s: SkillState, profile: SessionSkillProfile): SkillActivation {
     const ids = profile.skillIds ?? this.defaults(s, profile.workspaceId);
-    const skills = ids.flatMap(id => { const found = s.skills.find(v => v.id === id); return found ? [this.view(found)] : []; });
+    const skills = ids.flatMap(id => { const found = s.skills.find(v => v.id === id); return found ? [this.view(found, profile.workspaceId)] : []; });
     return { ...profile, mode: profile.skillIds === null ? 'inherit' : 'override', effectiveSkillIds: ids, skills,
       unavailable: ids.flatMap(id => { const skill = skills.find(v => v.id === id); return !skill ? [{ id, reason: '技能已移除，请调整聊天设置。' }]
         : skill.runnable ? [] : [{ id, reason: `缺少工具：${skill.missingTools.join('、')}` }]; }) };

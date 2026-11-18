@@ -1,4 +1,4 @@
 {
-  "name": "@plotloom/application", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts" },
+  "name": "@plotloom/application", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts", "./writing": "./src/writing.ts" },
   "dependencies": { "@plotloom/contracts": "workspace:*", "@plotloom/domain": "workspace:*", "yaml": "2.9.0" }
 }

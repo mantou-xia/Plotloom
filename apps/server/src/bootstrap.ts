@@ -8,16 +8,25 @@ import { WorkspaceError } from '@plotloom/domain';
 import { SkillService } from '@plotloom/application/skills';
 import { FileSkillRepository } from '@plotloom/storage/skills';
 import { registerSkillRoutes } from './routes/skills.ts';
+import { WritingService, WRITING_TOOLS } from '@plotloom/application/writing';
+import { writingResources } from './writing.ts';
+import { registerWritingRoutes } from './routes/writing.ts';
 
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
 export async function buildServer(options: AgentOptions & { logger?: boolean }) {
   const workspaces = new WorkspaceService(new FileWorkspaceStore(options.dataDir));
   let skills: SkillService;
-  const agent = await AgentService.create({ ...options, resolveSkills: (id, explicit) => skills.snapshot(id, explicit) });
+  let writing: WritingService;
+  const agent = await AgentService.create({ ...options, resolveSkills: (id, explicit) => skills.snapshot(id, explicit),
+    resolveResources: async (id, text) => (await agent.getSkillProfile(id)).workspaceId
+      ? writingResources(writing, id, { task: 'discuss', instructions: text }) : undefined });
+  writing = new WritingService(workspaces, { profile: id => agent.getSkillProfile(id),
+    append: (id, kind, data) => agent.appendMetadata(id, kind, data), entries: (id, kind) => agent.metadata(id, kind),
+    active: async id => (await agent.getSession(id)).activity === 'generating' });
   skills = new SkillService(new FileSkillRepository(options.dataDir), {
     create: (request, profile) => agent.createSession(request, profile), list: () => agent.listSessions(),
     profile: id => agent.getSkillProfile(id), setSkills: (id, ids) => agent.setSkills(id, ids),
-  }, id => workspaces.get(id), [...(options.tools?.map(t => t.name) ?? ['read_fixture']), 'read_skill']);
+  }, id => workspaces.get(id), workspaceId => [...(options.tools?.map(t => t.name) ?? (workspaceId === undefined || workspaceId === null ? ['read_fixture'] : [])), 'read_skill', ...(workspaceId === null ? [] : WRITING_TOOLS)]);
   const app = Fastify({
     logger: options.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
@@ -43,6 +52,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }) 
   registerRoutes(app, agent);
   registerWorkspaceRoutes(app, workspaces);
   registerSkillRoutes(app, skills);
+  registerWritingRoutes(app, agent, writing, workspaces);
   // preClose 先停止 SSE 对应生成，避免 close 等待长连接而无法进入清理阶段。
   app.addHook('preClose', () => agent.close());
   return app;

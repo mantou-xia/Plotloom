@@ -20,6 +20,8 @@ const ref = [path, { ...version, type: 'string', description: '实际引用时�
 const proposal = [f('id', 'string', '候选 ID。', 'proposal-id'), path, baseVersion, f('baseContent', 'string', '生成时基础原稿；候选与正式稿分离。', '旧稿'), content,
   f('status', 'pending | partial | accepted | rejected | resolved', '未处理、部分处理、全采纳、全拒绝或混合处理完毕。', 'pending'),
   f('createdAt', 'string', '候选创建时间。', '2026-11-18T00:00:00.000Z'),
+  f('origin', 'object', 'AI 创作候选的来源，手工候选不含此字段。', '{}', false),
+  f('origin.sessionId', 'string', '来源小说聊天。', 'session-id', false), f('origin.requestId', 'string', '创作记录 ID。', 'request-id', false), f('origin.reason', 'string', '模型提交候选的改动说明。', '强化对白差异。', false),
   f('changes', 'array', '按原文顺序排列的独立差异；前端无需重新计算位置。', '[]'), ...nested('changes[]', change),
   f('references', 'array', '实际参考资料，采纳前检查是否变化。', '[]'), ...nested('references[]', ref)];
 const wsExample = { id: 'workspace-id', title: '灯塔', root: 'D:/Novels/灯塔', createdAt: '2026-11-18T00:00:00.000Z' };
