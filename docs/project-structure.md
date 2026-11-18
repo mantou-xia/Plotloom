@@ -1,6 +1,6 @@
 # Plotloom 项目目录结构
 
-更新日期：2026-11-18。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。P0、P1/P1.1、P2/P2.1 和 P3 已实现；P3 验收状态见专项记录，第 4 节为后续规划。
+更新日期：2026-11-18。本文与 [架构方案](architecture.md)、[开发路线图](roadmap.md) 使用同一套简化范围。P0、P1/P1.1、P2/P2.1 和 P3 已实现；P7 已初始化前端及组件库骨架，尚未实现业务页面。P3 验收状态见专项记录，第 4 节为后续规划。
 
 ## 1. 组织原则
 
@@ -33,18 +33,24 @@
 
 当前不存在 .cursor/rules，本轮无可用 .mdc 规则；未找到 space/README.md、space/guanwenbo/plan、space/guanwenbo/memory。后续加入时重新读取。
 
-## 3. 当前 P1—P3 后端结构
+## 3. 当前后端与前端骨架
 
 ```text
 Plotloom/
 ├─ apps/
 │  ├─ api-demo/src/              # 公开接口试验台，不是产品编辑器
+│  ├─ ui-demo/src/               # 独立组件调试台启动与 iframe 通信，4320 端口
+│  ├─ web/src/
+│  │  ├─ main.tsx               # React 挂载入口
+│  │  ├─ app/                   # 应用装配与根样式
+│  │  └─ features/settings/     # 主题偏好状态及浏览器保存
 │  └─ server/src/
 │     ├─ main.ts                 # 环境配置、本机监听与关闭
 │     ├─ bootstrap.ts            # 服务装配、错误边界与关闭钩子
 │     ├─ routes/                 # Agent、workspaces、skills、writing 接口
 │     └─ streaming/              # 公开事件编码为 SSE，断流不停止
 ├─ packages/
+│  ├─ ui/src/                   # 统一组件库：layouts、theme、button、color-picker、color-swatches、workbench
 │  ├─ agent-pi/src/              # SDK 薄适配、元数据、技能与请求资源适配
 │  ├─ contracts/src/             # 公开协议及四个业务 catalog
 │  ├─ domain/src/                # 路径、选区、差异与技能格式/版本校验
@@ -54,6 +60,7 @@ Plotloom/
 │     └─ builtin/novel-writing/  # 内置 SKILL.md、人物参考及模板
 ├─ tests/api/                    # HTTP / SSE 接口测试，独立于前端执行
 ├─ tests/demo/                   # 全部路由登记覆盖、响应检查与 SSE 解析
+├─ tests/ui/                     # 主题颜色与公开产品组件展示登记覆盖
 ├─ experiments/                  # P0 小验证，按需创建
 ├─ scripts/verify-real.ts         # 通用真实模型 HTTP 验收
 ├─ scripts/evaluate-writing.ts    # 同模型普通聊天/创作对照
@@ -64,12 +71,17 @@ Plotloom/
 ├─ package.json
 ├─ pnpm-workspace.yaml
 ├─ pnpm-lock.yaml
-└─ tsconfig.base.json
+├─ tsconfig.base.json           # 后端与试验台类型检查
+└─ tsconfig.frontend.json       # Web 与组件库共用的浏览器/JSX 编译配置
 ```
 
 SDK 适配只封装当前需要的创建/打开会话、发消息、订阅、停止与配置。工具注册、参数格式校验、压缩、重试、会话落盘直接调用 SDK，不实现通用 AgentExecutor 框架或空仓储接口。
 
-P1 不创建 apps/web；接口测试客户端先验证请求、流式响应、停止和重新查询。前端在 P7 使用同一套接口。
+P1—P3 先由接口测试客户端验证请求、流式响应、停止和重新查询。P7 现已创建 `apps/web`（TypeScript + React + Vite），后续接入同一套公开接口。
+
+`apps/web/src/app` 组合 `ThemeRoot`、`GlobalLayout` 和 `PageLayout`。全局布局提供左侧 `aside`、右侧唯一 `main`，一级页面位于 `main` 中，以 PageLayout 统一纵向间距和内边距。品牌、设置导航与保存反馈在应用内组合，选色能力复用 ColorSwatches；`features/settings` 管理浏览器主题偏好，不包含业务请求或状态管理框架。主题色通过组件库统一 CSS 变量传播。
+
+业务按 `apps/web/src/features/<feature>` 组织页面组合、状态、hooks 和公开接口调用，一次性业务展示和样式就近维护。`packages/ui` 只维护通用框架标准、基础控件及实际复用的卡片/功能组件；不把整页包装成库组件，不在应用内复制通用组件。组件只通过 props、children 和回调与应用交互。详见 [组件库说明](../packages/ui/README.md) 与 [Feature 约定](../apps/web/src/features/README.md)。
 
 按接口调试需求新增 `apps/api-demo`，使用 Vite + 原生 TypeScript 独立运行。`packages/contracts/src/catalog.ts` 登记公开接口的模块、用途、字段、示例和检查信息；`tests/demo` 验证目录覆盖及流解析。浏览器只调用 HTTP / SSE，不依赖后端内部实现；该测试页不改变 P7 产品前端的范围。使用说明见 [接口测试 Demo](api/demo.md)。
 
@@ -102,6 +114,7 @@ application/writing 是小说业务代码，不是通用工作流执行器。没
 | 模块 | 约束 |
 | --- | --- |
 | web（P7） | 只访问公共接口，不访问 Pi、SQLite 或本机文件 |
+| ui（P7） | 通用框架、控件及实际复用组件的统一维护入口；不依赖 web、feature 状态或后端内部实现 |
 | contracts | 声明页面实际用到的协议，不导出 Pi 内部类型 |
 | agent-pi | 封装 Pi SDK；接收工具与提示词，不导入小说模块 |
 | domain（P2） | 纯小说规则，不依赖 Pi、HTTP 或数据库实现 |

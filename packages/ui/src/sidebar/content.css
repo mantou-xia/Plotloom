@@ -1,0 +1,10 @@
+/* 跟随分组内容缩进；外层分类没有内层缩进时使用基础文字留白。 */
+.pl-sidebar-content-state {
+  margin: 0;
+  padding: 8px 8px 8px calc(8px + var(--pl-entry-indent, 0px));
+  color: var(--pl-text-muted, #60636b);
+  font: inherit;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.pl-sidebar-content-state[data-state='error'] { color: #dc2626; }

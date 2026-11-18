@@ -96,7 +96,7 @@ h1 { font-size: 30px; font-weight: 650; letter-spacing: -.9px; line-height: 1.45
 .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: #365b45; }
 .doc-section { padding: 22px 28px 25px; }
 .usage-note { background: #f2f5f2; border-radius: 5px; display: flex; gap: 10px; align-items: flex-start; padding: 12px; font-size: 11px; color: #5f7063; line-height: 1.85; margin-bottom: 24px; }
-.usage-note > span { font: italic 15px Georgia, serif; color: #425e4b; }
+.usage-note > svg { margin-top: 2px; color: #425e4b; }
 h3 { font-size: 12px; font-weight: 600; margin-bottom: 12px; }
 .inline-meta { font-size: 10px; font-weight: 400; color: #78827c; margin-left: 8px; }
 .field-table { margin-bottom: 26px; }
@@ -163,9 +163,8 @@ h3 { font-size: 12px; font-weight: 600; margin-bottom: 12px; }
 .empty-glyph { display: flex; justify-content: center; align-items: center; width: 58px; height: 58px; border-radius: 13px; background: #f1f5f1; color: #92a697; font: 22px var(--mono); margin-bottom: 22px; }
 .response-empty h3 { font-size: 13px; font-weight: 500; color: #485e50; margin-bottom: 8px; }
 .response-empty p { font-size: 11px; color: #7c867f; line-height: 1.9; }
-.empty-flow { display: flex; gap: 15px; color: #89958d; font-size: 10px; margin-top: 25px; }
+.empty-flow { display: flex; align-items: center; gap: 15px; color: #89958d; font-size: 10px; margin-top: 25px; }
 .empty-flow span:nth-child(odd) { background: #f4f6f4; border-radius: 4px; padding: 4px 8px; }
-.empty-flow span:nth-child(even) { padding-top: 4px; }
 .response-footer { border-top: 1px solid var(--line); display: flex; align-items: center; gap: 7px; padding: 11px 24px; font-size: 9px; color: #7b877f; }
 .response-footer .status-dot { width: 4px; height: 4px; background: #8ca995; }
 .response-footer button { margin-left: auto; font-size: 10px; }
@@ -187,7 +186,7 @@ h3 { font-size: 12px; font-weight: 600; margin-bottom: 12px; }
 .checks summary { font-size: 11px; color: #536958; margin-bottom: 12px; }
 .checks summary > span { font: 10px var(--mono); float: right; }
 .check-row { display: flex; gap: 10px; margin-bottom: 11px; align-items: flex-start; }
-.check-icon { font-size: 10px; background: #e9f1eb; color: #437452; width: 17px; height: 17px; border-radius: 50%; text-align: center; flex-shrink: 0; }
+.check-icon { display: grid; place-items: center; background: #e9f1eb; color: #437452; width: 17px; height: 17px; border-radius: 50%; flex-shrink: 0; }
 .check-icon.fail { color: #9f4d3c; background: #f3e7e0; }
 .check-row strong { display: block; font-size: 10px; font-weight: 500; overflow-wrap: anywhere; }
 .check-row div > span { display: block; font-size: 9px; color: #7d8881; line-height: 1.7; overflow-wrap: anywhere; }

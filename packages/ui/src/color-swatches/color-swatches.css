@@ -1,0 +1,16 @@
+.plotloom-color-swatches { width: fit-content; max-width: 100%; }
+.plotloom-color-swatches__presets { display: flex; flex-wrap: wrap; }
+.plotloom-color-swatches__swatch { display: grid; place-items: center; flex: 0 0 var(--pl-swatch-size); width: var(--pl-swatch-size); height: var(--pl-swatch-size); padding: 0; border: 0; border-radius: 50%; cursor: pointer; }
+.plotloom-color-swatches__swatch:hover { filter: brightness(0.95); }
+.plotloom-color-swatches__add { border: 1px solid var(--pl-border); background: var(--pl-surface); color: var(--pl-text-muted); }
+.plotloom-color-swatches__add[aria-pressed=true] { background: var(--pl-surface-muted); color: var(--pl-text); }
+/* 焦点阴影替代圆形边框，避免重复描边。 */
+.plotloom-color-swatches__add:focus-visible { border: 0; }
+.plotloom-color-swatches__dialog { width: 312px; max-width: calc(100% - 24px); max-height: calc(100% - 24px); margin: auto; padding: 16px; overflow: auto; border: 0; border-radius: 10px; background: var(--pl-surface); color: var(--pl-text); }
+.plotloom-color-swatches__dialog::backdrop { background: rgb(0 0 0 / 18%); }
+.plotloom-color-swatches__dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.plotloom-color-swatches__dialog-heading h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.plotloom-color-swatches__close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--pl-text-muted); cursor: pointer; }
+.plotloom-color-swatches__close:hover { background: var(--pl-surface-muted); }
+/* 弹窗已划定区域，内部取色器不重复添加外框。 */
+.plotloom-color-swatches__dialog .plotloom-color-picker { max-width: none; padding: 0; border: 0; }

@@ -1,0 +1,14 @@
+.pl-sidebar-group { width: 100%; min-width: 0; }
+/* 用网格自然高度过渡适应实际条目数；不设固定最大高度，快速反向切换可从当前位置继续。 */
+.pl-sidebar-group__content {
+  display: grid; min-width: 0; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows 280ms cubic-bezier(.22, 1, .36, 1), opacity 200ms ease, visibility 0s linear 280ms;
+}
+.pl-sidebar-group__content[data-expanded='true'] {
+  grid-template-rows: 1fr; opacity: 1; visibility: visible;
+  transition-delay: 0s;
+}
+.pl-sidebar-group__items { min-height: 0; min-width: 0; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .pl-sidebar-group__content { transition: none; }
+}

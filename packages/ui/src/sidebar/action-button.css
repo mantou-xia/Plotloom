@@ -1,0 +1,2 @@
+/* 尺寸与交互反馈来自底层 Button；此入口仅维护侧栏操作的排布。 */
+.pl-sidebar-action-button { flex-shrink: 0; }

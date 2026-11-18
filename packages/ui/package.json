@@ -1,0 +1,46 @@
+{
+  "name": "@plotloom/ui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./icons/dom": "./src/icons/dom.ts",
+    "./layouts/global-layout": "./src/layouts/global-layout.tsx",
+    "./layouts/page-layout": "./src/layouts/page-layout.tsx",
+    "./theme": "./src/theme/theme.ts",
+    "./theme-root": "./src/theme/theme-root.tsx",
+    "./button": "./src/button/button.tsx",
+    "./scroll-box": "./src/scroll-box/scroll-box.tsx",
+    "./sidebar": "./src/sidebar/sidebar.tsx",
+    "./ascii-ocean": "./src/ascii-ocean/ascii-ocean.tsx",
+    "./color-picker": "./src/color-picker/color-picker.tsx",
+    "./color-swatches": "./src/color-swatches/color-swatches.tsx",
+    "./workbench": "./src/workbench/index.ts",
+    "./workbench/catalog": "./src/workbench/catalog.ts",
+    "./sidebar/nav-item": "./src/sidebar/nav-item.tsx",
+    "./sidebar/session-item": "./src/sidebar/session-item.tsx",
+    "./sidebar/settings-item": "./src/sidebar/settings-item.tsx",
+    "./sidebar/group-header": "./src/sidebar/group-header.tsx",
+    "./sidebar/group": "./src/sidebar/group.tsx",
+    "./sidebar/section": "./src/sidebar/section.tsx",
+    "./sidebar/action-button": "./src/sidebar/action-button.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "dependencies": {
+    "@ant-design/colors": "8.0.1",
+    "lucide": "1.73.0",
+    "lucide-react": "1.74.0",
+    "react-colorful": "5.8.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "7.0.2"
+  }
+}

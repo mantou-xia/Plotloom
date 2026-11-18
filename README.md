@@ -17,6 +17,8 @@
 
 截至 2026-11-18，P0、P1、P1.1、P2/P2.1 和 P3 核心后端已完成。通用 Agent 提供会话、模型/思考配置、HTTP / SSE、思考文本、名称、上下文压缩与取消、统计及工具查询；确定性接口测试及真实模型 HTTP 验收通过。真实 `krill-ai-codex / gpt-5.6-sol` 在 P1.1 的 low 档请求中未返回可见思考文本，接入和展示已通过协议替身验证，详见 [P1.1 验证记录](docs/p1.1-validation.md)。P2 提供真实 Markdown 读写、候选逐处采纳、版本恢复、原文搜索、导出和资产备份，详见 [P2 验证记录](docs/p2-validation.md)。P2.1 已提供技能管理、完整目录导入、工作区默认/聊天覆盖、受限加载及小说聊天归属，详见 [P2.1 验证记录](docs/p2.1-validation.md)。P3 已实现大纲原文留档、正式资料上下文、章节/续写/选区/大纲候选与证据审校；58 项自动化检查及试验台通过，10 组真实模型对照完成，见 [P3 验收](docs/p3-validation.md) 与 [接口](docs/api/p3-writing.md)。产品前端集中在 P7。
 
+P7 已开始：`apps/web` 提供 TypeScript + React + Vite 产品前端，`packages/ui` 维护通用组件；全局左右布局、纵向内容布局和主题色设置已接入。创作页面及业务接口接入尚未实现。
+
 运行入口见下方；[P0 SDK 实验](experiments/pi-sdk/README.md) 保持独立。确定性本地测试与真实模型验证分别执行和记录；协议通过与小说文本质量分别记录。
 
 顺序：P0 SDK 验证 → P1 通用 Agent 后端与接口 → P2 Markdown 资产与逐处采纳 → P2.1 技能管理与聊天归属 → P3 写作接入和核心整体验收 → P7 前端 → P8 试用；P4—P6 额外后端能力在前端之后补充。Electron 后续交付。
@@ -33,7 +35,7 @@ pnpm.cmd typecheck
 pnpm.cmd test
 ```
 
-将 `.env.example` 复制为 `.env`，填写 `PLOTLOOM_API_KEY`，再执行 `pnpm.cmd start`。默认地址为 `http://127.0.0.1:4317`；当前没有产品页面。无密钥也能启动、查询配置及已有历史，生成返回明确配置错误。
+将 `.env.example` 复制为 `.env`，填写 `PLOTLOOM_API_KEY`，再执行 `pnpm.cmd start`。后端默认地址为 `http://127.0.0.1:4317`；产品前端独立启动，见下方。无密钥也能启动、查询配置及已有历史，生成返回明确配置错误。
 
 P2 资产接口不需要模型凭据。先在本机建立小说目录，再通过工作区接口登记；正式资料为 UTF-8 `.md`，可用外部编辑器打开。文件提交当前只启用已验证的 Windows 实现。调用流程、版本冲突与备份恢复见 [P2 接口](docs/api/p2-workspaces.md)。
 
@@ -46,6 +48,23 @@ P2 资产接口不需要模型凭据。先在本机建立小说目录，再通�
 P3 真实对照执行 `node --env-file-if-exists=.env scripts/evaluate-writing.ts`，在 `output/p3-real-*` 新建隔离的合成小说，保留 10 个样本的普通聊天/创作产物、耗时和用量，不读取作者作品。
 
 请求格式、SSE 说明与恢复口径见 [P1 接口](docs/api/p1-agent.md)，逐步请求见 [HTTP 示例](docs/api/p1-requests.http)。
+
+## 产品前端骨架
+
+在仓库根目录执行 `pnpm.cmd web`，打开 `http://127.0.0.1:4319`，点击左侧「设置」修改主题色。默认展示六个预设圆点和圆形添加按钮；点击添加后打开纯色选择弹窗，支持可视化取色和 HEX/RGB 输入，选色即时应用并保存在当前浏览器。点击「湖蓝」回到默认色，刷新恢复所选主题。当前没有创作页面或业务接口调用，可独立于后端启动。
+
+- 构建：`pnpm.cmd web:build`，包含前端类型检查，产物位于 `apps/web/dist`。
+- 预览：构建后执行 `pnpm.cmd web:preview`，与开发服务使用同一端口，需先停止开发服务。
+- 全仓类型检查：`pnpm.cmd typecheck`，覆盖现有后端、试验台、新前端及组件库。
+- 主题检查：`pnpm.cmd test:ui`，覆盖 HEX 校验及多种颜色下的文字对比度；浏览器验收见 [主题设置验证](docs/p7-theme-validation.md)。
+- 目录职责：`apps/web/src/app` 装配应用；`apps/web/src/features` 按业务组织页面组合、状态与接口调用；`packages/ui` 维护通用布局、控件及实际复用组件；页面专有内容和样式在应用内就近维护。
+- 一级页面布局提供可配置内边距与纵向间距，具体业务页面由应用组合；维护约束见 [第七条铁律](AGENTS.md)、[Feature 约定](apps/web/src/features/README.md) 和 [组件库说明](packages/ui/README.md)。
+
+## 组件库调试台
+
+执行 `pnpm.cmd ui`，打开 `http://127.0.0.1:4320`。独立展示当前 6 个通用组件、19 个示例状态。画布尺寸与组件宽高分别控制；组件支持自动、固定像素、填满，并按能力提供按钮文字/变体/禁用、布局内边距/间距/侧栏宽度、色点直径等参数。可直接检查点击、悬停、按下和键盘焦点。
+
+预览使用真实 iframe 视口，媒体查询会随尺寸变化生效。配色只影响调试台；不需要后端，不修改产品主题偏好。构建执行 `pnpm.cmd ui:build`，预览执行 `pnpm.cmd ui:preview`。新增组件需同步登记及验证，详见 [组件调试台说明与验收](docs/ui-demo.md)。
 
 ## 接口测试 Demo
 
@@ -61,7 +80,7 @@ P3 真实对照执行 `node --env-file-if-exists=.env scripts/evaluate-writing.t
 | --- | --- |
 | [可视化架构](docs/plotloom-agent-architecture.html) | 历史规划快照；阶段依赖以当前架构及路线图为准 |
 | [架构方案](docs/architecture.md) | 本地架构、Pi 复用、小说上下文与业务模型 |
-| [项目目录结构](docs/project-structure.md) | 当前 P1—P3 目录与后续按需模块 |
+| [项目目录结构](docs/project-structure.md) | P1—P3 后端、P7 前端骨架与后续按需模块 |
 | [开发路线图](docs/roadmap.md) | 各阶段任务和验收口径 |
 | [P0 验证记录](docs/p0-validation.md) | 本地与真实模型实测结果、验收边界 |
 | [P1 接口](docs/api/p1-agent.md) | 已实现的 HTTP / SSE 契约、配置和请求示例 |
@@ -73,6 +92,7 @@ P3 真实对照执行 `node --env-file-if-exists=.env scripts/evaluate-writing.t
 | [P2.1 验证记录](docs/p2.1-validation.md) | 48 项回归、15 个新增接口及技能加载/停止实测 |
 | [P3 接口](docs/api/p3-writing.md) | 大纲留档、创作上下文、审校、候选与联调样本 |
 | [P3 验证记录](docs/p3-validation.md) | 核心链路、真实模型对照与边界 |
+| [P7 骨架验证](docs/p7-skeleton-validation.md) | 前端与组件库初始化、布局结构和七条规则核对 |
 | [接口测试 Demo](docs/api/demo.md) | 页面启动、操作、接口登记与验收记录 |
 
 当前 Markdown 方案见 [业务场景](docs/plans/p2-novel-assets.md) 和 [P2 实施计划](docs/plans/p2-implementation.md)。历史可视化尚未同步，不能作为当前实施依据。目录随实际功能创建，不预建空模块。

@@ -1,0 +1,12 @@
+.pl-sidebar-group-header { display: flex; align-items: center; width: 100%; min-width: 0; border-radius: 8px; color: var(--pl-text, #202124); }
+/* 点击仅切换展开；焦点保留时不持续高亮，键盘焦点提示由 Button 提供。 */
+.pl-sidebar-group-header:not([data-disabled]):is(:hover, :active) { background: var(--pl-primary-subtle, #eff6ff); }
+.pl-sidebar-group-header__toggle.plotloom-button { flex: 1; min-width: 0; min-height: var(--pl-group-height); height: 100%; padding: 8px; gap: var(--pl-group-gap); justify-content: flex-start; font-weight: 550; color: inherit; }
+/* hover 背景由整行提供，包含右侧操作区；键盘定位保留 Button 的焦点提示。 */
+.pl-sidebar-group-header__toggle.plotloom-button:not(:disabled):is(:hover, :active) { background: transparent; }
+.pl-sidebar-group-header__icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: var(--pl-group-icon); height: var(--pl-group-icon); }
+.pl-sidebar-group-header__icon :is(svg, img) { display: block; width: var(--pl-group-icon); height: var(--pl-group-icon); object-fit: contain; }
+.pl-sidebar-group-header__label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pl-sidebar-group-header__actions { display: flex; gap: 2px; flex: 0 0 auto; padding-right: 4px; opacity: 0; pointer-events: none; }
+.pl-sidebar-group-header:is(:hover, :focus-within) > .pl-sidebar-group-header__actions { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .pl-sidebar-group-header__actions { opacity: 1; pointer-events: auto; } }

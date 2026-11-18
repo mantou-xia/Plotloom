@@ -1,0 +1,48 @@
+/* 有界高度与 min-height: 0 让长正文在内部滚动，不撑高整个页面。 */
+.plotloom-page-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.plotloom-page-layout__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.plotloom-page-layout__title {
+  min-width: 0;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.plotloom-page-layout__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.plotloom-page-layout__body {
+  flex: 1 1 0;
+}
+
+.plotloom-page-layout__content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+}

@@ -1,0 +1,13 @@
+.pl-sidebar-entry { display: flex; align-items: center; min-width: 0; border-radius: 8px; color: var(--pl-text, #202124); }
+.pl-sidebar-entry:not([data-disabled]):is(:hover, :focus-within), .pl-sidebar-entry[data-active] { background: var(--pl-primary-subtle, #eff6ff); }
+/* 分组缩进仅作用于按钮内容；根节点和点击区域覆盖整行，hover 不会在缩进处断开。 */
+.pl-sidebar-entry__button.plotloom-button { flex: 1; min-width: 0; min-height: var(--pl-entry-height); height: 100%; padding: 8px; padding-left: calc(12px + var(--pl-entry-indicator-width) + var(--pl-entry-indent, 0px)); gap: var(--pl-entry-gap); justify-content: flex-start; color: inherit; font-weight: 400; }
+.pl-sidebar-entry__button.plotloom-button:not(:disabled):is(:hover, :active) { background: transparent; }
+.pl-sidebar-entry__button .plotloom-button__icon svg { width: var(--pl-entry-icon); height: var(--pl-entry-icon); }
+.pl-sidebar-entry[data-active] > .pl-sidebar-entry__button { color: var(--pl-primary-text, #1d4ed8); font-weight: 550; }
+/* 标记不参与排布；所有行预留相同空间，选中时标题不跳动。 */
+.pl-sidebar-entry[data-active] > .pl-sidebar-entry__button::before { content: ''; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); width: var(--pl-entry-indicator-width); height: var(--pl-entry-indicator-height); border-radius: 2px; background: var(--pl-primary-text, #1d4ed8); pointer-events: none; }
+.pl-sidebar-entry__label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pl-sidebar-entry__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; padding-right: 4px; opacity: 0; pointer-events: none; }
+.pl-sidebar-entry:is(:hover, :focus-within) > .pl-sidebar-entry__actions { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .pl-sidebar-entry__actions { opacity: 1; pointer-events: auto; } }

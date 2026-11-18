@@ -1,0 +1,33 @@
+.plotloom-scroll-box {
+  --pl-scroll-thumb: transparent;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pl-scroll-thumb) transparent;
+}
+
+/* 仅改变颜色：短内容、长内容和交互状态之间不切换滚动条宽度或 display。 */
+.plotloom-scroll-box[data-scrollable='true']:hover,
+.plotloom-scroll-box[data-scrollable='true']:focus-within,
+.plotloom-scroll-box[data-scrollable='true'][data-scrollbar-visibility='always'] {
+  --pl-scroll-thumb: var(--pl-text-muted, #60636b);
+}
+
+.plotloom-scroll-box:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--pl-focus, #60636b);
+}
+
+/* 对尚未支持标准滚动条配色的浏览器保留同样的固定尺寸与透明轨道。 */
+@supports not (scrollbar-color: auto) {
+  .plotloom-scroll-box::-webkit-scrollbar { width: 8px; height: 8px; }
+  .plotloom-scroll-box::-webkit-scrollbar-track,
+  .plotloom-scroll-box::-webkit-scrollbar-corner { background: transparent; }
+  .plotloom-scroll-box::-webkit-scrollbar-thumb { background: var(--pl-scroll-thumb); border-radius: 4px; }
+}
+
+@media (forced-colors: active) {
+  .plotloom-scroll-box[data-scrollable='true'] { scrollbar-color: auto; }
+}

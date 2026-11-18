@@ -4,3 +4,5 @@ packages:
 allowBuilds:
   '@google/genai': false
   protobufjs: false
+minimumReleaseAgeExclude:
+  - lucide-react@1.74.0

@@ -1,0 +1,43 @@
+/* 侧栏融入主题外壳，只有右正文保留白色卡片；背景统一绘制以消除接缝。 */
+.plotloom-global-layout {
+  --pl-layout-padding: 16px;
+  --pl-sidebar-width: 256px;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--pl-sidebar-width) minmax(0, 1fr);
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--pl-layout-padding);
+  box-sizing: border-box;
+  border-radius: 28px;
+  background: var(--pl-sidebar-surface, #f6f6f7);
+  isolation: isolate;
+}
+
+.plotloom-global-layout__sidebar,
+.plotloom-global-layout__main {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.plotloom-global-layout__sidebar {
+  --pl-sidebar-background: transparent;
+}
+.plotloom-global-layout__main {
+  border-radius: 18px;
+  background: var(--pl-surface, #fff);
+}
+.plotloom-global-layout__scroll { height: 100%; }
+.plotloom-global-layout__handle { position: absolute; z-index: 2; top: var(--pl-layout-padding); bottom: var(--pl-layout-padding); width: 28px; transform: translateX(-50%); cursor: ew-resize; touch-action: none; outline: none; }
+.plotloom-global-layout__handle svg { position: absolute; top: 50%; left: 50%; width: 40px; height: 100px; transform: translate(-50%, -50%); pointer-events: none; opacity: 0; transition: opacity 150ms ease; overflow: visible; }
+.plotloom-global-layout__handle path { fill: none; stroke: #929298; stroke-width: 4; stroke-linecap: round; }
+.plotloom-global-layout__handle:hover svg,
+.plotloom-global-layout__handle:focus-visible svg,
+.plotloom-global-layout[data-dragging] .plotloom-global-layout__handle svg { opacity: 1; }
+.plotloom-global-layout__handle:focus-visible::after { content: ''; position: absolute; top: 50%; left: 4px; right: 4px; height: 92px; transform: translateY(-50%); border-radius: 10px; box-shadow: inset 0 0 0 2px #60636b; }
+.plotloom-global-layout[data-dragging] { user-select: none; cursor: ew-resize; }
+.plotloom-global-layout[data-dragging] > :is(aside, main) { pointer-events: none; }
+@media (hover: none) { .plotloom-global-layout__handle svg { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .plotloom-global-layout__handle svg { transition: none; } }

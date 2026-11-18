@@ -6,6 +6,8 @@ node_modules/
 .p0-data/
 .plotloom-data/
 apps/api-demo/dist/
+apps/web/dist/
+apps/ui-demo/dist/
 
 # 浏览器检查的临时输出；docs 中的正式校验附件保留
 .playwright-cli/

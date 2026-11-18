@@ -1,5 +1,6 @@
 import { API_CATALOG, API_MODULES, API_ERRORS, SSE_EVENTS, type EndpointDoc, type FieldDoc } from '@plotloom/contracts/catalog';
 import type { AgentEvent, ModelConfig, ModelInfo, SessionListItem } from '@plotloom/contracts';
+import { iconMarkup } from '@plotloom/ui/icons/dom';
 import { checkFields, checkJson, checkStream, consumeSse, isObject, type CheckResult, type StreamItem } from './client.ts';
 import './style.css';
 
@@ -51,7 +52,7 @@ app.innerHTML = `
     <main class="main">
       <section class="workspace-heading"><div><div class="breadcrumb">开发与验证 <span>/</span> 通用 Agent</div><h1>接口试验台<span class="heading-dot">.</span></h1><p>了解接口，调整参数，查看真实响应。</p></div><div class="api-target"><span>本机服务</span><code>${escape(__API_TARGET__)}</code></div></section>
       <section class="session-context" aria-label="当前测试会话">
-        <div class="context-label"><span class="context-symbol" aria-hidden="true">#</span><div><strong>测试会话</strong><span>用于路径中的 :id</span></div></div>
+        <div class="context-label"><span class="context-symbol">${iconMarkup('Hash', 22)}</span><div><strong>测试会话</strong><span>用于路径中的 :id</span></div></div>
         <label class="sr-only" for="session-id">会话 ID</label><input id="session-id" aria-describedby="session-help" placeholder="创建会话后自动填入，也可粘贴 ID" value="${escape(sessionId)}" autocomplete="off" />
         <label class="sr-only" for="session-picker">选择已有会话</label><select id="session-picker"><option value="">选择已有会话</option></select>
         <button id="stop-active" class="button secondary" title="对当前测试会话调用停止接口">停止生成</button>
@@ -99,15 +100,15 @@ function renderEndpoint() {
     const names = [...selected.path.matchAll(/:([A-Za-z]+)/g)].map((match) => match[1]);
     const pathFields = selected.request.filter((item) => names.includes(item.name));
     const bodyFields = selected.request.filter((item) => !names.includes(item.name));
-    content.innerHTML = `<section class="doc-section"><div class="usage-note"><span aria-hidden="true">i</span><p>${selected.note}</p></div>
+    content.innerHTML = `<section class="doc-section"><div class="usage-note">${iconMarkup('Info')}<p>${selected.note}</p></div>
       ${pathFields.length ? `<h3>路径参数 <span class="inline-meta">会话 id 使用上方输入；资产 ID 在下方填写</span></h3>${fieldTable(pathFields)}${pathFields.filter((field) => field.name !== 'id').map((field) => `<div class="editor-heading"><label for="path-${field.name}">${escape(field.name)}</label></div><input id="path-${field.name}" data-path-parameter="${field.name}" value="${escape(assetParameters[field.name])}" placeholder="${escape(field.description)}" autocomplete="off" />`).join('')}` : ''}
       <h3>请求参数 <span class="inline-meta">${selected.examples.length ? 'application/json' : '无需请求体'}</span></h3>
       ${bodyFields.length ? fieldTable(bodyFields) : `<p class="no-params">${selected.examples.length ? '使用默认模型时，发送空对象即可。' : '该接口不需要请求体，可以直接发起检查。'}</p>`}
       ${selected.request.some((item) => item.name === 'thinkingLevel') ? '<div id="model-controls"></div>' : ''}
       ${selected.examples.length ? `<div class="editor-heading"><label for="request-body">请求体</label><select id="example-picker" aria-label="选择参数示例">${selected.examples.map((item, i) => `<option value="${i}">${item.name}</option>`).join('')}</select></div><textarea id="request-body" spellcheck="false" aria-describedby="body-help" rows="7">${escape(drafts.get(selected.id))}</textarea><div class="editor-footer"><span id="body-help">可编辑 JSON · 仅在点击后发送</span><button id="format-json" class="text-button">格式化</button><button id="reset-json" class="text-button">恢复示例</button></div>` : ''}
       <p id="request-error" class="request-error" role="alert"></p>
-      <div class="request-actions"><button id="send-request" class="button primary">发送请求 <span aria-hidden="true">↗</span></button><span class="request-hint">预期 ${selected.success} ${selected.stream ? '· 流式响应' : '· JSON'}</span></div>
-      <div class="next-step"><span>建议流程</span><a href="#models.get-config">检查模型</a><span>→</span><a href="#sessions.create">创建会话</a><span>→</span><a href="#generation.send">发送消息</a><span>→</span><a href="#sessions.get">查询结果</a></div></section>`;
+      <div class="request-actions"><button id="send-request" class="button primary">发送请求 ${iconMarkup('ArrowUpRight')}</button><span class="request-hint">预期 ${selected.success} ${selected.stream ? '· 流式响应' : '· JSON'}</span></div>
+      <div class="next-step"><span>建议流程</span><a href="#models.get-config">检查模型</a>${iconMarkup('ArrowRight', 12)}<a href="#sessions.create">创建会话</a>${iconMarkup('ArrowRight', 12)}<a href="#generation.send">发送消息</a>${iconMarkup('ArrowRight', 12)}<a href="#sessions.get">查询结果</a></div></section>`;
     const examplePicker = byId<HTMLSelectElement>('example-picker');
     if (examplePicker) examplePicker.value = String(exampleSelections.get(selected.id) ?? 0);
     byId<HTMLTextAreaElement>('request-body')?.addEventListener('input', (event) => { drafts.set(selected.id, (event.target as HTMLTextAreaElement).value); renderModelControls(); });
@@ -249,7 +250,7 @@ function phaseLabel(phase: Phase) { return ({ running: '执行中', success: '�
 
 function updateButtons() {
   const send = byId<HTMLButtonElement>('send-request');
-  if (send) { send.disabled = runs.get(selected.id)?.phase === 'running'; send.innerHTML = send.disabled ? '请求进行中…' : '发送请求 <span aria-hidden="true">↗</span>'; }
+  if (send) { send.disabled = runs.get(selected.id)?.phase === 'running'; send.innerHTML = send.disabled ? '请求进行中…' : `发送请求 ${iconMarkup('ArrowUpRight')}`; }
   byId<HTMLButtonElement>('stop-active').disabled = !sessionId.trim() || runs.get('generation.stop')?.phase === 'running';
 }
 
@@ -269,7 +270,7 @@ function renderResult() {
   byId('result-tabs').innerHTML = ['result', 'raw', 'headers'].map((tab, i) => `<button class="tab ${resultTab === tab ? 'active' : ''}" data-result-tab="${tab}" aria-pressed="${resultTab === tab}">${['结果', '原始数据', '响应头'][i]}</button>`).join('');
   const content = byId('result-content');
   if (!run) {
-    content.innerHTML = `<div class="response-empty"><span class="empty-glyph" aria-hidden="true">{ }</span><h3>准备好发起第一次请求</h3><p>阅读左侧说明，按需调整参数，<br />点击「发送请求」查看真实结果。</p><div class="empty-flow"><span>请求</span><span>→</span><span>响应</span><span>→</span><span>检查</span></div></div>`;
+    content.innerHTML = `<div class="response-empty"><span class="empty-glyph">${iconMarkup('Braces', 24)}</span><h3>准备好发起第一次请求</h3><p>阅读左侧说明，按需调整参数，<br />点击「发送请求」查看真实结果。</p><div class="empty-flow"><span>请求</span>${iconMarkup('ArrowRight', 12)}<span>响应</span>${iconMarkup('ArrowRight', 12)}<span>检查</span></div></div>`;
   } else if (resultTab === 'headers') {
     content.innerHTML = `<pre class="result-code">${escape(pretty(run.headers))}</pre>`;
   } else if (resultTab === 'raw') {
@@ -282,7 +283,7 @@ function renderResult() {
       ${run.events.length ? `<section class="event-list"><h3>事件时间线 <span>${run.events.length}</span></h3>${run.events.filter((item) => !['text_delta', 'thinking_delta'].includes(item.event.type)).map(({ event, elapsedMs }) => `<div class="event-row"><span class="event-dot"></span><div><code>${escape(event.type)}</code><p>${escape(eventDescription(event))}</p></div><time>+${elapsedMs}ms</time></div>`).join('')}<div class="delta-summary">${run.events.filter((item) => item.event.type === 'text_delta').length} 个正文增量 · ${run.events.filter((item) => item.event.type === 'thinking_delta').length} 个思考增量 · 原始数据可逐条查看</div></section>` : ''}
       ${selected.id === 'sessions.get' ? renderHistory(run.body) : ''}
       ${run.body !== undefined ? `<pre class="result-code">${escape(pretty(run.body))}</pre>` : ''}
-      ${run.checks.length ? `<details class="checks" open><summary>响应检查 <span>${run.checks.filter((check) => check.passed).length} / ${run.checks.length}</span></summary>${run.checks.map((check) => `<div class="check-row"><span class="check-icon ${check.passed ? 'pass' : 'fail'}">${check.passed ? '✓' : '!'}</span><div><strong>${escape(check.name)}</strong><span>${escape(check.detail)}</span></div></div>`).join('')}</details>` : ''}
+      ${run.checks.length ? `<details class="checks" open><summary>响应检查 <span>${run.checks.filter((check) => check.passed).length} / ${run.checks.length}</span></summary>${run.checks.map((check) => `<div class="check-row"><span class="check-icon ${check.passed ? 'pass' : 'fail'}" role="img" aria-label="${check.passed ? '通过' : '未通过'}">${iconMarkup(check.passed ? 'Check' : 'CircleAlert', 12)}</span><div><strong>${escape(check.name)}</strong><span>${escape(check.detail)}</span></div></div>`).join('')}</details>` : ''}
       ${run.phase === 'running' ? `<div class="stream-controls"><button class="button secondary" data-disconnect>断开订阅</button>${selected.stream ? '<button class="button secondary" data-stop-run>停止本次生成</button>' : ''}${selected.id === 'context.compact' ? '<button class="button secondary" data-stop-compact>取消本次压缩</button>' : ''}</div>` : ''}`;
   }
   byId<HTMLButtonElement>('copy-result').disabled = !run;

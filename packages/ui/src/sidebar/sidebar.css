@@ -1,0 +1,26 @@
+.plotloom-sidebar {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  min-width: 0;
+  /* 四周留白只由侧栏提供，内部区域保持同宽，避免分层 padding 叠加。 */
+  padding: 8px;
+  /* 独立使用时显示主题渐变；嵌入全局布局时由外壳提供整片背景，避免渐变接缝。 */
+  background: var(--pl-sidebar-background, var(--pl-sidebar-surface, linear-gradient(to bottom right,
+    color-mix(in srgb, var(--pl-primary, #2563eb) 12%, var(--pl-surface, #fff)),
+    color-mix(in srgb, var(--pl-primary, #2563eb) 2%, var(--pl-surface, #fff)))));
+  color: var(--pl-text, #202124);
+}
+/* 顶部到滚动区连续衔接；有无固定导航都不插入额外间距。 */
+.plotloom-sidebar__header { flex: 0 0 auto; }
+.plotloom-sidebar__fixed { flex: 0 0 auto; min-width: 0; }
+.plotloom-sidebar__body { flex: 1 1 0; min-height: 0; }
+.plotloom-sidebar__nav-items, .plotloom-sidebar__groups { min-width: 0; }
+/* 间距属于外层分类布局，内部 SidebarGroup 不再自带顶部留白。 */
+.plotloom-sidebar__nav-items + .plotloom-sidebar__groups { margin-top: 12px; }
+.plotloom-sidebar__groups { display: flex; flex-direction: column; }
+.plotloom-sidebar__groups > * + * { margin-top: 12px; }
+.plotloom-sidebar__footer { flex: 0 0 auto; margin-top: 8px; border-top: 1px solid var(--pl-border, #d4d4d8); }

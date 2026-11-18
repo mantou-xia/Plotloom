@@ -1,0 +1,29 @@
+.plotloom-theme {
+  --pl-surface: #ffffff;
+  --pl-surface-muted: #f6f6f7;
+  /* 侧栏与全局外壳共用主题底色，避免两处渐变定义逐渐偏离。 */
+  --pl-sidebar-surface: linear-gradient(to bottom right,
+    color-mix(in srgb, var(--pl-primary, #2563eb) 12%, var(--pl-surface)),
+    color-mix(in srgb, var(--pl-primary, #2563eb) 2%, var(--pl-surface)));
+  --pl-text: #202124;
+  --pl-text-muted: #60636b;
+  --pl-border: #d4d4d8;
+  min-height: 100dvh;
+  background: var(--pl-surface);
+  color: var(--pl-text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.plotloom-theme *,
+.plotloom-theme *::before,
+.plotloom-theme *::after {
+  box-sizing: border-box;
+}
+
+/* 组件统一提供焦点反馈；可交互组件不使用完整边框，避免与焦点阴影叠加。 */
+.plotloom-theme :where(button, input, a):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--pl-surface), 0 0 0 4px var(--pl-focus);
+}

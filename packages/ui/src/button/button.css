@@ -1,0 +1,82 @@
+.plotloom-button {
+  --pl-button-height: 40px;
+  --pl-button-background: transparent;
+  --pl-button-hover: var(--pl-surface-muted, #f6f6f7);
+  --pl-button-active: #e4e4e7;
+  --pl-button-text: var(--pl-text, #202124);
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--pl-button-height);
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 550;
+  line-height: 1.5;
+  background: var(--pl-button-background);
+  color: var(--pl-button-text);
+  cursor: pointer;
+}
+
+.plotloom-button--sm { --pl-button-height: 32px; padding: 6px 12px; font-size: 12px; }
+.plotloom-button--lg { --pl-button-height: 48px; padding: 12px 20px; font-size: 16px; }
+.plotloom-button--primary {
+  --pl-button-background: var(--pl-primary, #2563eb);
+  --pl-button-hover: var(--pl-primary-hover, #1d4ed8);
+  --pl-button-active: var(--pl-primary-active, #1e40af);
+  --pl-button-text: var(--pl-on-primary, #fff);
+}
+.plotloom-button--secondary { --pl-button-background: #ededf0; --pl-button-hover: #e4e4e7; --pl-button-active: #d4d4d8; }
+.plotloom-button--subtle {
+  --pl-button-background: var(--pl-primary-subtle, #eff6ff);
+  --pl-button-hover: var(--pl-primary-subtle, #eff6ff);
+  --pl-button-active: var(--pl-primary-subtle, #eff6ff);
+  --pl-button-text: var(--pl-primary-text, #1d4ed8);
+}
+.plotloom-button--ghost { --pl-button-text: var(--pl-text-muted, #60636b); }
+/* 透明图标按钮用前景色半透明叠加，适应宿主底色；危险按钮保留专用警示反馈。 */
+.plotloom-button--ghost[data-icon-only]:not([data-danger]) {
+  --pl-button-hover: color-mix(in srgb, currentColor 6%, transparent);
+  --pl-button-active: color-mix(in srgb, currentColor 10%, transparent);
+}
+.plotloom-button--text { padding-inline: 8px; }
+.plotloom-button--link {
+  --pl-button-text: var(--pl-primary-text, #1d4ed8);
+  --pl-button-hover: transparent;
+  --pl-button-active: transparent;
+  padding-inline: 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 危险语义独立于用户主色，所有变体复用同一组明确的警示颜色。 */
+.plotloom-button[data-danger] { --pl-button-text: #b91c1c; --pl-button-hover: #fee2e2; --pl-button-active: #fecaca; }
+.plotloom-button[data-danger]:is(.plotloom-button--secondary, .plotloom-button--subtle) { --pl-button-background: #fef2f2; }
+.plotloom-button[data-danger].plotloom-button--primary {
+  --pl-button-background: #b91c1c; --pl-button-hover: #991b1b; --pl-button-active: #7f1d1d; --pl-button-text: #fff;
+}
+.plotloom-button:not(:disabled):hover { background: var(--pl-button-hover); }
+.plotloom-button:not(:disabled):active { background: var(--pl-button-active); }
+.plotloom-button--primary:not([data-danger]):not(:disabled):hover { color: var(--pl-on-primary-hover, #fff); }
+.plotloom-button--primary:not([data-danger]):not(:disabled):active { color: var(--pl-on-primary-active, #fff); }
+.plotloom-button--subtle:not(:disabled):hover { text-decoration: underline; text-underline-offset: 3px; }
+.plotloom-button--subtle:not(:disabled):active { text-decoration-thickness: 2px; }
+.plotloom-button--link:not(:disabled):hover { text-decoration-thickness: 2px; }
+.plotloom-button--link:not(:disabled):active { text-underline-offset: 2px; }
+.plotloom-button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pl-surface, #fff), 0 0 0 4px var(--pl-focus, #2563eb); }
+.plotloom-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.plotloom-button[data-loading] { opacity: 1; cursor: progress; }
+.plotloom-button__content { display: inline-flex; align-items: center; justify-content: inherit; gap: inherit; width: 100%; min-width: 0; overflow-wrap: anywhere; }
+.plotloom-button__icon { display: inline-flex; flex: 0 0 auto; }
+.plotloom-button__icon svg, .plotloom-button[data-icon-only] svg { width: 16px; height: 16px; flex-shrink: 0; }
+.plotloom-button[data-icon-only] { width: var(--pl-button-height); height: var(--pl-button-height); padding: 0; }
+/* opacity 保留原内容尺寸和可访问名称；加载图标覆盖显示，进出加载态不改变宽高。 */
+.plotloom-button[data-loading] > .plotloom-button__content { opacity: 0; }
+.plotloom-button__loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.plotloom-button__loading svg { animation: plotloom-button-spin 0.9s linear infinite; }
+@keyframes plotloom-button-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .plotloom-button__loading svg { animation: none; } }

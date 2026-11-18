@@ -1,0 +1,48 @@
+.plotloom-color-picker {
+  width: 100%;
+  max-width: 288px;
+  padding: 12px;
+  border: 1px solid var(--pl-border);
+  border-radius: 6px;
+  background: var(--pl-surface);
+}
+.plotloom-color-picker__palette { position: relative; }
+.plotloom-color-picker .react-colorful { width: 100%; height: 192px; }
+.plotloom-color-picker .react-colorful__saturation { height: 160px; flex: none; border: 0; border-radius: 3px; }
+.plotloom-color-picker .react-colorful__hue { height: 8px; margin: 20px 36px 4px 0; border-radius: 6px; }
+/* 色面上的指针使用中性阴影保证可见，不叠加边框；键盘焦点采用相同的轮廓语义。 */
+.plotloom-color-picker .react-colorful__pointer { width: 12px; height: 12px; border: 0; box-shadow: 0 0 0 2px #ffffff, 0 0 0 3px #737373; }
+.plotloom-color-picker .react-colorful__pointer-fill { box-shadow: none; }
+.plotloom-color-picker .react-colorful__interactive:focus-visible .react-colorful__pointer { box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px #202124; }
+.plotloom-color-picker__current { position: absolute; right: 0; bottom: 0; width: 24px; height: 24px; border: 1px solid var(--pl-border); border-radius: 4px; }
+.plotloom-color-picker__fields { display: flex; gap: 8px; margin-top: 14px; }
+.plotloom-color-picker__channels { display: flex; flex: 1; min-width: 0; gap: 2px; }
+.plotloom-color-picker .plotloom-color-picker__format,
+.plotloom-color-picker .plotloom-color-picker__input {
+  min-width: 0;
+  min-height: 30px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--pl-surface-muted);
+  color: var(--pl-text);
+  font: 12px/22px ui-monospace, Consolas, monospace;
+}
+.plotloom-color-picker .plotloom-color-picker__format { width: 64px; flex-shrink: 0; cursor: pointer; }
+.plotloom-color-picker .plotloom-color-picker__input { width: 100%; text-align: center; }
+.plotloom-color-picker__format:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pl-surface), 0 0 0 4px var(--pl-focus); }
+.plotloom-color-picker__section { margin-top: 14px; }
+.plotloom-color-picker__heading { display: flex; align-items: center; justify-content: space-between; min-height: 24px; margin-bottom: 6px; }
+.plotloom-color-picker .plotloom-color-picker__heading h4 { margin: 0; font-size: 12px; line-height: 24px; font-weight: 500; }
+.plotloom-color-picker__add { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--pl-text-muted); cursor: pointer; }
+.plotloom-color-picker__add:hover { background: var(--pl-surface-muted); color: var(--pl-text); }
+.plotloom-color-picker__swatches { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+/* 中性描边让白色色块在白底可辨认；聚焦时移除边框，改用统一焦点阴影。 */
+.plotloom-color-picker__swatch { display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 1px solid var(--pl-border); border-radius: 3px; font: 600 11px/1 system-ui; cursor: pointer; }
+.plotloom-color-picker__swatch:hover { transform: scale(1.12); }
+.plotloom-color-picker__swatch:focus-visible { border: 0; }
+.plotloom-color-picker__swatch svg { max-width: 100%; }
+.plotloom-color-picker .plotloom-color-picker__empty,
+.plotloom-color-picker .plotloom-color-picker__error { margin: 0; color: var(--pl-text-muted); font-size: 12px; line-height: 20px; }
+.plotloom-color-picker .plotloom-color-picker__error { margin-top: 8px; }

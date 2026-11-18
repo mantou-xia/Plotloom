@@ -11,5 +11,6 @@
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["apps/web", "apps/ui-demo", "packages/ui"]
 }

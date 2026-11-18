@@ -1,0 +1,32 @@
+/* 画布只提供可用空间；宽高写到组件根元素，样例不覆盖组件的内部样式。 */
+.pl-box-model-overlay { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2147483646; }
+.pl-box-model-info { position: fixed; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 8px 10px; border-radius: 6px; background: #262626; color: #fafafa; font: 11px/1.6 monospace; overflow-wrap: anywhere; pointer-events: none; z-index: 2147483647; }
+.pl-box-model-info span { display: block; }
+.pl-box-model-info span:nth-child(2) { color: #5eead4; }
+.pl-box-model-info span:nth-child(3) { color: #fdba74; }
+.pl-box-model-info span:nth-child(4) { color: #c4b5fd; }
+.pl-example-stage { position: relative; height: 100dvh; padding: 24px; overflow: auto; }
+.pl-example-target { height: 100%; }
+.pl-example-feedback { position: fixed; right: 12px; bottom: 0; margin: 0; padding: 4px 8px; background: var(--pl-surface-muted); font-size: 12px; pointer-events: none; }
+.pl-example-sidebar { height: 100%; padding: 16px; background: var(--pl-surface-muted); }
+.pl-example-block { flex-shrink: 0; padding: 16px; background: var(--pl-surface-muted); }
+.pl-example-theme-text { background: var(--pl-primary-subtle); color: var(--pl-primary-text); padding: 12px; }
+.pl-example-scroll-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.pl-example-scroll-content { display: grid; gap: 12px; }
+.pl-example-scroll-content--horizontal { display: flex; width: max-content; }
+.pl-example-scroll-content--horizontal > .pl-example-block { width: 200px; }
+.pl-example-scroll-content--both { grid-template-columns: repeat(3, 240px); }
+.pl-example-stage--buttons { padding-bottom: 48px; }
+.pl-button-playground { padding: 20px; background: var(--pl-surface-muted); border-radius: 10px; margin-bottom: 32px; }
+.pl-button-playground h2, .pl-button-gallery h2 { margin: 0 0 8px; font-size: 16px; }
+.pl-button-playground p, .pl-button-gallery p { margin: 0 0 20px; color: var(--pl-text-muted); font-size: 12px; }
+.pl-button-gallery { display: grid; gap: 32px; }
+.pl-button-gallery__variant { padding: 16px 0; border-bottom: 1px solid var(--pl-border); }
+.pl-button-gallery__variant h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 0 12px; font-size: 13px; }
+.pl-button-gallery__variant code { font-size: 11px; color: var(--pl-text-muted); font-weight: 400; }
+.pl-button-gallery__row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pl-button-gallery__row > div { display: flex; align-items: flex-start; flex-direction: column; gap: 8px; }
+.pl-button-gallery__row > div > span { font-size: 11px; color: var(--pl-text-muted); }
+.pl-button-gallery__examples { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+@media (max-width: 540px) { .pl-button-gallery__row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 280px) { .pl-button-gallery__row { grid-template-columns: minmax(0, 1fr); } }
