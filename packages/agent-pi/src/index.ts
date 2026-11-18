@@ -13,6 +13,8 @@ import type {
 import { AgentError, modelFailure } from './errors.ts';
 import { readMessages, TURN_START, TURN_END, turnUsage } from './messages.ts';
 import { createFixtureTool, createResources, createSettings, SYSTEM_PROMPT } from './resources.ts';
+import type { SessionSkillProfile } from '@plotloom/contracts/skills';
+import { createSkillTool, skillPrompt, type SkillSnapshot } from './skills.ts';
 export { AgentError, publicError } from './errors.ts';
 
 export interface AgentOptions {
@@ -22,6 +24,7 @@ export interface AgentOptions {
   apiKey?: string;
   systemPrompt?: string;
   tools?: ToolDefinition[];
+  resolveSkills?: (sessionId: string, explicit: string[]) => Promise<SkillSnapshot[]>;
 }
 interface RecordState {
   manager: SessionManager;
@@ -33,6 +36,8 @@ interface RecordState {
   job?: Promise<void>;
   activity?: Exclude<SessionActivity, 'idle'>;
   stopRequested: boolean;
+  skills?: SkillSnapshot[];
+  resourceKey?: string;
 }
 
 /** 管理单进程中的会话实例；持久化权威记录始终是 SDK JSONL。 */
@@ -127,7 +132,7 @@ export class AgentService {
   }
 
   /** SDK 1.5.2 延迟到首条消息才写盘；用其公开头和条目初始化同一 JSONL，再交还 SDK。 */
-  async createSession(request: CreateSessionRequest = {}): Promise<SessionSummary> {
+  async createSession(request: CreateSessionRequest = {}, profile?: SessionSkillProfile): Promise<SessionSummary> {
     const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : this.selection;
     const model = await this.requireModel(selection);
     const thinkingLevel = this.thinking(model, request.thinkingLevel, this.selection?.thinkingLevel);
@@ -135,6 +140,7 @@ export class AgentService {
     manager.appendModelChange(selection!.provider, selection!.model);
     manager.appendThinkingLevelChange(thinkingLevel);
     manager.appendSessionInfo(request.name?.trim() ?? 'Plotloom');
+    if (profile) manager.appendCustomEntry('plotloom-session-skills', profile);
     const path = manager.getSessionFile()!;
     await writeFile(path, [manager.getHeader(), ...manager.getEntries()].map((entry) => JSON.stringify(entry)).join('\n') + '\n', { encoding: 'utf8', flag: 'wx' });
     const record: RecordState = { manager: SessionManager.open(path, this.sessionDir), selection: selection!, stopRequested: false };
@@ -185,6 +191,20 @@ export class AgentService {
   async getSession(id: string): Promise<SessionDetail> {
     const record = await this.getRecord(id);
     return { ...this.summary(record), messages: readMessages(record.manager, record.activeTurn, record.current) };
+  }
+
+  /** 小说归属与技能设置复用 SDK 自定义元数据，不复制消息，也不随页面导航变化。 */
+  async getSkillProfile(id: string): Promise<SessionSkillProfile> {
+    const record = await this.getRecord(id);
+    const entry = record.manager.getEntries().findLast(e => e.type === 'custom' && e.customType === 'plotloom-session-skills');
+    return entry?.type === 'custom' ? entry.data as SessionSkillProfile : { workspaceId: null, skillIds: null };
+  }
+
+  async setSkills(id: string, skillIds: string[] | null): Promise<void> {
+    const record = await this.getRecord(id);
+    const profile = await this.getSkillProfile(id);
+    // 允许生成中更新下一轮设置，当前资源快照和工具实例不变。
+    record.manager.appendCustomEntry('plotloom-session-skills', { ...profile, skillIds });
   }
 
   async getSessionConfig(id: string): Promise<SessionConfig> {
@@ -289,11 +309,11 @@ export class AgentService {
     if (!record.opening) record.opening = (async () => {
       // 查询上下文、统计和工具不发模型请求，因此不要求凭据；生成和压缩另行验证。
       const model = this.registeredModel(record.selection);
-      const customTools = this.options.tools ?? [createFixtureTool()];
+      const customTools = [...(this.options.tools ?? [createFixtureTool()]), ...(record.skills?.length ? [createSkillTool(record.skills)] : [])];
       const { session } = await createAgentSession({
         cwd: this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: this.runtime, model,
         thinkingLevel: this.summary(record).thinkingLevel, sessionManager: record.manager,
-        settingsManager: createSettings(), resourceLoader: createResources(this.options.systemPrompt ?? SYSTEM_PROMPT),
+        settingsManager: createSettings(), resourceLoader: createResources((this.options.systemPrompt ?? SYSTEM_PROMPT) + skillPrompt(record.skills ?? [])),
         customTools, tools: customTools.map((tool) => tool.name),
       });
       record.session = session;
@@ -303,13 +323,21 @@ export class AgentService {
   }
 
   /** 先验证、再原子占用会话，忙时不排队；返回执行入口供 HTTP 在写 SSE 头后启动。 */
-  async prepareMessage(id: string, text: string): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
+  async prepareMessage(id: string, text: string, explicitSkills: string[] = []): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
     if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'generating');
     let session: AgentSession;
     try {
       await this.requireModel(record.selection);
+      const skills = await this.options.resolveSkills?.(id, explicitSkills) ?? [];
+      const key = JSON.stringify(skills.map(s => [s.id, s.version, s.autoLoad]));
+      if (record.resourceKey !== key) {
+        // 用同一权威 SessionManager 重建 SDK 资源，保留历史和压缩状态；不改 SDK 内部 prompt。
+        await record.opening;
+        record.session?.dispose(); record.session = undefined;
+        record.skills = skills; record.resourceKey = key;
+      }
       session = await this.open(record);
       record.activeTurn = record.manager.appendCustomEntry(TURN_START);
     } catch (error) { release(); throw error; }

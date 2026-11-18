@@ -1,3 +1,5 @@
+import { WORKSPACE_CATALOG } from './workspace-catalog.ts';
+import { SKILL_CATALOG } from './skill-catalog.ts';
 /** 公开接口目录：供测试台和契约覆盖检查共用，只登记 HTTP 知识，不导入后端实现。 */
 export interface FieldDoc {
   name: string;
@@ -8,9 +10,9 @@ export interface FieldDoc {
 }
 export interface EndpointDoc {
   id: string;
-  module: 'models' | 'sessions' | 'generation' | 'context';
+  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats';
   name: string;
-  method: 'GET' | 'POST' | 'PUT';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   description: string;
   note: string;
@@ -53,6 +55,12 @@ const sessionConfig = [id, provider, model, thinking, field('capabilities', 'obj
 const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', capabilities: capabilityExample };
 
 export const API_MODULES = [
+  { id: 'skills', name: '技能库', description: '内置、自定义与完整目录导入', number: '08' },
+  { id: 'skill-settings', name: '技能启用', description: '工作区默认、聊天覆盖和依赖诊断', number: '09' },
+  { id: 'chats', name: '小说聊天', description: '聊天归属与最近列表', number: '10' },
+  { id: 'workspaces', name: '小说工作区', description: '登记小说目录、备份及恢复提交', number: '05' },
+  { id: 'documents', name: 'Markdown 资料', description: '原稿读写、历史、搜索和导出', number: '06' },
+  { id: 'proposals', name: '候选与逐处采纳', description: '查看差异、逐处采纳或拒绝', number: '07' },
   { id: 'models', name: '模型配置', description: '查看可用模型，选择默认模型', number: '01' },
   { id: 'sessions', name: '会话管理', description: '创建、查找和重新打开会话', number: '02' },
   { id: 'generation', name: '消息与生成', description: '发送消息、观察流式事件与停止', number: '03' },
@@ -60,6 +68,8 @@ export const API_MODULES = [
 ] as const;
 
 export const API_CATALOG: readonly EndpointDoc[] = [
+  ...SKILL_CATALOG,
+  ...WORKSPACE_CATALOG,
   {
     id: 'models.list', module: 'models', name: '获取模型列表', method: 'GET', path: '/api/models', success: 200,
     description: '查看本机已注册的模型，以及每个模型是否已经配置凭据。',
@@ -181,13 +191,14 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   {
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
     description: '向指定会话提交一条消息，并实时接收文本、工具调用和最终状态。',
-    note: '同一会话一次只处理一条请求。断开订阅不会停止生成；要终止模型，请调用停止接口。',
-    request: [id, field('text', 'string', true, '非空白文本，最多 100000 字符；请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。')],
+    note: '同一会话一次只处理一条请求。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
+    request: [id, field('text', 'string', true, '非空白文本，最多 100000 字符；请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]')],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
     examples: [
       { name: '读取资料与候选', body: { text: '请调用 read_fixture 读取 scene，写出核对标记并给出 A、B 两个行动候选，然后等待我选择。' } },
       { name: '继续上一轮', body: { text: '我选择 A。复述核对标记，再继续约 100 字，不重新调用工具。' } },
       { name: '测试长文本与停止', body: { text: '请直接写一段约 2000 字的灯塔暴雨描写，不调用工具。' } },
+      { name: '显式使用已启用技能', body: { text: '请按所选技能处理这段对白。', skillIds: ['替换为已启用技能ID'] } },
     ],
     responseExample: { event: 'text_delta', data: { sessionId: '019-example-session', delta: '灯塔-731。' } },
   },
@@ -214,6 +225,17 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
 ];
 
 export const API_ERRORS = [
+  { status: '404', code: 'SKILL_NOT_FOUND / SKILL_FILE_NOT_FOUND', description: '技能或资源不存在；重新查询技能列表和资源路径。' },
+  { status: '409', code: 'SKILL_NAME_EXISTS / SKILL_READ_ONLY / SKILL_VERSION_CONFLICT', description: '名称已存在、内置只读或版本已变化；换名、复制或重新读取。' },
+  { status: '422', code: 'SKILL_IMPORT_FAILED / SKILL_UNAVAILABLE / SKILL_BINARY_RESOURCE', description: '导入目录不可读、显式技能未启用/依赖缺失，或资源不是 UTF-8 文本；检查来源、启用诊断或文件编码。' },
+  { status: '500', code: 'SKILL_STATE_INVALID', description: '技能清单格式无效，请检查本机备份。' },
+  { status: '400 / 404', code: 'INVALID_REQUEST / ASSET_NOT_FOUND', description: '资产参数、选区或路径无效，或资源不属于当前工作区。' },
+  { status: '409', code: 'REVISION_CONFLICT / REFERENCE_CONFLICT', description: '原稿或参考资料已变化；重新读取并核对候选，不覆盖现稿。' },
+  { status: '409', code: 'FILE_BUSY / FILE_UNWRITABLE / WORKSPACE_UNAVAILABLE', description: '文件被占用、上次写入进程仍在结束、权限不足或目录不可用；检查后重新读取。' },
+  { status: '500', code: 'ASSET_INVALID', description: '工作区元数据格式无效，请核对本机备份。' },
+  { status: '409', code: 'WORKSPACE_OVERLAP / BACKUP_EXISTS / CHANGE_RESOLVED', description: '目录归属冲突、备份目标已存在或差异已处理；选择独立目录或查看已有结果。' },
+  { status: '409', code: 'COMMIT_UNCERTAIN', description: '提交尚未确认；查询工作区恢复信息，核对后显式保留当前磁盘。' },
+  { status: '422', code: 'ENCODING_UNSUPPORTED / DIFF_TOO_COMPLEX / PLATFORM_UNSUPPORTED', description: '转换 UTF-8、缩小修改范围，或在已验证 Windows 平台执行文件写入。' },
   { status: '400', code: 'INVALID_REQUEST', description: '参数不合法：检查 JSON、字段类型、必填项或文本长度。' },
   { status: '403', code: 'ORIGIN_FORBIDDEN', description: '不允许跨站访问；请通过本机测试台代理访问。' },
   { status: '404', code: 'SESSION_NOT_FOUND / NOT_FOUND', description: '会话或路径不存在：重新获取会话列表。' },

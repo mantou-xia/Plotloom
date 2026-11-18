@@ -63,6 +63,15 @@ export async function createModelFixture() {
         return;
       }
       if (prompt === 'THINK') writeChunk(response, { reasoning_content: '这是模型返回的可见思考文本。' });
+      if (prompt.startsWith('SKILL:') || prompt.startsWith('WAIT_SKILL:')) {
+        if (last.role === 'tool') { writeChunk(response, { content: `技能资源：${last.content}` }, 'stop'); finish(response); return; }
+        if (prompt.startsWith('WAIT_SKILL:')) {
+          writeChunk(response, { content: '准备读取技能。' }); waiting.set(prompt, response);
+          response.once('close', () => waiting.delete(prompt)); return;
+        }
+        writeChunk(response, { tool_calls: [{ index: 0, id: `skill-${requests.length}`, type: 'function', function: { name: 'read_skill', arguments: prompt.slice('SKILL:'.length) } }] }, 'tool_calls');
+        finish(response); return;
+      }
       if (last.role === 'tool') {
         if (prompt === 'BAD_TOOL') {
           writeChunk(response, { content: '工具参数无效，已停止读取。' }, 'stop');
@@ -98,7 +107,8 @@ export async function createModelFixture() {
     release(prompt: string) {
       const response = waiting.get(prompt);
       assert(response, '应有等待中的模型请求');
-      writeChunk(response, { content: '生成完成。' }, 'stop');
+      if (prompt.startsWith('WAIT_SKILL:')) writeChunk(response, { tool_calls: [{ index: 0, id: `skill-${requests.length}`, type: 'function', function: { name: 'read_skill', arguments: prompt.slice('WAIT_SKILL:'.length) } }] }, 'tool_calls');
+      else writeChunk(response, { content: '生成完成。' }, 'stop');
       finish(response);
     },
     async close() { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); },

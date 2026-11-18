@@ -39,9 +39,9 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
   app.post<{ Params: { id: string } }>('/api/sessions/:id/compact/stop', { schema: { params: idSchema } }, (request) => agent.stopCompaction(request.params.id));
   app.post<{ Params: { id: string }; Body: SubmitMessageRequest }>('/api/sessions/:id/messages', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, required: ['text'],
-      properties: { text: { type: 'string', minLength: 1, maxLength: 100000, pattern: '\\S' } } } },
+      properties: { text: { type: 'string', minLength: 1, maxLength: 100000, pattern: '\\S' }, skillIds: { type: 'array', maxItems: 50, uniqueItems: true, items: { type: 'string', pattern: '^[a-zA-Z0-9-]{1,80}$' } } } } },
   }, async (request, reply) => {
-    const execute = await agent.prepareMessage(request.params.id, request.body.text);
+    const execute = await agent.prepareMessage(request.params.id, request.body.text, request.body.skillIds);
     await streamMessage(request, reply, execute);
   });
   app.post<{ Params: { id: string } }>('/api/sessions/:id/stop', { schema: { params: idSchema } }, async (request) => {

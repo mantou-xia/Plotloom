@@ -32,7 +32,7 @@ export interface SessionStats { id: string; userMessages: number; assistantMessa
 export interface ToolInfo { name: string; description: string; parameters: Record<string, unknown>; active: boolean }
 export interface SessionTools { id: string; tools: ToolInfo[] }
 export interface CompactionResult { id: string; status: 'idle'; outcome: 'completed' | 'aborted'; summary?: string; tokensBefore?: number; estimatedTokensAfter?: number; usage?: Usage }
-export interface SubmitMessageRequest { text: string }
+export interface SubmitMessageRequest { text: string; skillIds?: string[] }
 /** 整轮 SDK 提供的 token 合计；不把配置中的占位价格当成真实账单。 */
 export interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number }
 export type AgentEvent = { sessionId: string } & (

@@ -5,6 +5,9 @@
   "dependencies": {
     "@plotloom/agent-pi": "workspace:*",
     "@plotloom/contracts": "workspace:*",
+    "@plotloom/application": "workspace:*",
+    "@plotloom/storage": "workspace:*",
+    "@plotloom/domain": "workspace:*",
     "fastify": "5.12.8"
   }
 }

@@ -238,3 +238,4 @@ h3 { font-size: 12px; font-weight: 600; margin-bottom: 12px; }
   .endpoint-path { padding-inline: 10px; gap: 6px; } .endpoint-path code { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+input[data-path-parameter] { width: 100%; }

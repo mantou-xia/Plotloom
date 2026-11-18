@@ -32,7 +32,7 @@
 | `GET /api/sessions/:id/stats` | 无 | `{ id, userMessages, assistantMessages, toolCalls, toolResults, totalMessages, usage? }` |
 | `POST /api/sessions/:id/compact` | `{ instructions? }`，最多 2000 字符；默认发送 `{}` | `{ id, status: "idle", outcome, summary?, tokensBefore?, estimatedTokensAfter?, usage? }` |
 | `POST /api/sessions/:id/compact/stop` | 无 | `{ id, status }`；只取消手动压缩，不干扰普通生成 |
-| `POST /api/sessions/:id/messages` | `{ text }` | `200 text/event-stream`，见下文 |
+| `POST /api/sessions/:id/messages` | `{ text, skillIds? }` | `200 text/event-stream`，见下文 |
 | `POST /api/sessions/:id/stop` | 无 | 停止当前生成或手动压缩，等待收尾后返回 `{ id, status: "idle" }` |
 
 新建会话立即保存并可查询，重启后仍存在。SDK 1.5.2 不持久化仅有元信息的空会话，因此创建时将 SDK 公共 API 返回的头和元信息写入同一 JSONL，再交给 SessionManager 打开；之后消息、工具结果与压缩全部由 SDK 保存，没有第二份聊天历史。
@@ -40,6 +40,8 @@
 P1 模型配置只选择已注册且已配置凭据的模型。PUT 的默认选择保存于数据目录 `model-config.json`，重启后优先于环境默认值；不改变已有会话的模型。`configured` 表示存在可用凭据，不保证供应商一定接受凭据。无凭据仍可读取历史。自定义供应商通过根目录 `models.json` 按 SDK 格式登记，密钥由 `.env` / 本进程环境提供，不提供密钥写入接口。
 
 创建请求必须有 JSON 对象，使用默认模型发送 `{}`。消息 `text` 必须是非空白字符串，最多 100000 字符；请求体上限 1 MiB。未知字段、类型错误和缺少必要参数返回 400。
+
+P2.1 新增可选 `skillIds:string[]`，最多 50 项且不可重复：仅明确加载本轮已启用技能，不改变启用设置；未启用、已删除或缺少声明工具返回 422。小说聊天归属、技能默认/覆盖和受限资源加载见 [P2.1 接口](p2.1-skills.md)。技能设置可在生成中修改，只影响下一请求；工具查询展示当前 SDK 实例，下一条消息装配后刷新。
 
 ### P1.1 配置与上下文语义
 

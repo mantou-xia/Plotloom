@@ -12,6 +12,11 @@ interface Run {
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
 let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('sessions.create')!;
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
+const assetParameters: Record<string, string> = Object.fromEntries(['workspaceId', 'proposalId', 'changeId', 'skillId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
+function setAssetParameter(name: string, value: string) {
+  assetParameters[name] = value; sessionStorage.setItem(`plotloom.demo.${name}`, value);
+  const input = byId<HTMLInputElement>(`path-${name}`); if (input) input.value = value;
+}
 let sessions: SessionListItem[] = [];
 let config: ModelConfig | undefined;
 let models: ModelInfo[] = [];
@@ -32,7 +37,7 @@ app.innerHTML = `
   <a class="skip-link" href="#endpoint-title">跳到接口内容</a>
   <header class="topbar">
     <a class="brand" href="#sessions.create"><span class="brand-mark" aria-hidden="true">P<span>/</span></span><span>Plotloom<span class="brand-sub">开发者工作台</span></span></a>
-    <div class="top-title">接口试验台 <span class="tag">P1.1 · DEMO</span></div>
+    <div class="top-title">接口试验台 <span class="tag">P2.1 · DEMO</span></div>
     <div class="top-actions"><span id="connection" role="status"></span><button id="refresh" class="button quiet">重新检测</button></div>
   </header>
   <div class="workspace">
@@ -91,10 +96,11 @@ function renderEndpoint() {
   } else if (docsTab === 'errors') {
     content.innerHTML = `<section class="doc-section"><p class="section-note">流开始前返回 HTTP 错误；流开始后以 failed 事件返回错误。</p>${API_ERRORS.map((error) => `<div class="error-doc"><span class="mono">${error.status}</span><div><code>${error.code}</code><p>${error.description}</p></div></div>`).join('')}<pre class="example-code">${escape(pretty({ error: { code: 'SESSION_BUSY', message: '会话正在生成，请等待或停止。' } }))}</pre></section>`;
   } else {
-    const pathFields = selected.request.filter((item) => item.name === 'id');
-    const bodyFields = selected.request.filter((item) => item.name !== 'id');
+    const names = [...selected.path.matchAll(/:([A-Za-z]+)/g)].map((match) => match[1]);
+    const pathFields = selected.request.filter((item) => names.includes(item.name));
+    const bodyFields = selected.request.filter((item) => !names.includes(item.name));
     content.innerHTML = `<section class="doc-section"><div class="usage-note"><span aria-hidden="true">i</span><p>${selected.note}</p></div>
-      ${pathFields.length ? `<h3>路径参数 <span class="inline-meta">使用上方测试会话</span></h3>${fieldTable(pathFields)}` : ''}
+      ${pathFields.length ? `<h3>路径参数 <span class="inline-meta">会话 id 使用上方输入；资产 ID 在下方填写</span></h3>${fieldTable(pathFields)}${pathFields.filter((field) => field.name !== 'id').map((field) => `<div class="editor-heading"><label for="path-${field.name}">${escape(field.name)}</label></div><input id="path-${field.name}" data-path-parameter="${field.name}" value="${escape(assetParameters[field.name])}" placeholder="${escape(field.description)}" autocomplete="off" />`).join('')}` : ''}
       <h3>请求参数 <span class="inline-meta">${selected.examples.length ? 'application/json' : '无需请求体'}</span></h3>
       ${bodyFields.length ? fieldTable(bodyFields) : `<p class="no-params">${selected.examples.length ? '使用默认模型时，发送空对象即可。' : '该接口不需要请求体，可以直接发起检查。'}</p>`}
       ${selected.request.some((item) => item.name === 'thinkingLevel') ? '<div id="model-controls"></div>' : ''}
@@ -112,6 +118,7 @@ function renderEndpoint() {
       catch { showRequestError('JSON 格式错误，请检查引号、逗号和括号。'); }
     });
     byId('send-request').addEventListener('click', () => void execute(selected));
+    content.querySelectorAll<HTMLInputElement>('[data-path-parameter]').forEach((input) => input.addEventListener('input', () => setAssetParameter(input.dataset.pathParameter!, input.value)));
     renderModelControls();
   }
   updateButtons();
@@ -170,13 +177,17 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
   if (runs.get(endpoint.id)?.phase === 'running') return;
   const targetSession = explicitSession ?? sessionId.trim();
   if (endpoint.path.includes(':id') && !targetSession) { showRequestError('请先创建会话，或在上方填写会话 ID。'); byId('session-id').focus(); return; }
+  const pathParameters: Record<string, string> = { ...assetParameters, id: targetSession };
+  const names = [...endpoint.path.matchAll(/:([A-Za-z]+)/g)].map((match) => match[1]);
+  const missing = names.find((name) => !pathParameters[name]?.trim());
+  if (missing) { showRequestError(`请填写路径参数 ${missing}。`); byId(`path-${missing}`)?.focus(); return; }
   let body: Record<string, unknown> | undefined;
   if (endpoint.examples.length) {
     try { const parsed: unknown = JSON.parse(drafts.get(endpoint.id) ?? ''); if (!isObject(parsed)) throw new Error(); body = parsed; }
     catch { showRequestError('请求体必须是合法 JSON 对象，请检查后再发送。'); return; }
   }
   if (byId('request-error')) byId('request-error').textContent = '';
-  const url = endpoint.path.replace(':id', encodeURIComponent(targetSession));
+  const url = endpoint.path.replace(/:([A-Za-z]+)/g, (_match, name: string) => encodeURIComponent(pathParameters[name].trim()));
   const run: Run = { phase: 'running', url, sessionId: targetSession, started: performance.now(), elapsed: 0, headers: {}, events: [], text: '', thinking: '', checks: [], controller: new AbortController() };
   runs.set(endpoint.id, run);
   renderCatalog(); updateButtons(); renderResult();
@@ -213,7 +224,13 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       if (isObject(run.body) && isObject(run.body.error)) run.error = String(run.body.error.message ?? '接口返回错误。');
       if (response.ok && isObject(run.body)) {
         if (endpoint.id === 'context.compact' && run.body.outcome === 'aborted' && run.phase === 'success') run.phase = 'stopped';
-        if (endpoint.id === 'sessions.create' && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
+        if (['sessions.create', 'chats.create'].includes(endpoint.id) && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
+        if (['skills.create', 'skills.import', 'skills.copy'].includes(endpoint.id) && typeof run.body.id === 'string') setAssetParameter('skillId', run.body.id);
+        if (endpoint.id === 'workspaces.create' && typeof run.body.id === 'string') setAssetParameter('workspaceId', run.body.id);
+        if (endpoint.id === 'proposals.create' && typeof run.body.id === 'string') {
+          setAssetParameter('proposalId', run.body.id);
+          if (Array.isArray(run.body.changes) && isObject(run.body.changes[0]) && typeof run.body.changes[0].id === 'string') setAssetParameter('changeId', run.body.changes[0].id);
+        }
         if (endpoint.id === 'models.get-config' || endpoint.id === 'models.set-config') config = run.body as unknown as ModelConfig;
       }
     }
