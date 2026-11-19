@@ -1,5 +1,4 @@
-/* 页面专有的品牌排布与保存反馈，不作为通用组件登记。 */
-.plotloom-app-navigation { display: flex; flex-direction: column; gap: 32px; padding: 32px 20px; }
-.plotloom-app-brand { padding: 0 16px; font-size: 18px; font-weight: 650; letter-spacing: -0.5px; }
-.plotloom-app-navigation .plotloom-button { justify-content: flex-start; }
-.plotloom-theme-save-error { max-width: 360px; margin: 12px 0 0; color: var(--pl-text-muted); font-size: 12px; }
+/* 页面专有的品牌排布，不作为通用组件登记。 */
+.plotloom-app-brand { padding: 16px 12px 24px; font-size: 18px; font-weight: 650; letter-spacing: -0.5px; }
+.plotloom-app-content { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.plotloom-app-content > .plotloom-page-layout { flex: 1; min-height: 0; }

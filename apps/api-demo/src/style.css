@@ -238,3 +238,6 @@ h3 { font-size: 12px; font-weight: 600; margin-bottom: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 input[data-path-parameter] { width: 100%; }
+#attachment-file { width: 100%; }
+.attachment-preview { display: block; max-width: 100%; max-height: 320px; object-fit: contain; background: #f4f6f4; border-radius: 5px; }
+.attachment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-block: 12px; overflow-wrap: anywhere; font-size: 12px; }

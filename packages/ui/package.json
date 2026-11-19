@@ -9,6 +9,21 @@
     "./theme": "./src/theme/theme.ts",
     "./theme-root": "./src/theme/theme-root.tsx",
     "./button": "./src/button/button.tsx",
+    "./input": "./src/form/input.tsx",
+    "./textarea": "./src/form/textarea.tsx",
+    "./select": "./src/form/select.tsx",
+    "./checkbox": "./src/form/checkbox.tsx",
+    "./checkbox-group": "./src/form/checkbox-group.tsx",
+    "./radio-group": "./src/form/radio-group.tsx",
+    "./switch": "./src/form/switch.tsx",
+    "./number-input": "./src/form/number-input.tsx",
+    "./form-field": "./src/form/form-field.tsx",
+    "./card": "./src/card/card.tsx",
+    "./toast": "./src/toast/toast.tsx",
+    "./tooltip": "./src/tooltip/tooltip.tsx",
+    "./toast/utils": "./src/toast/store.ts",
+    "./task-composer": "./src/task-composer/task-composer.tsx",
+    "./task-composer/types": "./src/task-composer/types.ts",
     "./scroll-box": "./src/scroll-box/scroll-box.tsx",
     "./sidebar": "./src/sidebar/sidebar.tsx",
     "./ascii-ocean": "./src/ascii-ocean/ascii-ocean.tsx",
@@ -22,7 +37,8 @@
     "./sidebar/group-header": "./src/sidebar/group-header.tsx",
     "./sidebar/group": "./src/sidebar/group.tsx",
     "./sidebar/section": "./src/sidebar/section.tsx",
-    "./sidebar/action-button": "./src/sidebar/action-button.tsx"
+    "./sidebar/action-button": "./src/sidebar/action-button.tsx",
+    "./morphing-popover": "./src/morphing-popover/morphing-popover.tsx"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
@@ -33,12 +49,23 @@
   },
   "dependencies": {
     "@ant-design/colors": "8.0.1",
+    "@fortawesome/fontawesome-svg-core": "6.7.2",
+    "@fortawesome/free-solid-svg-icons": "6.7.2",
+    "@fortawesome/react-fontawesome": "0.2.6",
+    "@radix-ui/react-slider": "1.4.7",
+    "clsx": "^2.1.1",
+    "deep-agent-base-ui": "npm:@base-ui/react@1.8.0",
+    "deep-agent-lucide": "npm:lucide-react@1.43.0",
+    "gsap": "3.12.7",
     "lucide": "1.73.0",
     "lucide-react": "1.74.0",
-    "react-colorful": "5.8.1"
+    "react-circular-progressbar": "2.2.0",
+    "react-colorful": "5.8.1",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "typescript": "7.0.2"

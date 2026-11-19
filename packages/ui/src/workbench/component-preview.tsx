@@ -1,10 +1,15 @@
-import { useRef, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { BoxModelOverlay } from './box-model-overlay.tsx';
 import { ArrowRight, Plus } from 'lucide-react';
 import { ButtonGallery } from './button-gallery.tsx';
 import { SidebarAtomExample } from './sidebar-atom-example.tsx';
 import { SidebarExample } from './sidebar-example.tsx';
+import { MorphingPopoverExample } from './morphing-popover-example.tsx';
+import { ToastExample } from './toast-example.tsx';
+import { formCatalog } from './form-catalog.ts';
+import { Tooltip } from '../tooltip/tooltip.tsx';
 import { Button } from '../button/button.tsx';
+import { Card } from '../card/card.tsx';
 import { ScrollBox } from '../scroll-box/scroll-box.tsx';
 import { AsciiOcean } from '../ascii-ocean/ascii-ocean.tsx';
 import { ColorPicker } from '../color-picker/color-picker.tsx';
@@ -15,6 +20,10 @@ import { ThemeRoot } from '../theme/theme-root.tsx';
 import { THEME_PRESETS } from '../theme/theme.ts';
 import { componentSizeStyle, type PreviewControls } from './controls.ts';
 import './preview.css';
+
+// 原版含完整动效与图标依赖，仅在预览该组件时加载，避免拖慢其他组件的调试。
+const TaskComposerExample = lazy(() => import('./task-composer-example.tsx').then(module => ({ default: module.TaskComposerExample })));
+const FormExample = lazy(() => import('./form-example.tsx').then(module => ({ default: module.FormExample })));
 
 export interface ComponentPreviewProps {
   component: string;
@@ -35,6 +44,18 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   const click = () => { setClicks((count) => count + 1); onAction('onClick'); };
   const content = state === 'empty' ? null : Array.from({ length: state === 'overflow' ? 24 : 3 }, (_, index) => <div className="pl-example-block" key={index}>内容块 {index + 1}</div>);
   let target;
+  if (formCatalog.some(entry => entry.id === component)) target = <Suspense fallback={<p role="status">正在加载组件…</p>}><FormExample key={`${component}-${state}`} component={component} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'tooltip') target = <Tooltip content={controls.tooltipContent} delay={controls.tooltipDelay} shake={controls.tooltipShake} disabled={controls.disabled}>
+    <Button style={style} variant="secondary" onClick={() => onAction('Tooltip.children.onClick')}>悬停或聚焦查看提示</Button>
+  </Tooltip>;
+  if (component === 'morphing-popover') target = <MorphingPopoverExample key={state} state={state} controls={controls} onAction={onAction} />;
+  if (component === 'toast') target = <ToastExample state={state} />;
+  if (component === 'card') target = <Card style={{ display: 'grid', alignContent: 'center', gap: 12, ...style }} borderRadius={controls.cardBorderRadius} material={controls.cardMaterial}
+    padding={controls.padding} backgroundColor={controls.cardBackgroundColor} bordered={controls.cardBordered}>
+    <strong>卡片标题</strong><div>卡片内容通过 children 传入，可在右侧切换材质与外观参数。</div>
+    {state === 'liquid-glass' || controls.cardMaterial === 'liquid-glass' ? <Button variant="secondary" onClick={click}>移动背后内容 · {clicks}</Button> : null}
+  </Card>;
+  if (component === 'task-composer') target = <Suspense fallback={<p role="status">正在加载组件…</p>}><TaskComposerExample key={state} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (component.startsWith('sidebar-')) target = <SidebarAtomExample component={component} state={state} controls={controls} style={style} onAction={onAction} />;
   if (component === 'sidebar') target = <SidebarExample key={state} state={state} style={style} onAction={onAction} />;
   if (component === 'ascii-ocean') target = <AsciiOcean style={{ ...style, overflow: 'hidden' }}
@@ -87,7 +108,14 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   if (component === 'button') return <><ScrollBox ref={stageRef} className="pl-example-stage pl-example-stage--buttons" role="region" aria-label="按钮总览" tabIndex={-1}>
     {target}<p className="pl-example-feedback" role="status">已点击 {clicks} 次</p>
   </ScrollBox>{overlay}</>;
-  return <><div ref={stageRef} className="pl-example-stage"><div className="pl-example-target">{target}</div>
+  const glassBackdrop = component === 'card' && (state === 'liquid-glass' || controls.cardMaterial === 'liquid-glass');
+  return <><div ref={stageRef} className={`pl-example-stage${component === 'tooltip' ? ' pl-example-stage--tooltip' : ''}${glassBackdrop ? ' pl-example-stage--glass' : ''}`} style={component === 'card' ? { background: 'var(--pl-surface-muted)' } : undefined}>
+    {/* 背景是真实 DOM，与 Card 并列；点击更新位置用于核查材质实时采样。 */}
+    {glassBackdrop ? <div className="pl-card-backdrop" aria-hidden="true" style={{ transform: `translateX(${clicks % 2 * 48}px)` }}>
+      <div className="pl-card-backdrop__shape" /><div className="pl-card-backdrop__shape pl-card-backdrop__shape--warm" />
+      {Array.from({ length: 8 }, (_, index) => <div className="pl-card-backdrop__row" key={index}>页面内容 {index + 1} · Liquid glass · 0123456789</div>)}
+    </div> : null}
+    <div className="pl-example-target">{target}</div>
     {component === 'button' || component === 'theme-root' ? <p className="pl-example-feedback" role="status">已点击 {clicks} 次</p> : null}
   </div>{overlay}</>;
 }

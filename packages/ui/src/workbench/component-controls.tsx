@@ -1,6 +1,8 @@
 import type { ComponentDimension, PreviewControls } from './controls.ts';
 import { SidebarControls } from './sidebar-controls.tsx';
 import { buttonVariants } from './button-gallery.tsx';
+import { formCatalog } from './form-catalog.ts';
+import { FormControls } from './form-controls.tsx';
 
 interface Props {
   component: string;
@@ -17,28 +19,55 @@ export function ComponentControls({ component, controls, onChange }: Props) {
     input.value = String(next);
   }
   const layout = component === 'page-layout' || component === 'global-layout';
-  const numbers: { key: 'padding' | 'gap' | 'sidebarWidth' | 'swatchSize' | 'maxWidth'; label: string; min: number; max: number }[] = [];
-  if (layout) numbers.push({ key: 'padding', label: '内容内边距（px）', min: 0, max: 160 });
+  const numbers: { key: 'padding' | 'gap' | 'sidebarWidth' | 'swatchSize' | 'maxWidth' | 'cardBorderRadius'; label: string; min: number; max: number }[] = [];
+  if (layout || component === 'card') numbers.push({ key: 'padding', label: '内容内边距（px）', min: 0, max: 160 });
+  if (component === 'card') numbers.push({ key: 'cardBorderRadius', label: '圆角（px）', min: 0, max: 160 });
   if (layout || component === 'color-swatches') numbers.push({ key: 'gap', label: '间距（px）', min: component === 'global-layout' ? 16 : 0, max: 120 });
   if (component === 'global-layout') numbers.push({ key: 'sidebarWidth', label: '侧栏初始宽度（px）', min: 180, max: 440 });
   if (component === 'page-layout') numbers.push({ key: 'maxWidth', label: '正文最大宽度（px）', min: 1, max: 2400 });
   if (component === 'color-swatches') numbers.push({ key: 'swatchSize', label: '圆点直径（px）', min: 24, max: 80 });
   return <>
+    {formCatalog.some(entry => entry.id === component) ? <FormControls component={component} controls={controls} onChange={onChange} /> : null}
     <fieldset><legend>组件尺寸</legend><div className="pl-workbench__dimensions">
-      {(['width', 'height'] as const).map((axis) => {
-        const label = axis === 'width' ? '组件宽度' : '组件高度';
+      {(component === 'morphing-popover' ? ['width'] as const : ['width', 'height'] as const).map((axis) => {
+        const label = component === 'morphing-popover' ? '面板宽度' : axis === 'width' ? '组件宽度' : '组件高度';
         const dimension = controls[axis];
         return <div key={axis}>
           <label>{label}<select aria-label={`${label}模式`} value={dimension.mode} onChange={(event) => onChange({ [axis]: { ...dimension, mode: event.target.value as ComponentDimension['mode'] } })}>
-            <option value="auto">自动</option><option value="fixed">固定 px</option><option value="fill">填满</option>
+            <option value="auto">自动</option><option value="fixed">固定 px</option>{component !== 'morphing-popover' ? <option value="fill">填满</option> : null}
           </select></label>
           {dimension.mode === 'fixed' ? <label>像素<input aria-label={`${label}（px）`} key={`${axis}-${dimension.value}`} type="number" min="1" max="2400" defaultValue={dimension.value}
             onBlur={(event) => commit(event.target, dimension.value, 1, 2400, (value) => onChange({ [axis]: { ...dimension, value } }))}
             onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label> : null}
         </div>;
       })}
-    </div><p className="pl-workbench__hint">填满画布内的可用空间；自动使用组件自身尺寸。固定高度下内容可滚动。</p></fieldset>
+    </div><p className="pl-workbench__hint">{component === 'morphing-popover' ? '自动采用示例面板的 264px 宽度；高度随内容变化。展开方向与对齐方式通过上方样例切换。' : '填满画布内的可用空间；自动使用组件自身尺寸。固定高度下内容可滚动。'}</p></fieldset>
     {component.startsWith('sidebar-') ? <SidebarControls component={component} controls={controls} onChange={onChange} /> : null}
+    {component === 'tooltip' ? <fieldset><legend>提示气泡参数</legend>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.tooltipShake} onChange={(event) => onChange({ tooltipShake: event.target.checked })} />出现时晃动</label>
+      <label>提示内容<input type="text" value={controls.tooltipContent} onChange={(event) => onChange({ tooltipContent: event.target.value })} /></label>
+      <label>悬停延迟（ms）<input type="number" min="0" max="2000" key={controls.tooltipDelay} defaultValue={controls.tooltipDelay}
+        onBlur={(event) => commit(event.target, controls.tooltipDelay, 0, 2000, (value) => onChange({ tooltipDelay: value }))}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.disabled} onChange={(event) => onChange({ disabled: event.target.checked })} />禁用提示</label>
+      <p className="pl-workbench__hint">尺寸控制作用于示例触发按钮；气泡随文字自适应。系统减少动态效果设置会关闭缩放和摇摆。</p>
+    </fieldset> : null}
+    {component === 'card' ? <fieldset><legend>卡片外观</legend>
+      <label>材质<select value={controls.cardMaterial} onChange={(event) => onChange({ cardMaterial: event.target.value as PreviewControls['cardMaterial'] })}>
+        <option value="normal">普通</option><option value="liquid-glass">液态玻璃</option>
+      </select></label>
+      <label>背景颜色<input type="text" value={controls.cardBackgroundColor} onChange={(event) => onChange({ cardBackgroundColor: event.target.value })} /></label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.cardBordered} onChange={(event) => onChange({ cardBordered: event.target.checked })} />显示边框线</label>
+      <p className="pl-workbench__hint">背景支持 CSS 颜色值；边框固定为中性灰实线。嵌套时用背景和间距区分层级，不嵌套完整边框。</p>
+      {controls.cardMaterial === 'liquid-glass' ? <p className="pl-workbench__hint">背景色用作轻微染色；开启边框会关闭材质阴影。Chrome / Edge 提供实时折射，其他引擎使用透明模糊。纯色背景看不出折射，可切换到液态玻璃样例观察。</p> : null}
+    </fieldset> : null}
+    {component === 'task-composer' ? <fieldset><legend>原版输入框参数</legend>
+      {([
+        ['composerBusy', '生成中'], ['composerStop', '提供停止回调'],
+        ['composerStopping', '停止处理中'], ['disabled', '禁用组件'], ['composerReducedMotion', '减少动态效果'],
+      ] as const).map(([key, label]) => <label className="pl-workbench__check" key={key}><input type="checkbox" checked={controls[key]} onChange={(event) => onChange({ [key]: event.target.checked })} />{label}</label>)}
+      <p className="pl-workbench__hint">使用 LeiBox 原版样式与动效。模型、思考强度、权限及发送操作记录回调；附件为原版本地处理，未接入后端。</p>
+    </fieldset> : null}
     {component === 'ascii-ocean' ? <fieldset><legend>海洋背景属性</legend>
       <label className="pl-workbench__check"><input type="checkbox" checked={controls.oceanPaused} onChange={(event) => onChange({ oceanPaused: event.target.checked })} />暂停游动</label>
       <label>游动速度<select value={controls.oceanSpeed} onChange={(event) => onChange({ oceanSpeed: Number(event.target.value) })}>
@@ -75,7 +104,7 @@ export function ComponentControls({ component, controls, onChange }: Props) {
       <label className="pl-workbench__check"><input type="checkbox" checked={controls.disabled} onChange={(event) => onChange({ disabled: event.target.checked })} />禁用按钮</label>
       <p className="pl-workbench__hint">参数作用于「交互试用」按钮；总览保留全部类型，便于对照。纯图标模式使用按钮文字作为可访问名称。</p>
     </fieldset> : null}
-    {numbers.length ? <fieldset><legend>{layout ? '布局参数' : '色点参数'}</legend><div className="pl-workbench__dimensions">
+    {numbers.length ? <fieldset><legend>{layout ? '布局参数' : component === 'card' ? '卡片尺寸参数' : '色点参数'}</legend><div className="pl-workbench__dimensions">
       {numbers.map(({ key, label, min, max }) => <label key={key}>{label}<input key={controls[key]} type="number" min={min} max={max} defaultValue={controls[key]}
         onBlur={(event) => commit(event.target, controls[key], min, max, (value) => onChange({ [key]: value }))}
         onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>)}

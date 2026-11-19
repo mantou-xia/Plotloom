@@ -1,0 +1,2 @@
+# Preserve upstream bytes so source.json hashes remain valid on Windows checkouts.
+* -text

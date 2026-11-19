@@ -1,5 +1,6 @@
 import type { AgentSession, SessionManager } from '@earendil-works/pi-coding-agent';
 import type { Message, MessageBlock, Outcome, Usage } from '@plotloom/contracts';
+import type { MessageSourceSnapshot } from '@plotloom/contracts/sources';
 
 export const TURN_START = 'plotloom.turn.start';
 export const TURN_END = 'plotloom.turn.end';
@@ -39,6 +40,7 @@ export function readMessages(manager: SessionManager, activeTurn?: string, curre
   let turnMessages: Message[] = [];
   let turnId: string | undefined;
   let ended = true;
+  let input: MessageSourceSnapshot | undefined;
   const finish = (outcome: Outcome) => {
     const user = turnMessages.find((message) => message.role === 'user');
     if (user) user.outcome = outcome;
@@ -49,6 +51,7 @@ export function readMessages(manager: SessionManager, activeTurn?: string, curre
     if (entry.type === 'custom' && entry.customType === TURN_START) {
       if (!ended) finish('aborted');
       turnId = entry.id;
+      input = (entry.data as { input?: MessageSourceSnapshot } | undefined)?.input;
       turnMessages = [];
       ended = false;
     } else if (entry.type === 'custom' && entry.customType === TURN_END) {
@@ -56,6 +59,13 @@ export function readMessages(manager: SessionManager, activeTurn?: string, curre
       if (data.turnId === turnId) { finish(data.outcome); ended = true; }
     } else if (entry.type === 'message') {
       const message = mapMessage(entry.id, entry.message);
+      if (message?.role === 'user' && input) {
+        // 用户看到自己提交的文字与来源，模型使用的资料拼接和图片编码留在后端。
+        message.content = input.text ? [{ type: 'text', text: input.text }] : [];
+        message.attachments = input.attachments;
+        message.references = input.references;
+        input = undefined;
+      }
       if (message) { messages.push(message); turnMessages.push(message); }
     }
   }

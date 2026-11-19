@@ -1,0 +1,3 @@
+.pl-form-example { display: grid; gap: 18px; width: 100%; min-width: 0; max-width: 100%; }
+.pl-form-example__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pl-form-example__result { display: block; color: var(--pl-text-muted); font-size: 12px; overflow-wrap: anywhere; }

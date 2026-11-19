@@ -16,7 +16,9 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 52);
+  assert.equal(routes.length, 57);
+  assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
+  assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
   assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 22);
   assert.equal(routes.filter((route) => route.includes('/writing')).length, 3);
   assert.equal(routes.filter((route) => route.includes('/api/skills')).length, 8);
@@ -61,4 +63,35 @@ test('响应检查逐项验证数组字段，允许空列表及可选用量', ()
   assert(checkFields({}, fields).some((check) => !check.passed));
   const usage = SSE_EVENTS.find((event) => event.name === 'completed')!.fields;
   assert(checkFields({ sessionId: 'test' }, usage).every((check) => check.passed));
+});
+
+test('会话配置目录完整登记自动压缩的读写和可触发示例', () => {
+  const update = API_CATALOG.find(item => item.id === 'sessions.set-config')!;
+  const field = update.request.find(item => item.name === 'autoCompaction');
+  assert.equal(field?.type, 'boolean');
+  assert.equal(field.required, false);
+  assert(update.examples.some(item => item.body.autoCompaction === false));
+  assert(update.examples.some(item => item.body.autoCompaction === true));
+  assert.match(update.note, /400 INVALID_REQUEST/);
+  assert.match(update.note, /404 SESSION_NOT_FOUND/);
+  assert.match(update.note, /409 SESSION_BUSY/);
+  for (const id of ['sessions.get-config', 'sessions.set-config', 'context.get']) {
+    const endpoint = API_CATALOG.find(item => item.id === id)!;
+    assert(endpoint.response.some(item => item.name === 'autoCompaction' && item.required));
+    assert(checkFields({ ...endpoint.responseExample as object, autoCompaction: false }, endpoint.response).every(check => check.passed));
+    assert(checkFields({ ...endpoint.responseExample as object, autoCompaction: 'false' }, endpoint.response).some(check => !check.passed));
+  }
+});
+
+test('附件路由、消息来源和历史回显都登记了可检查字段', () => {
+  assert.deepEqual(API_CATALOG.filter(item => item.module === 'attachments').map(item => item.id).sort(),
+    ['attachments.upload', 'attachments.list', 'attachments.get', 'attachments.delete'].sort());
+  const send = API_CATALOG.find(item => item.id === 'generation.send')!;
+  for (const name of ['attachmentIds', 'references', 'references[].workspaceId', 'references[].path', 'references[].version', 'references[].selection.text']) {
+    assert(send.request.some(field => field.name === name), name);
+  }
+  assert.equal(send.request.find(field => field.name === 'text')!.required, false);
+  const history = API_CATALOG.find(item => item.id === 'sessions.get')!;
+  assert(history.response.some(field => field.name === 'messages[].attachments[].id'));
+  assert(history.response.some(field => field.name === 'messages[].references[].content'));
 });

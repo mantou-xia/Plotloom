@@ -56,8 +56,12 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
       await server.json(path(id, '/config'), 'PUT', {}, 400);
       await server.json(path(id, '/config'), 'PUT', { provider: 'p1-test' }, 400);
       await server.json(path(id, '/config'), 'PUT', { thinkingLevel: 'invalid' }, 400);
+      for (const autoCompaction of ['false', 0, null, {}]) {
+        const error = await server.json(path(id, '/config'), 'PUT', { autoCompaction }, 400);
+        assert.equal(error.error.code, 'INVALID_REQUEST');
+      }
       const before = await server.json(path(id, '/config'));
-      const failure = await server.json(path(id, '/config'), 'PUT', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high' }, 422);
+      const failure = await server.json(path(id, '/config'), 'PUT', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high', autoCompaction: false }, 422);
       assert.equal(failure.error.code, 'THINKING_LEVEL_UNSUPPORTED');
       await server.json('/api/model-config', 'PUT', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high' }, 422);
       await server.json('/api/sessions', 'POST', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high' }, 422);
@@ -65,6 +69,40 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
       await server.json(path(id, '/name'), 'PUT', { name: 'x'.repeat(121) }, 400);
       assert.deepEqual(await server.json(path(id, '/config')), before);
       for (const suffix of ['/config', '/context', '/stats', '/tools']) await server.json(path('unknown', suffix), 'GET', undefined, 404);
+      assert.equal((await server.json(path('unknown', '/config'), 'PUT', { autoCompaction: false }, 404)).error.code, 'SESSION_NOT_FOUND');
+    });
+    await t.test('自动压缩开关跨进程保存、会话隔离及 SDK 实际行为', async () => {
+      const a = await create();
+      const config = () => server.json(path(a.id, '/config'));
+      const context = () => server.json(path(a.id, '/context'));
+      assert.equal((await config()).autoCompaction, true);
+      const calls = fixture.requests.length;
+      assert.equal((await server.json(path(a.id, '/config'), 'PUT', { autoCompaction: false })).autoCompaction, false);
+      assert.equal((await context()).autoCompaction, false);
+      assert.equal((await server.json(path(id, '/config'))).autoCompaction, true);
+      assert.equal(fixture.requests.length, calls, '修改开关不调用模型');
+      await restart();
+      assert.equal((await config()).autoCompaction, false);
+      assert.equal((await context()).autoCompaction, false);
+      // 首次发送会重建资源与 SDK 实例；验证恢复的设置实际阻止高占用触发自动压缩。
+      assertFinal(await send(a.id, 'SEED_COMPACTION'), 'completed');
+      const disabled = await send(a.id, 'COMPACT');
+      assertFinal(disabled, 'completed');
+      assert.equal(disabled.filter(e => e.type === 'compacting').length, 0);
+      assert.equal((await context()).autoCompaction, false);
+      assert.equal((await server.json(path(a.id, '/compact'), 'POST', {})).outcome, 'completed', '关闭自动压缩不影响手动压缩');
+      const before = (await server.json(path(a.id))).messages;
+      // 与模型配置同次修改、重复写入以及再次开启，都不能改写历史。
+      await server.json(path(a.id, '/config'), 'PUT', { thinkingLevel: 'low', autoCompaction: true });
+      await server.json(path(a.id, '/config'), 'PUT', { autoCompaction: true });
+      await restart();
+      assert.equal((await config()).autoCompaction, true);
+      assert.equal((await context()).autoCompaction, true);
+      assert.deepEqual((await server.json(path(a.id))).messages, before);
+      await send(a.id, 'SEED_COMPACTION');
+      const enabled = await send(a.id, 'COMPACT');
+      assertFinal(enabled, 'completed');
+      assert.deepEqual(enabled.filter(e => e.type === 'compacting').map(e => e.phase), ['start', 'end']);
     });
     await t.test('思考增量与历史文本一致、模型实际接收档位、统计和工具无内部数据', async () => {
       const result = await send(id, 'THINK'); assertFinal(result, 'completed');
@@ -89,6 +127,8 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
         if (event.type === 'text_delta') {
           assert.equal((await server.json(path(id))).activity, 'generating');
           await server.json(path(id, '/config'), 'PUT', { thinkingLevel: 'high' }, 409);
+          assert.equal((await server.json(path(id, '/config'), 'PUT', { autoCompaction: false }, 409)).error.code, 'SESSION_BUSY');
+          assert.equal((await server.json(path(id, '/context'))).autoCompaction, true);
           await server.json(path(id, '/name'), 'PUT', { name: 'busy' }, 409);
           await server.json(path(id, '/compact'), 'POST', {}, 409);
           assert.equal((await server.json(path(id, '/compact/stop'), 'POST')).status, 'running');
@@ -96,6 +136,8 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
         }
       }
       assert.equal((await server.json(path(id))).activity, 'idle');
+      await server.json(path(id, '/config'), 'PUT', { autoCompaction: false });
+      await server.json(path(id, '/config'), 'PUT', { autoCompaction: true });
     });
     await t.test('空会话压缩错误、手动压缩保存、已压缩错误和继续生成', async () => {
       const empty = await create();
@@ -122,6 +164,8 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
         await waitFor(() => fixture.isWaiting('COMPACTION'));
         assert.equal((await server.json(path(a.id, '/context'))).activity, 'compacting');
         await server.json(path(a.id, '/config'), 'PUT', { thinkingLevel: 'low' }, 409);
+        await server.json(path(a.id, '/config'), 'PUT', { autoCompaction: false }, 409);
+        assert.equal((await server.json(path(a.id, '/context'))).autoCompaction, true);
         await server.json(path(a.id, '/messages'), 'POST', { text: '冲突' }, 409);
         await server.json(path(a.id, '/compact'), 'POST', {}, 409);
         assert.equal((await server.json(path(a.id, stop), 'POST')).status, 'idle');
@@ -142,6 +186,12 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
       await server.json(path(id, '/name'), 'PUT', { name: '离线命名' });
       await server.json(path(id, '/compact'), 'POST', {}, 422);
       await server.json(path(id, '/config'), 'PUT', { thinkingLevel: 'high' }, 422);
+      await server.json(path(id, '/config'), 'PUT', { autoCompaction: false });
+      assert.equal((await server.json(path(id, '/context'))).autoCompaction, false);
+      await server.json(path(id, '/config'), 'PUT', { autoCompaction: true, thinkingLevel: 'high' }, 422);
+      assert.equal((await server.json(path(id, '/config'))).autoCompaction, false, '凭据校验失败不能先修改开关');
+      await restart({ PLOTLOOM_API_KEY: '' });
+      assert.equal((await server.json(path(id, '/config'))).autoCompaction, false);
       assert.equal((await server.json(path(id))).activity, 'idle');
     });
     assert.deepEqual(fixture.errors, []);

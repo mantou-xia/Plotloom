@@ -1,0 +1,16 @@
+.plotloom-toasts { position: fixed; z-index: 10000; top: 20px; right: 20px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+.plotloom-toast-slot { display: grid; grid-template-rows: 1fr; opacity: 1; transform: translateY(0); transition: grid-template-rows 180ms ease, opacity 180ms ease, transform 180ms ease; }
+@starting-style { .plotloom-toast-slot { grid-template-rows: 0fr; opacity: 0; transform: translateY(-12px); } }
+.plotloom-toast-slot[data-exiting='true'] { grid-template-rows: 0fr; opacity: 0; transform: translateX(16px); pointer-events: none; }
+.plotloom-toast-clip { min-height: 0; overflow: hidden; padding: 0 4px; }
+.plotloom-toast { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; padding: 12px; border-radius: 8px; background: #fff; color: #202124; box-shadow: 0 2px 8px #00000014; pointer-events: auto; font-size: 14px; line-height: 1.6; }
+.plotloom-toast-slot[data-exiting='true'] .plotloom-toast { pointer-events: none; }
+.plotloom-toast__message { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.plotloom-toast__icon { flex-shrink: 0; color: #60636b; }
+.plotloom-toast[data-kind='success'] .plotloom-toast__icon { color: #15803d; }
+.plotloom-toast[data-kind='error'] .plotloom-toast__icon { color: #b91c1c; }
+.plotloom-toast[data-kind='loading'] .plotloom-toast__icon { animation: plotloom-toast-spin 900ms linear infinite; }
+.plotloom-toast__count, .plotloom-toasts__queue { color: #60636b; font-size: 12px; }
+.plotloom-toasts__queue { display: block; text-align: right; padding: 4px 12px; }
+@keyframes plotloom-toast-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .plotloom-toast-slot { transition: none; } .plotloom-toast[data-kind='loading'] .plotloom-toast__icon { animation: none; } }

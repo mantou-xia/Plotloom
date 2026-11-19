@@ -1,0 +1,5 @@
+.plotloom-skills { margin: 0; padding: 0; list-style: none; }
+.plotloom-skills li { padding: 20px 0; }
+.plotloom-skills li + li { border-top: 1px solid var(--pl-border, #d4d4d8); }
+.plotloom-skills h2 { margin: 0 0 8px; font-size: 16px; }
+.plotloom-skills p, .plotloom-skills small { margin: 0; line-height: 1.7; color: var(--pl-text-muted); }

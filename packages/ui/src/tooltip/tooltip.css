@@ -1,0 +1,41 @@
+/* 气泡视觉参考 Uiverse / gharsh11032000：
+   https://uiverse.io/gharsh11032000/spotty-zebra-83
+   仅保留气泡与摇摆效果；触发元素的外观由调用方负责。 */
+.pl-tooltip-positioner { z-index: 1000; }
+.pl-tooltip {
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 0.3em 0.6em;
+  border: 0;
+  border-radius: 8px;
+  background: #333333;
+  color: #e8e8e8;
+  font: 400 16px/1.5 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  box-shadow: 0 8px 15px rgb(0 0 0 / 25%);
+  transform-origin: var(--transform-origin);
+  opacity: 1;
+  scale: 1;
+  transition: opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1), scale 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.pl-tooltip[data-open][data-shake='true'] { animation: pl-tooltip-shake 0.5s ease-in-out both; }
+.pl-tooltip[data-starting-style], .pl-tooltip[data-ending-style] { opacity: 0; scale: 0; }
+.pl-tooltip[data-ending-style] { pointer-events: none; animation: none; }
+/* 箭头是定位装饰，通过背景方块绘制，避免额外边框。 */
+.pl-tooltip__arrow { width: 10px; height: 10px; background: #333333; rotate: 45deg; }
+.pl-tooltip__arrow[data-side='top'] { bottom: -4px; }
+.pl-tooltip__arrow[data-side='bottom'] { top: -4px; }
+.pl-tooltip__arrow[data-side='left'] { right: -4px; }
+.pl-tooltip__arrow[data-side='right'] { left: -4px; }
+@keyframes pl-tooltip-shake {
+  0%, 100% { rotate: 0deg; }
+  25% { rotate: 7deg; }
+  50% { rotate: -7deg; }
+  75% { rotate: 1deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-tooltip { transition: none; }
+  .pl-tooltip[data-open][data-shake] { animation: none; }
+}

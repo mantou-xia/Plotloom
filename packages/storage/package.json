@@ -1,4 +1,4 @@
 {
-  "name": "@plotloom/storage", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts" },
+  "name": "@plotloom/storage", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts", "./sources": "./src/sources.ts" },
   "dependencies": { "@plotloom/application": "workspace:*", "@plotloom/domain": "workspace:*", "@plotloom/contracts": "workspace:*" }
 }

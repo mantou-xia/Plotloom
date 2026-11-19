@@ -2,6 +2,7 @@ import { API_CATALOG, API_MODULES, API_ERRORS, SSE_EVENTS, type EndpointDoc, typ
 import type { AgentEvent, ModelConfig, ModelInfo, SessionListItem } from '@plotloom/contracts';
 import { iconMarkup } from '@plotloom/ui/icons/dom';
 import { checkFields, checkJson, checkStream, consumeSse, isObject, type CheckResult, type StreamItem } from './client.ts';
+import { uploadDraft, attachmentPreview, appendSourceDraft } from './sources.ts';
 import './style.css';
 
 type Phase = 'running' | 'success' | 'error' | 'stopped' | 'disconnected';
@@ -13,7 +14,7 @@ interface Run {
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
 let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('sessions.create')!;
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
-const assetParameters: Record<string, string> = Object.fromEntries(['workspaceId', 'proposalId', 'changeId', 'skillId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
+const assetParameters: Record<string, string> = Object.fromEntries(['workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
 function setAssetParameter(name: string, value: string) {
   assetParameters[name] = value; sessionStorage.setItem(`plotloom.demo.${name}`, value);
   const input = byId<HTMLInputElement>(`path-${name}`); if (input) input.value = value;
@@ -29,6 +30,8 @@ const drafts = new Map(API_CATALOG.map((item) => [item.id, item.examples.length 
 // 示例选择与草稿共同按接口保存，切换说明页后仍能恢复正确的示例。
 const exampleSelections = new Map<string, number>();
 const runs = new Map<string, Run>();
+let uploadReading = false;
+let uploadReadId = 0;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
 const pretty = (value: unknown) => JSON.stringify(value, null, 2) ?? '';
@@ -105,6 +108,7 @@ function renderEndpoint() {
       <h3>请求参数 <span class="inline-meta">${selected.examples.length ? 'application/json' : '无需请求体'}</span></h3>
       ${bodyFields.length ? fieldTable(bodyFields) : `<p class="no-params">${selected.examples.length ? '使用默认模型时，发送空对象即可。' : '该接口不需要请求体，可以直接发起检查。'}</p>`}
       ${selected.request.some((item) => item.name === 'thinkingLevel') ? '<div id="model-controls"></div>' : ''}
+      ${selected.id === 'attachments.upload' ? '<div class="editor-heading"><label for="attachment-file">选择附件文件</label></div><input id="attachment-file" type="file" accept=".png,.jpg,.jpeg,.webp,.txt,.md,.markdown" /><p class="section-note">选择后填入请求体，点击发送才会上传。图片最多 10 MiB，文本最多 1 MiB。</p>' : ''}
       ${selected.examples.length ? `<div class="editor-heading"><label for="request-body">请求体</label><select id="example-picker" aria-label="选择参数示例">${selected.examples.map((item, i) => `<option value="${i}">${item.name}</option>`).join('')}</select></div><textarea id="request-body" spellcheck="false" aria-describedby="body-help" rows="7">${escape(drafts.get(selected.id))}</textarea><div class="editor-footer"><span id="body-help">可编辑 JSON · 仅在点击后发送</span><button id="format-json" class="text-button">格式化</button><button id="reset-json" class="text-button">恢复示例</button></div>` : ''}
       <p id="request-error" class="request-error" role="alert"></p>
       <div class="request-actions"><button id="send-request" class="button primary">发送请求 ${iconMarkup('ArrowUpRight')}</button><span class="request-hint">预期 ${selected.success} ${selected.stream ? '· 流式响应' : '· JSON'}</span></div>
@@ -119,6 +123,18 @@ function renderEndpoint() {
       catch { showRequestError('JSON 格式错误，请检查引号、逗号和括号。'); }
     });
     byId('send-request').addEventListener('click', () => void execute(selected));
+    byId<HTMLInputElement>('attachment-file')?.addEventListener('change', async event => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const readId = ++uploadReadId; uploadReading = true; updateButtons();
+      try {
+        const body = await uploadDraft(file);
+        if (readId !== uploadReadId) return;
+        drafts.set('attachments.upload', pretty(body));
+        if (selected.id === 'attachments.upload') { byId<HTMLTextAreaElement>('request-body').value = pretty(body); showRequestError(''); }
+      } catch (error) { if (readId === uploadReadId) notify(error instanceof Error ? error.message : '文件读取失败。'); }
+      finally { if (readId === uploadReadId) { uploadReading = false; updateButtons(); } }
+    });
     content.querySelectorAll<HTMLInputElement>('[data-path-parameter]').forEach((input) => input.addEventListener('input', () => setAssetParameter(input.dataset.pathParameter!, input.value)));
     renderModelControls();
   }
@@ -130,7 +146,8 @@ function setExample(index: number) {
   if (!body) return;
   exampleSelections.set(selected.id, index);
   // 模型示例优先沿用服务返回的当前选择，避免硬编码示例与本机配置不一致。
-  const example = 'provider' in body && config?.provider && config.model ? { ...body, provider: config.provider, model: config.model } : body;
+  const example = 'provider' in body && config?.provider && config.model ? { ...body, provider: config.provider, model: config.model }
+    : 'attachmentIds' in body && assetParameters.attachmentId ? { ...body, attachmentIds: [assetParameters.attachmentId] } : body;
   drafts.set(selected.id, pretty(example));
   byId<HTMLTextAreaElement>('request-body').value = pretty(example);
   byId('request-error').textContent = '';
@@ -226,6 +243,7 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       if (response.ok && isObject(run.body)) {
         if (endpoint.id === 'context.compact' && run.body.outcome === 'aborted' && run.phase === 'success') run.phase = 'stopped';
         if (['sessions.create', 'chats.create'].includes(endpoint.id) && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
+        if (endpoint.id === 'attachments.upload' && targetSession === sessionId && typeof run.body.id === 'string') setAssetParameter('attachmentId', run.body.id);
         if (['skills.create', 'skills.import', 'skills.copy'].includes(endpoint.id) && typeof run.body.id === 'string') setAssetParameter('skillId', run.body.id);
         if (endpoint.id === 'workspaces.create' && typeof run.body.id === 'string') setAssetParameter('workspaceId', run.body.id);
         if (endpoint.id === 'proposals.create' && typeof run.body.id === 'string') {
@@ -250,7 +268,7 @@ function phaseLabel(phase: Phase) { return ({ running: '执行中', success: '�
 
 function updateButtons() {
   const send = byId<HTMLButtonElement>('send-request');
-  if (send) { send.disabled = runs.get(selected.id)?.phase === 'running'; send.innerHTML = send.disabled ? '请求进行中…' : `发送请求 ${iconMarkup('ArrowUpRight')}`; }
+  if (send) { send.disabled = runs.get(selected.id)?.phase === 'running' || (selected.id === 'attachments.upload' && uploadReading); send.innerHTML = send.disabled ? '正在处理…' : `发送请求 ${iconMarkup('ArrowUpRight')}`; }
   byId<HTMLButtonElement>('stop-active').disabled = !sessionId.trim() || runs.get('generation.stop')?.phase === 'running';
 }
 
@@ -282,7 +300,10 @@ function renderResult() {
       ${selected.stream ? `<section class="generated"><h3>模型思考</h3><div class="generated-text">${escape(run.thinking || (run.phase === 'running' ? '等待模型返回可见思考文本…' : '模型未返回可见思考文本；这不代表没有进行推理。'))}</div></section>` : ''}
       ${run.events.length ? `<section class="event-list"><h3>事件时间线 <span>${run.events.length}</span></h3>${run.events.filter((item) => !['text_delta', 'thinking_delta'].includes(item.event.type)).map(({ event, elapsedMs }) => `<div class="event-row"><span class="event-dot"></span><div><code>${escape(event.type)}</code><p>${escape(eventDescription(event))}</p></div><time>+${elapsedMs}ms</time></div>`).join('')}<div class="delta-summary">${run.events.filter((item) => item.event.type === 'text_delta').length} 个正文增量 · ${run.events.filter((item) => item.event.type === 'thinking_delta').length} 个思考增量 · 原始数据可逐条查看</div></section>` : ''}
       ${selected.id === 'sessions.get' ? renderHistory(run.body) : ''}
-      ${run.body !== undefined ? `<pre class="result-code">${escape(pretty(run.body))}</pre>` : ''}
+      ${selected.id === 'attachments.get' ? attachmentPreview(run.body, escape) : ''}
+      ${selected.id.startsWith('attachments.') && run.status && run.status < 400 ? renderAttachmentActions(run.body, run.sessionId) : ''}
+      ${selected.id === 'documents.read' && isObject(run.body) && typeof run.body.version === 'string' ? '<button class="button secondary" data-use-reference>加入消息引用</button>' : ''}
+      ${run.body !== undefined ? `<pre class="result-code">${escape(pretty(selected.id === 'attachments.get' && isObject(run.body) && typeof run.body.data === 'string' ? { ...run.body, data: `[${run.body.data.length} 个 base64 字符，完整内容见原始数据]` } : run.body))}</pre>` : ''}
       ${run.checks.length ? `<details class="checks" open><summary>响应检查 <span>${run.checks.filter((check) => check.passed).length} / ${run.checks.length}</span></summary>${run.checks.map((check) => `<div class="check-row"><span class="check-icon ${check.passed ? 'pass' : 'fail'}" role="img" aria-label="${check.passed ? '通过' : '未通过'}">${iconMarkup(check.passed ? 'Check' : 'CircleAlert', 12)}</span><div><strong>${escape(check.name)}</strong><span>${escape(check.detail)}</span></div></div>`).join('')}</details>` : ''}
       ${run.phase === 'running' ? `<div class="stream-controls"><button class="button secondary" data-disconnect>断开订阅</button>${selected.stream ? '<button class="button secondary" data-stop-run>停止本次生成</button>' : ''}${selected.id === 'context.compact' ? '<button class="button secondary" data-stop-compact>取消本次压缩</button>' : ''}</div>` : ''}`;
   }
@@ -292,7 +313,18 @@ function renderResult() {
 /** 历史中的思考和正文分别呈现，所有模型文本均转义，原始 JSON 仍可核对。 */
 function renderHistory(body: unknown): string {
   if (!isObject(body) || !Array.isArray(body.messages)) return '';
-  return body.messages.filter(isObject).map((message) => `<section class="generated"><h3>${escape(message.role)} · ${escape(message.id)}</h3>${Array.isArray(message.content) ? message.content.filter(isObject).map((block) => `<p class="section-note">${block.type === 'thinking' ? '模型思考' : block.type === 'tool' ? '工具结果' : '正文'}</p><div class="generated-text">${escape(block.text ?? block.name ?? '')}</div>`).join('') : ''}</section>`).join('');
+  return body.messages.filter(isObject).map((message) => `<section class="generated"><h3>${escape(message.role)} · ${escape(message.id)}</h3>${Array.isArray(message.content) ? message.content.filter(isObject).map((block) => `<p class="section-note">${block.type === 'thinking' ? '模型思考' : block.type === 'tool' ? '工具结果' : '正文'}</p><div class="generated-text">${escape(block.text ?? block.name ?? '')}</div>`).join('') : ''}
+    ${Array.isArray(message.attachments) ? renderAttachmentActions({ attachments: message.attachments }, String(body.id)) : ''}
+    ${Array.isArray(message.references) ? message.references.filter(isObject).map(reference => `<details class="event-doc"><summary>引用：${escape(reference.path)} · ${escape(String(reference.version).slice(0, 12))}</summary><div class="generated-text">${escape(reference.content)}</div></details>`).join('') : ''}</section>`).join('');
+}
+
+/** 附件动作始终携带响应中的会话归属，避免切换当前会话后误用其他聊天的 ID。 */
+function renderAttachmentActions(body: unknown, owner: string): string {
+  if (!isObject(body)) return '';
+  const files = Array.isArray(body.attachments) ? body.attachments : typeof body.mimeType === 'string' ? [body] : [];
+  return files.filter(isObject).map(file => `<div class="attachment-actions"><span>${escape(file.name)} · ${escape(file.size)} 字节</span>
+    <button class="text-button" data-read-attachment="${escape(file.id)}" data-owner="${escape(owner)}">预览附件</button>
+    <button class="text-button" data-use-attachment="${escape(file.id)}" data-owner="${escape(owner)}">加入消息</button></div>`).join('');
 }
 
 function eventDescription(event: AgentEvent): string {
@@ -306,6 +338,7 @@ function eventDescription(event: AgentEvent): string {
 }
 
 function setSession(value: string) {
+  if (sessionId !== value) setAssetParameter('attachmentId', '');
   sessionId = value;
   sessionStorage.setItem('plotloom.demo.session', value);
   byId<HTMLInputElement>('session-id').value = value;
@@ -372,6 +405,23 @@ byId('result-content').addEventListener('click', (event) => {
   if (target.closest('[data-stop-run]') && run) void execute(endpointById.get('generation.stop')!, run.sessionId);
   if (target.closest('[data-stop-compact]') && run) void execute(endpointById.get('context.stop')!, run.sessionId);
   if (target.closest('[data-read-session]') && run) { setSession(run.sessionId); location.hash = 'sessions.get'; }
+  const file = target.closest<HTMLElement>('[data-read-attachment], [data-use-attachment]');
+  if (file) {
+    if (file.dataset.owner !== sessionId && file.dataset.useAttachment) { notify('请先切换到该附件所属会话。'); return; }
+    if (file.dataset.readAttachment) {
+      setSession(file.dataset.owner!); setAssetParameter('attachmentId', file.dataset.readAttachment);
+      location.hash = 'attachments.get'; void execute(endpointById.get('attachments.get')!, file.dataset.owner);
+    } else {
+      try { drafts.set('generation.send', appendSourceDraft(drafts.get('generation.send') ?? '{}', 'attachmentIds', file.dataset.useAttachment)); location.hash = 'generation.send'; }
+      catch { notify('消息草稿 JSON 无效，请先修正。'); }
+    }
+  }
+  if (target.closest('[data-use-reference]') && run && isObject(run.body)) {
+    const workspaceId = run.url.match(/^\/api\/workspaces\/([^/]+)\//)?.[1];
+    if (!workspaceId) return;
+    try { drafts.set('generation.send', appendSourceDraft(drafts.get('generation.send') ?? '{}', 'references', { workspaceId: decodeURIComponent(workspaceId), path: run.body.path, version: run.body.version })); location.hash = 'generation.send'; }
+    catch { notify('消息草稿 JSON 无效，请先修正。'); }
+  }
 });
 byId('copy-result').addEventListener('click', async () => {
   const run = runs.get(selected.id);

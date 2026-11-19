@@ -1,3 +1,5 @@
+import { formCatalog } from './form-catalog.ts';
+
 export interface ComponentExample {
   id: string;
   name: string;
@@ -12,6 +14,67 @@ export interface ComponentExample {
 
 /** 产品组件的展示登记；与公开 TSX 导出做覆盖校验，新增组件时必须同步补充。 */
 export const componentCatalog: ComponentExample[] = [
+  ...formCatalog,
+  {
+    id: 'tooltip', name: 'Tooltip', category: '反馈组件', exportPath: './tooltip',
+    description: '深色圆角提示气泡，带箭头、缩放与轻微摇摆；不改变触发元素外观。',
+    interaction: '悬停或 Tab 聚焦显示，Esc 关闭；右侧修改文案、延迟或禁用提示。',
+    width: 640, height: 360,
+    states: [
+      { id: 'default', name: '短提示', description: '默认在触发元素上方显示，空间不足时自动避让。' },
+      { id: 'long', name: '长提示', description: '长文字在气泡内自动换行。' },
+      { id: 'disabled', name: '禁用提示', description: '关闭提示，触发按钮仍可正常使用。' },
+    ],
+  },
+  {
+    id: 'morphing-popover', name: 'MorphingPopover', category: '反馈组件', exportPath: './morphing-popover',
+    description: '按钮形变为面板的通用容器，模型与权限菜单共用此实现。',
+    interaction: '切换样例直接显示展开效果；收起后点击按钮体验形变。下方提供组合步骤和可复制代码，右侧可调整面板宽度。',
+    width: 720, height: 760,
+    states: [
+      { id: 'default', name: '向上展开', description: '左对齐，保留原版形变与弹簧动画。' },
+      { id: 'below', name: '向下展开', description: '从触发器顶边向下展开。' },
+      { id: 'right', name: '右对齐', description: '面板与触发器右侧对齐。' },
+      { id: 'reduced-motion', name: '减少动态效果', description: '无动画地展开与收回。' },
+      { id: 'custom-content', name: '自定义面板内容', description: '同一容器承载说明、分栏和操作按钮，children 可替换为任意内容。' },
+      { id: 'closed', name: '收起状态', description: '展示工具按钮起点，点击按钮或展开预览体验形变。' },
+    ],
+  },
+  {
+    id: 'toast', name: 'ToastViewport', category: '反馈组件', exportPath: './toast',
+    description: '全局操作提示：成功、失败、信息和处理中；最多显示三条，其余排队，重复消息合并。',
+    interaction: '画布内编辑内容、类型与时长，验证并发、去重、异步原位更新、手动关闭与悬停暂停；显示和消失均带动效。store 可注入以隔离实例。',
+    width: 900, height: 640,
+    states: [
+      { id: 'default', name: '操作提示', description: '使用公开工具触发各类消息；默认 3.5 秒，错误 6 秒，处理中持续显示。' },
+      { id: 'queue', name: '并发队列', description: '六条消息按先后顺序展示，只有可见消息开始计时。' },
+    ],
+  },
+  {
+    id: 'card', name: 'Card', category: '基础组件', exportPath: './card',
+    description: '通用卡片容器，默认 8px 圆角、12px 内边距、纯白背景、无边框。',
+    interaction: '右侧切换普通/液态玻璃材质，调整圆角、内边距、背景颜色及边框。液态玻璃样例可移动真实文字与色块背景，检查实时折射。',
+    width: 640, height: 360,
+    states: [
+      { id: 'default', name: '默认卡片', description: '白底无边框；浅灰画布用于观察圆角与内边距。' },
+      { id: 'bordered', name: '带边框', description: '中性灰 1px 实线边框，不叠加阴影或内部完整边框。' },
+      { id: 'liquid-glass', name: '液态玻璃', description: '折射卡片背后的页面内容，前景文字与按钮保持清晰；非 Chromium 浏览器降级为模糊玻璃。' },
+    ],
+  },
+  {
+    id: 'task-composer', name: 'TaskComposer', category: '输入组件', exportPath: './task-composer',
+    description: 'LeiBox Deep Agent Composer 原版：附件、权限、上下文、模型选择与思考强度滑块。',
+    interaction: '点击模型与权限胶囊体验形变展开；拖动思考滑块，悬停上下文环；选择附件或输入后发送，观察原版动画与回调。',
+    width: 800, height: 540,
+    states: [
+      { id: 'default', name: '原版输入框', description: '保留原版布局、样式与动效，输入提示词或添加附件后发送。' },
+      { id: 'busy', name: '生成中', description: '显示原版停止按钮，点击触发停止回调。' },
+      { id: 'stopping', name: '停止处理中', description: '原版停止中加载状态，阻止重复点击。' },
+      { id: 'disabled', name: '禁用', description: '通过原版 disabled 参数禁止组件交互。' },
+      { id: 'no-models', name: '模型列表为空', description: '原版模型面板的空列表提示。' },
+      { id: 'reduced-motion', name: '减少动态效果', description: '原版 reducedMotion 参数保留操作并减少动画。' },
+    ],
+  },
 {
   "id": "sidebar-nav-item",
   "name": "SidebarNavItem",

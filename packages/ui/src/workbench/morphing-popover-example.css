@@ -1,0 +1,11 @@
+/* 调试台演示区为形变保留空间；说明和源码不属于公开组件。 */
+.pl-morph-example { min-width: 0; }
+.pl-morph-example__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pl-morph-example p { margin: 8px 0; color: var(--pl-text-muted); line-height: 1.6; }
+.pl-morph-example__status { font-size: 12px; }
+.pl-morph-example__stage { display: flex; align-items: center; justify-content: center; min-height: 500px; background: var(--pl-surface-muted); border-radius: 12px; }
+.pl-morph-example__guide { padding: 24px 0; }
+.pl-morph-example__guide pre { margin: 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--pl-surface-muted); border-radius: 8px; font-size: 12px; line-height: 1.7; }
+.pl-morph-example__custom { display: grid; gap: 12px; padding: 16px; }
+.pl-morph-example__slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pl-morph-example__slots span { padding: 12px; background: var(--pl-surface-muted); border-radius: 8px; line-height: 1.6; }

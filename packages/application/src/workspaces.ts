@@ -26,6 +26,16 @@ export class WorkspaceService {
   get(id: string) { return this.store.run(id, async (s) => s.workspace); }
   listDocuments(id: string) { return this.store.run(id, async (s) => ({ paths: await this.store.files(s) })); }
   read(id: string, path: string) { return this.store.run(id, (s) => this.readObserved(s, path)); }
+  /** 聊天引用固定版本；使用既有原稿快照，不以最新稿替换用户选中的历史。 */
+  readVersion(id: string, path: string, version: string): Promise<DocumentView> {
+    return this.store.run(id, async (state) => {
+      const current = await this.readObserved(state, path);
+      if (current.version === version) return current;
+      const revision = state.history[path]?.find(item => item.version === version);
+      if (!revision) throw new WorkspaceError('REFERENCE_NOT_FOUND', '指定文档版本不存在，请重新查询文档或历史。', 404);
+      return { path, version, content: await this.store.snapshot(state, revision) };
+    });
+  }
   private async readObserved(state: WorkspaceState, path: string) {
     documentPath(path);
     const doc = await this.store.read(state, path);

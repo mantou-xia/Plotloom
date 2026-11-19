@@ -1,5 +1,5 @@
 import Fastify, { type FastifyError } from 'fastify';
-import { AgentService, AgentError, publicError, type AgentOptions } from '@plotloom/agent-pi';
+import { AgentService, AgentError, publicError, PROJECT_TOOLS, type AgentOptions } from '@plotloom/agent-pi';
 import { registerRoutes } from './routes/agent.ts';
 import { registerWorkspaceRoutes } from './routes/workspaces.ts';
 import { WorkspaceService } from '@plotloom/application';
@@ -11,21 +11,32 @@ import { registerSkillRoutes } from './routes/skills.ts';
 import { WritingService, WRITING_TOOLS } from '@plotloom/application/writing';
 import { writingResources } from './writing.ts';
 import { registerWritingRoutes } from './routes/writing.ts';
+import { MessageSourceService } from '@plotloom/application/sources';
+import { FileAttachmentStore } from '@plotloom/storage/sources';
+import { registerSourceRoutes } from './routes/sources.ts';
 
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
 export async function buildServer(options: AgentOptions & { logger?: boolean }) {
   const workspaces = new WorkspaceService(new FileWorkspaceStore(options.dataDir));
   let skills: SkillService;
   let writing: WritingService;
+  let sources: MessageSourceService;
   const agent = await AgentService.create({ ...options, resolveSkills: (id, explicit) => skills.snapshot(id, explicit),
-    resolveResources: async (id, text) => (await agent.getSkillProfile(id)).workspaceId
-      ? writingResources(writing, id, { task: 'discuss', instructions: text }) : undefined });
+    resolveSources: (id, text, input) => sources.resolve(id, text, input),
+    resolveResources: async (id, text, input) => (await agent.getSkillProfile(id)).workspaceId
+      ? writingResources(writing, id, { task: 'discuss', instructions: text,
+        references: input?.references?.map(({ workspaceId: _workspaceId, ...reference }) => ({ ...reference, role: 'other' })) }) : undefined });
+  sources = new MessageSourceService(new FileAttachmentStore(options.dataDir), workspaces, {
+    profile: id => agent.getSkillProfile(id), messages: async id => (await agent.getSession(id)).messages,
+    idle: (id, operation) => agent.withIdleSession(id, operation),
+  });
   writing = new WritingService(workspaces, { profile: id => agent.getSkillProfile(id),
     append: (id, kind, data) => agent.appendMetadata(id, kind, data), entries: (id, kind) => agent.metadata(id, kind),
     active: async id => (await agent.getSession(id)).activity === 'generating' });
   skills = new SkillService(new FileSkillRepository(options.dataDir), {
     create: (request, profile) => agent.createSession(request, profile), list: () => agent.listSessions(),
     profile: id => agent.getSkillProfile(id), setSkills: (id, ids) => agent.setSkills(id, ids),
+    projectTools: async id => (await agent.getSession(id)).projectPath ? [...PROJECT_TOOLS, 'read_skill', ...(options.tools?.map(t => t.name) ?? [])] : undefined,
   }, id => workspaces.get(id), workspaceId => [...(options.tools?.map(t => t.name) ?? (workspaceId === undefined || workspaceId === null ? ['read_fixture'] : [])), 'read_skill', ...(workspaceId === null ? [] : WRITING_TOOLS)]);
   const app = Fastify({
     logger: options.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024,
@@ -50,6 +61,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }) 
     }
   });
   registerRoutes(app, agent);
+  registerSourceRoutes(app, sources);
   registerWorkspaceRoutes(app, workspaces);
   registerSkillRoutes(app, skills);
   registerWritingRoutes(app, agent, writing, workspaces);

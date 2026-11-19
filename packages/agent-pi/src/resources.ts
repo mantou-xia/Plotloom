@@ -36,9 +36,9 @@ export function createResources(prompt: string): ResourceLoader {
 }
 
 /** 直接使用 SDK 的压缩、有限重试和 abort，不另建执行循环。 */
-export function createSettings() {
+export function createSettings(autoCompaction = true) {
   return SettingsManager.inMemory({
-    compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+    compaction: { enabled: autoCompaction, reserveTokens: 16384, keepRecentTokens: 20000 },
     retry: { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
     cacheWarming: 'off',
   });

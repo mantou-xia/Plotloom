@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '@plotloom/agent-pi';
 import { THINKING_LEVELS, type CreateSessionRequest, type ModelSettings, type SubmitMessageRequest, type SessionConfigRequest } from '@plotloom/contracts';
 import { streamMessage } from '../streaming/sse.ts';
+import { sourceProperties } from './sources.ts';
 
 const modelProperties = { provider: { type: 'string', minLength: 1 }, model: { type: 'string', minLength: 1 }, thinkingLevel: { type: 'string', enum: THINKING_LEVELS } };
 const nameProperty = { type: 'string', minLength: 1, maxLength: 120, pattern: '\\S' };
@@ -14,17 +15,20 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
   app.get('/api/model-config', () => agent.modelConfig());
   app.put<{ Body: ModelSettings }>('/api/model-config', { schema: { body: selectionSchema } }, (request) => agent.setModelConfig(request.body));
   app.post<{ Body: CreateSessionRequest }>('/api/sessions', {
-    schema: { body: { type: 'object', additionalProperties: false, properties: { ...modelProperties, name: nameProperty },
+    schema: { body: { type: 'object', additionalProperties: false, properties: { ...modelProperties, name: nameProperty, projectPath: { type: 'string', minLength: 1, maxLength: 2000 } },
       dependencies: { provider: ['model'], model: ['provider'] } } },
   }, async (request, reply) => {
     return reply.code(201).send(await agent.createSession(request.body));
   });
   app.get('/api/sessions', async () => ({ sessions: await agent.listSessions() }));
   app.get<{ Params: { id: string } }>('/api/sessions/:id', { schema: { params: idSchema } }, (request) => agent.getSession(request.params.id));
+  app.post<{ Params: { id: string }; Body: { query: string } }>('/api/sessions/:id/project-files', {
+    schema: { params: idSchema, body: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', maxLength: 200 } } } },
+  }, (request) => agent.projectFiles(request.params.id, request.body.query));
   app.get<{ Params: { id: string } }>('/api/sessions/:id/config', { schema: { params: idSchema } }, (request) => agent.getSessionConfig(request.params.id));
   app.put<{ Params: { id: string }; Body: SessionConfigRequest }>('/api/sessions/:id/config', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, minProperties: 1,
-      properties: modelProperties, dependencies: { provider: ['model'], model: ['provider'] } } },
+      properties: { ...modelProperties, autoCompaction: { type: 'boolean' } }, dependencies: { provider: ['model'], model: ['provider'] } } },
   }, (request) => agent.setSessionConfig(request.params.id, request.body));
   app.put<{ Params: { id: string }; Body: { name: string } }>('/api/sessions/:id/name', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: nameProperty } } },
@@ -38,10 +42,14 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
   }, (request) => agent.compact(request.params.id, request.body.instructions));
   app.post<{ Params: { id: string } }>('/api/sessions/:id/compact/stop', { schema: { params: idSchema } }, (request) => agent.stopCompaction(request.params.id));
   app.post<{ Params: { id: string }; Body: SubmitMessageRequest }>('/api/sessions/:id/messages', {
-    schema: { params: idSchema, body: { type: 'object', additionalProperties: false, required: ['text'],
-      properties: { text: { type: 'string', minLength: 1, maxLength: 100000, pattern: '\\S' }, skillIds: { type: 'array', maxItems: 50, uniqueItems: true, items: { type: 'string', pattern: '^[a-zA-Z0-9-]{1,80}$' } } } } },
+    schema: { params: idSchema, body: { type: 'object', additionalProperties: false,
+      anyOf: [{ required: ['text'], properties: { text: { type: 'string', minLength: 1, pattern: '\\S' } } },
+        { required: ['attachmentIds'], properties: { attachmentIds: { type: 'array', minItems: 1 } } },
+        { required: ['references'], properties: { references: { type: 'array', minItems: 1 } } }],
+      properties: { text: { type: 'string', maxLength: 100000 }, ...sourceProperties, skillIds: { type: 'array', maxItems: 50, uniqueItems: true, items: { type: 'string', pattern: '^[a-zA-Z0-9-]{1,80}$' } } } } },
   }, async (request, reply) => {
-    const execute = await agent.prepareMessage(request.params.id, request.body.text, request.body.skillIds);
+    const execute = await agent.prepareMessage(request.params.id, request.body.text ?? '', request.body.skillIds, undefined,
+      { attachmentIds: request.body.attachmentIds, references: request.body.references });
     await streamMessage(request, reply, execute);
   });
   app.post<{ Params: { id: string } }>('/api/sessions/:id/stop', { schema: { params: idSchema } }, async (request) => {

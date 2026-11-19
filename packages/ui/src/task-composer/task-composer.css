@@ -1,0 +1,5 @@
+/* Shadow DOM 仍会继承宿主字体。恢复原站 16px / 1.5 基线，保持输入区行盒与菜单尺寸。 */
+.plotloom-task-composer {
+  font-size: 16px;
+  line-height: 1.5;
+}

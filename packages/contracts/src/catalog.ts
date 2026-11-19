@@ -1,6 +1,7 @@
 import { WORKSPACE_CATALOG } from './workspace-catalog.ts';
 import { SKILL_CATALOG } from './skill-catalog.ts';
 import { WRITING_CATALOG } from './writing-catalog.ts';
+import { SOURCE_CATALOG, SOURCE_REQUEST_FIELDS, ATTACHMENT_FIELDS, REFERENCE_FIELDS } from './source-catalog.ts';
 /** 公开接口目录：供测试台和契约覆盖检查共用，只登记 HTTP 知识，不导入后端实现。 */
 export interface FieldDoc {
   name: string;
@@ -11,7 +12,7 @@ export interface FieldDoc {
 }
 export interface EndpointDoc {
   id: string;
-  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing';
+  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'attachments';
   name: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
@@ -31,14 +32,16 @@ const id = field('id', 'string', true, '会话唯一标识。创建后自动填�
 const status = field('status', 'idle | running', true, 'idle 可写入；running 正在生成、改配置或压缩，此时写入返回 409。', 'idle');
 const thinking = field('thinkingLevel', 'off | minimal | low | medium | high | xhigh | max', true, '实际生效的思考档位；可选值以模型 thinkingLevels 为准，不保证有可见思考。', 'low');
 const optionalThinking = { ...thinking, required: false };
+const autoCompaction = field('autoCompaction', 'boolean', true, '当前会话是否启用 Pi 自动压缩，默认 true；关闭不影响手动压缩，重启和资源重建后保留。', 'true');
 const name = field('name', 'string', true, '会话名称，去除首尾空白后保存；请求为 1–120 字符且不能全空白。', '灯塔创作');
+const projectPath = field('projectPath', 'string', false, '可选的本机现存项目绝对目录。创建时规范化并固定，重启保留；项目工具直接执行，没有沙箱或审批。省略不开放项目工具。', 'D:/projects/example');
 const activity = field('activity', 'idle | generating | configuring | compacting', true, '当前正在执行的操作。', 'idle');
 const capabilities = [
   field('reasoning', 'boolean', true, '模型定义是否支持思考能力；不代表上游必然公开思考文本。', 'true'),
   field('thinkingLevels', 'array', true, 'SDK 对该模型允许的档位。', '["off","low","high"]'),
   field('contextWindow', 'number', true, '模型定义的上下文窗口，单位 token。', '128000'),
   field('maxTokens', 'number', true, '模型定义的单次最大输出 token。', '16384'),
-  field('input', 'array', true, '模型声明的输入类型；消息接口目前只接收文本。', '["text"]'),
+  field('input', 'array', true, '模型声明的输入类型；包含 image 才可发送图片附件。', '["text"]'),
 ];
 const capabilityExample = { reasoning: true, thinkingLevels: ['off', 'low', 'high'], contextWindow: 128000, maxTokens: 16384, input: ['text'] };
 const usageFields = [field('usage', 'object', false, '已保存的已知用量合计；缺失或零值不表示免费，不是账单。', '{}'),
@@ -49,13 +52,14 @@ const modelConfig = [
   field('configured', 'boolean', true, '是否存在模型及凭据；不代表已经验证供应商连通性。', 'true'),
   thinking,
 ];
-const summary = [id, provider, model, status, activity, name, thinking];
+const summary = [id, provider, model, status, activity, name, thinking, projectPath];
 const configExample = { provider: 'krill-ai-codex', model: 'gpt-5.6-sol', configured: true, thinkingLevel: 'off' };
 const sessionExample = { id: '019-example-session', provider: 'krill-ai-codex', model: 'gpt-5.6-sol', status: 'idle', activity: 'idle', name: '灯塔创作', thinkingLevel: 'off' };
-const sessionConfig = [id, provider, model, thinking, field('capabilities', 'object', true, '当前模型能力。', '{}'), ...capabilities.map((item) => ({ ...item, name: `capabilities.${item.name}` }))];
-const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', capabilities: capabilityExample };
+const sessionConfig = [id, provider, model, thinking, autoCompaction, field('capabilities', 'object', true, '当前模型能力。', '{}'), ...capabilities.map((item) => ({ ...item, name: `capabilities.${item.name}` }))];
+const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', autoCompaction: true, capabilities: capabilityExample };
 
 export const API_MODULES = [
+  { id: 'attachments', name: '聊天附件', description: '上传、读取及移除当前会话资料', number: '12' },
   { id: 'writing', name: '内容创作', description: '大纲留档、上下文、创作与来源', number: '11' },
   { id: 'skills', name: '技能库', description: '内置、自定义与完整目录导入', number: '08' },
   { id: 'skill-settings', name: '技能启用', description: '工作区默认、聊天覆盖和依赖诊断', number: '09' },
@@ -70,6 +74,7 @@ export const API_MODULES = [
 ] as const;
 
 export const API_CATALOG: readonly EndpointDoc[] = [
+  ...SOURCE_CATALOG,
   ...WRITING_CATALOG,
   ...SKILL_CATALOG,
   ...WORKSPACE_CATALOG,
@@ -102,10 +107,21 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   {
     id: 'sessions.create', module: 'sessions', name: '创建会话', method: 'POST', path: '/api/sessions', success: 201,
     description: '创建一个独立的 Agent 会话，用来开始对话、调用工具与保存生成结果。',
-    note: '空会话也会立即保存。使用默认模型发送 {}；指定模型时，provider 与 model 必须同时提供。',
-    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }], response: summary,
-    examples: [{ name: '使用默认模型', body: {} }, { name: '指定模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
+    note: '空会话立即保存。provider/model 必须同时提供。projectPath 必须是已存在且可访问的绝对目录，否则 422 PROJECT_PATH_INVALID；不自动创建目录。项目聊天启用 Pi 原生 read/grep/find/ls/edit/write 及平台终端（Windows powershell，其他平台 bash）。目录固定，切换需新建聊天。',
+    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, projectPath], response: summary,
+    examples: [{ name: '使用默认模型', body: {} }, { name: '项目聊天', body: { name: '项目任务', projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
     responseExample: sessionExample,
+  },
+  {
+    id: 'sessions.project-files', module: 'sessions', name: '搜索项目文件', method: 'POST', path: '/api/sessions/:id/project-files', success: 200,
+    description: '按相对路径关键词搜索当前项目，为聊天 @ 引用提供文件和目录候选。',
+    note: 'query 可为空，大小写不敏感，返回最多 40 项、扫描最多 5000 项；跳过依赖/构建/版本目录及符号链接。truncated 表示达到限额，可细化关键词。没有项目 409 PROJECT_NOT_SELECTED；未知会话 404 SESSION_NOT_FOUND；项目不可用 422 PROJECT_PATH_INVALID；请求非法 400 INVALID_REQUEST。返回相对路径，不读取内容；引用由 Agent 工具实际读取，不是版本快照。',
+    request: [id, field('query', 'string', true, '路径关键词，最多 200 字符，空字符串列出候选。', 'README')],
+    response: [field('entries', 'array', true, '匹配的文件和目录。', '[]'), field('entries[].path', 'string', true, '项目相对路径。', 'README.md'),
+      field('entries[].name', 'string', true, '文件或目录名。', 'README.md'), field('entries[].isDirectory', 'boolean', true, '是否目录。', 'false'),
+      field('truncated', 'boolean', true, '是否达到扫描或结果限额。', 'false')],
+    examples: [{ name: '搜索文件', body: { query: 'README' } }, { name: '列出候选', body: { query: '' } }],
+    responseExample: { entries: [{ path: 'README.md', name: 'README.md', isDirectory: false }], truncated: false },
   },
   {
     id: 'sessions.list', module: 'sessions', name: '获取会话列表', method: 'GET', path: '/api/sessions', success: 200,
@@ -132,20 +148,26 @@ export const API_CATALOG: readonly EndpointDoc[] = [
       field('messages[].content[].text', 'string', false, '正文、思考文本或工具结果说明；不含思考签名或加密数据。工具块可能省略。', '灯塔-731'),
       field('messages[].content[].callId', 'string', false, '工具块的调用 ID，用于关联工具执行。', 'read-1'),
       field('messages[].content[].name', 'string', false, '工具名称，仅工具块具有此字段。', 'read_fixture'),
-      field('messages[].content[].status', 'running | completed | failed', false, '工具执行状态，仅工具块具有此字段。', 'completed')],
+      field('messages[].content[].status', 'running | completed | failed', false, '工具执行状态，仅工具块具有此字段。', 'completed'),
+      field('messages[].attachments', 'array', false, '本轮用户实际发送的附件元信息；读取附件内容接口可预览，历史保留原始用户文字。', '[]'),
+      ...ATTACHMENT_FIELDS.map(item => ({ ...item, name: `messages[].attachments[].${item.name}`, required: false })),
+      field('messages[].references', 'array', false, '本轮文档引用和实际内容快照，原稿后续变化不改变历史。', '[]'),
+      ...REFERENCE_FIELDS.map(item => ({ ...item, name: `messages[].references[].${item.name}`, required: false })),
+      field('messages[].references[].content', 'string', false, '实际传入模型的指定版本全文或选区原文。', '林舟')],
     responseExample: { ...sessionExample, messages: [{ id: 'e2ab17', role: 'assistant', content: [{ type: 'text', text: '灯塔-731。A：检查台阶；B：修复电源。' }], outcome: 'completed' }] },
   },
   {
     id: 'sessions.get-config', module: 'sessions', name: '读取会话配置', method: 'GET', path: '/api/sessions/:id/config', success: 200,
-    description: '读取会话自己的模型、思考档位及模型能力。', note: '不会修改全局默认值；没有凭据仍可读取已注册模型的信息。',
+    description: '读取会话自己的模型、思考档位、自动压缩开关及模型能力。', note: '不会修改全局默认值；没有凭据仍可读取已注册模型的信息。autoCompaction 与上下文查询一致。',
     request: [id], response: sessionConfig, examples: [], responseExample: sessionConfigExample,
   },
   {
     id: 'sessions.set-config', module: 'sessions', name: '修改会话配置', method: 'PUT', path: '/api/sessions/:id/config', success: 200,
-    description: '在已有会话中切换模型或思考强度，保留历史并保存到当前会话。',
-    note: '至少传一个配置项；provider/model 必须成对。显式不支持档位返回 422；只换模型会按能力调整原档位。忙时返回 409。',
-    request: [id, { ...provider, required: false }, { ...model, required: false }, optionalThinking], response: sessionConfig,
-    examples: [{ name: '调整思考档位', body: { thinkingLevel: 'low' } }, { name: '切换模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }], responseExample: sessionConfigExample,
+    description: '修改当前会话的模型、思考强度或自动压缩开关，保留历史并持久保存。',
+    note: '至少传一个配置项，未传项保持不变；provider/model 必须成对。autoCompaction 仅接受布尔值，单独修改不要求模型凭据，也不立即触发压缩。非法参数返回 400 INVALID_REQUEST；会话不存在返回 404 SESSION_NOT_FOUND；忙时返回 409 SESSION_BUSY，请等待或停止后重试。模型/档位错误返回 422，混合请求不会先修改开关。关闭仅禁用自动压缩，手动压缩仍可用。',
+    request: [id, { ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...autoCompaction, required: false }], response: sessionConfig,
+    examples: [{ name: '调整思考档位', body: { thinkingLevel: 'low' } }, { name: '切换模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } },
+      { name: '关闭自动压缩', body: { autoCompaction: false } }, { name: '开启自动压缩', body: { autoCompaction: true } }], responseExample: sessionConfigExample,
   },
   {
     id: 'sessions.rename', module: 'sessions', name: '修改会话名称', method: 'PUT', path: '/api/sessions/:id/name', success: 200,
@@ -154,7 +176,7 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   },
   {
     id: 'sessions.tools', module: 'sessions', name: '读取会话工具', method: 'GET', path: '/api/sessions/:id/tools', success: 200,
-    description: '查询注册工具、参数结构与当前启用情况。', note: '仅查询，不提供动态启停；parameters 是公开 JSON Schema。',
+    description: '查询注册工具、参数结构与当前启用情况。', note: '仅查询，不提供动态启停；parameters 是公开 JSON Schema。项目会话包含原生文件工具及平台终端，普通无项目会话不因此获得这些能力。项目工具直接执行，cwd 不是访问沙箱。',
     request: [id], examples: [], response: [id, field('tools', 'array', true, '会话注册工具。', '[]'),
       field('tools[].name', 'string', true, '调用工具的标识。', 'read_fixture'), field('tools[].description', 'string', true, '工具职责和使用说明。', '读取测试资料'),
       field('tools[].parameters', 'object', true, '工具参数 JSON Schema。', '{"type":"object"}'), field('tools[].active', 'boolean', true, '当前是否启用。', 'true')],
@@ -165,7 +187,7 @@ export const API_CATALOG: readonly EndpointDoc[] = [
     description: '查看上下文 token 估算、窗口大小、占用比例及自动压缩开关。', note: '这是 SDK 估算；tokens/percent 为 null 时表示未知，不表示没有占用。',
     request: [id], examples: [], response: [id, status, activity,
       field('tokens', 'number | null', true, '当前上下文 token 估算。', '1200'), field('contextWindow', 'number', true, '模型上下文窗口。', '128000'),
-      field('percent', 'number | null', true, '占用百分比，非 0–1 比例。', '0.9375'), field('autoCompaction', 'boolean', true, '是否已启用 SDK 自动压缩。', 'true')],
+      field('percent', 'number | null', true, '占用百分比，非 0–1 比例。', '0.9375'), autoCompaction],
     responseExample: { id: sessionExample.id, status: 'idle', activity: 'idle', tokens: 1200, contextWindow: 128000, percent: 0.9375, autoCompaction: true },
   },
   {
@@ -195,13 +217,15 @@ export const API_CATALOG: readonly EndpointDoc[] = [
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
     description: '向指定会话提交一条消息，并实时接收文本、工具调用和最终状态。',
     note: '同一会话一次只处理一条请求。小说聊天自动获得当前书籍读取、搜索、审校与候选工具，生成记录可从 writing 查询；普通聊天没有小说工具。新章节及精确选区请用内容创作接口。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
-    request: [id, field('text', 'string', true, '非空白文本，最多 100000 字符；请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]')],
+    request: [id, field('text', 'string', false, '最多 100000 字符；文字、附件或文档引用至少有一项有效内容，纯附件/引用可省略。请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]'), ...SOURCE_REQUEST_FIELDS],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
     examples: [
       { name: '读取资料与候选', body: { text: '请调用 read_fixture 读取 scene，写出核对标记并给出 A、B 两个行动候选，然后等待我选择。' } },
       { name: '继续上一轮', body: { text: '我选择 A。复述核对标记，再继续约 100 字，不重新调用工具。' } },
       { name: '测试长文本与停止', body: { text: '请直接写一段约 2000 字的灯塔暴雨描写，不调用工具。' } },
       { name: '显式使用已启用技能', body: { text: '请按所选技能处理这段对白。', skillIds: ['替换为已启用技能ID'] } },
+      { name: '发送当前聊天附件', body: { text: '请根据附件整理线索。', attachmentIds: ['替换为附件ID'] } },
+      { name: '引用工作区文档', body: { text: '请核对这份资料。', references: [{ workspaceId: '替换为工作区ID', path: '角色/林舟.md', version: 'a'.repeat(64) }] } },
     ],
     responseExample: { event: 'text_delta', data: { sessionId: '019-example-session', delta: '灯塔-731。' } },
   },
@@ -228,6 +252,12 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
 ];
 
 export const API_ERRORS = [
+  { status: '404', code: 'ATTACHMENT_NOT_FOUND / REFERENCE_NOT_FOUND', description: '附件不属于当前会话或指定文档版本不存在；重新查询附件或文档历史。' },
+  { status: '403', code: 'REFERENCE_FORBIDDEN', description: '小说聊天不能引用其他工作区资料；普通聊天可显式引用已登记工作区。' },
+  { status: '409', code: 'ATTACHMENT_IN_USE', description: '已发送附件必须保留以供历史读取，不能删除；可在下一轮不选用。' },
+  { status: '422', code: 'ATTACHMENT_TYPE_UNSUPPORTED / ATTACHMENT_TOO_LARGE / ATTACHMENT_IMAGE_INVALID', description: '文件类型、大小或图片内容无效；检查允许类型及限额后重新上传。' },
+  { status: '422', code: 'MODEL_IMAGE_UNSUPPORTED / MESSAGE_SOURCES_TOO_LARGE / MESSAGE_SOURCES_UNAVAILABLE', description: '模型不支持图片、引用超预算或宿主未配置资料能力；请求在 SSE 开始前拒绝，不写用户消息。' },
+  { status: '500', code: 'ATTACHMENT_INVALID', description: '附件记录损坏或归属元数据不一致，请检查本机备份。' },
   { status: '422', code: 'NOVEL_SESSION_REQUIRED / WRITING_SOURCE_MISSING / WRITING_CONTEXT_TOO_LARGE', description: '创作需要小说聊天、存在的正式资料和预算内上下文。' },
   { status: '工具失败', code: 'WRITING_REVIEW_REQUIRED / WRITING_NEEDS_INPUT / WRITING_TARGET_MISMATCH / WRITING_OUTPUT_TOO_LARGE', description: '审校未完成、待确认冲突、目标不符或超预算时不生成候选；结果通过工具消息与创作查询查看。' },
   { status: '404', code: 'SKILL_NOT_FOUND / SKILL_FILE_NOT_FOUND', description: '技能或资源不存在；重新查询技能列表和资源路径。' },

@@ -7,6 +7,7 @@
     "./catalog": "./src/catalog.ts",
     "./workspaces": "./src/workspaces.ts",
     "./skills": "./src/skills.ts",
-    "./writing": "./src/writing.ts"
+    "./writing": "./src/writing.ts",
+    "./sources": "./src/sources.ts"
   }
 }

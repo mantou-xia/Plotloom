@@ -14,8 +14,11 @@ import { AgentError, modelFailure } from './errors.ts';
 import { readMessages, TURN_START, TURN_END, turnUsage } from './messages.ts';
 import { createFixtureTool, createResources, createSettings, SYSTEM_PROMPT } from './resources.ts';
 import type { SessionSkillProfile } from '@plotloom/contracts/skills';
+import type { MessageSources, MessageSourceSnapshot } from '@plotloom/contracts/sources';
 import { createSkillTool, skillPrompt, type SkillSnapshot } from './skills.ts';
 import { adaptBusinessTool, type RequestResources } from './request-resources.ts';
+import { findProjectFiles, validateProjectPath, PROJECT_PROMPT, PROJECT_TOOLS } from './project.ts';
+export { PROJECT_TOOLS } from './project.ts';
 export type { RequestResources, BusinessTool } from './request-resources.ts';
 export { AgentError, publicError } from './errors.ts';
 
@@ -27,7 +30,8 @@ export interface AgentOptions {
   systemPrompt?: string;
   tools?: ToolDefinition[];
   resolveSkills?: (sessionId: string, explicit: string[]) => Promise<SkillSnapshot[]>;
-  resolveResources?: (sessionId: string, text: string) => Promise<RequestResources | undefined>;
+  resolveResources?: (sessionId: string, text: string, sources?: MessageSources) => Promise<RequestResources | undefined>;
+  resolveSources?: (sessionId: string, text: string, sources: MessageSources) => Promise<MessageSourceSnapshot & { prompt: string; images: Array<{ mimeType: string; data: string }> }>;
 }
 interface RecordState {
   manager: SessionManager;
@@ -140,11 +144,13 @@ export class AgentService {
     const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : this.selection;
     const model = await this.requireModel(selection);
     const thinkingLevel = this.thinking(model, request.thinkingLevel, this.selection?.thinkingLevel);
-    const manager = SessionManager.create(this.cwd, this.sessionDir);
+    const projectPath = request.projectPath === undefined ? undefined : await validateProjectPath(request.projectPath);
+    const manager = SessionManager.create(projectPath ?? this.cwd, this.sessionDir);
     manager.appendModelChange(selection!.provider, selection!.model);
     manager.appendThinkingLevelChange(thinkingLevel);
     manager.appendSessionInfo(request.name?.trim() ?? 'Plotloom');
     if (profile) manager.appendCustomEntry('plotloom-session-skills', profile);
+    if (projectPath) manager.appendCustomEntry('plotloom-project', { path: projectPath });
     const path = manager.getSessionFile()!;
     await writeFile(path, [manager.getHeader(), ...manager.getEntries()].map((entry) => JSON.stringify(entry)).join('\n') + '\n', { encoding: 'utf8', flag: 'wx' });
     const record: RecordState = { manager: SessionManager.open(path, this.sessionDir), selection: selection!, stopRequested: false };
@@ -155,7 +161,20 @@ export class AgentService {
   private summary(record: RecordState): SessionSummary {
     return { id: record.manager.getSessionId(), ...record.selection, status: record.job ? 'running' : 'idle',
       activity: record.activity ?? 'idle', name: record.manager.getSessionName() ?? 'Plotloom',
-      thinkingLevel: (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel };
+      thinkingLevel: (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel,
+      ...(this.projectPath(record) ? { projectPath: this.projectPath(record) } : {}) };
+  }
+
+  /** 只有明确创建为项目会话才启用原生工具；不凭旧会话头的默认 cwd 扩大权限。 */
+  private projectPath(record: RecordState): string | undefined {
+    const entry = record.manager.getEntries().find(e => e.type === 'custom' && e.customType === 'plotloom-project');
+    return entry?.type === 'custom' ? (entry.data as { path: string }).path : undefined;
+  }
+
+  async projectFiles(id: string, query: string) {
+    const root = this.projectPath(await this.getRecord(id));
+    if (!root) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目目录，请新建项目聊天。');
+    return findProjectFiles(root, query);
   }
 
   /** 在任何异步工作前占用会话，消息、配置和压缩共用同一互斥边界，结束时统一释放。 */
@@ -169,11 +188,17 @@ export class AgentService {
     return () => { record.job = undefined; record.activity = undefined; finished.resolve(); };
   }
 
+  /** 宿主删除附件时复用同一会话锁，保证附件使用检查、删除与消息准备不会交错。 */
+  async withIdleSession<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const release = this.reserve(await this.getRecord(id), 'configuring');
+    try { return await operation(); } finally { release(); }
+  }
+
   /** ID 只能从服务管理的目录解析；客户端永远不能把路径交给 SessionManager.open。 */
   private async getRecord(id: string): Promise<RecordState> {
     const cached = this.records.get(id);
     if (cached) return cached;
-    const listed = await SessionManager.list(this.cwd, this.sessionDir);
+    const listed = await SessionManager.listAll(this.sessionDir);
     const file = listed.find((item) => item.id === id);
     if (!file) throw new AgentError(404, 'SESSION_NOT_FOUND', '会话不存在。');
     // 多个查询可能同时等待磁盘列表；只允许缓存一个权威实例。
@@ -188,7 +213,7 @@ export class AgentService {
   }
 
   async listSessions(): Promise<SessionListItem[]> {
-    const files = await SessionManager.list(this.cwd, this.sessionDir);
+    const files = await SessionManager.listAll(this.sessionDir);
     return Promise.all(files.map(async (file) => ({ ...this.summary(await this.getRecord(file.id)), updatedAt: file.modified.toISOString() })));
   }
 
@@ -214,7 +239,14 @@ export class AgentService {
   async getSessionConfig(id: string): Promise<SessionConfig> {
     const record = await this.getRecord(id);
     return { id, ...record.selection, thinkingLevel: this.summary(record).thinkingLevel,
+      autoCompaction: this.autoCompaction(record),
       capabilities: this.capabilities(this.registeredModel(record.selection)) };
+  }
+
+  /** 会话元数据是开关的持久化来源；未设置的会话沿用默认开启，不写入模型上下文。 */
+  private autoCompaction(record: RecordState): boolean {
+    const entry = record.manager.getEntries().findLast(e => e.type === 'custom' && e.customType === 'plotloom-auto-compaction');
+    return entry?.type === 'custom' ? (entry.data as { enabled: boolean }).enabled : true;
   }
 
   /** 业务状态复用 SDK 元数据；仅供后端装配调用，不暴露任意元数据写入 HTTP 接口。 */
@@ -225,20 +257,27 @@ export class AgentService {
     return (await this.getRecord(id)).manager.getEntries().flatMap(e => e.type === 'custom' && e.customType === kind ? [e.data] : []);
   }
 
-  /** SDK 负责历史中的模型与思考条目；只影响当前会话，不改全局默认或复制消息。 */
+  /** 配置共用忙碌锁；只调自动压缩无需模型凭据，混合请求先校验模型以免部分生效。 */
   async setSessionConfig(id: string, request: SessionConfigRequest): Promise<SessionConfig> {
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'configuring');
     try {
-      const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : record.selection;
-      const model = await this.requireModel(selection);
-      const thinking = this.thinking(model, request.thinkingLevel, this.summary(record).thinkingLevel);
-      const session = await this.open(record);
-      if (selection.provider !== record.selection.provider || selection.model !== record.selection.model) {
-        await session.setModel(model);
-        record.selection = selection;
+      if (request.provider !== undefined || request.model !== undefined || request.thinkingLevel !== undefined) {
+        const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : record.selection;
+        const model = await this.requireModel(selection);
+        const thinking = this.thinking(model, request.thinkingLevel, this.summary(record).thinkingLevel);
+        const session = await this.open(record);
+        if (selection.provider !== record.selection.provider || selection.model !== record.selection.model) {
+          await session.setModel(model);
+          record.selection = selection;
+        }
+        session.setThinkingLevel(thinking);
       }
-      session.setThinkingLevel(thinking);
+      if (request.autoCompaction !== undefined) {
+        const session = await this.open(record);
+        record.manager.appendCustomEntry('plotloom-auto-compaction', { enabled: request.autoCompaction });
+        session.setAutoCompactionEnabled(request.autoCompaction);
+      }
       return await this.getSessionConfig(id);
     } finally { release(); }
   }
@@ -321,14 +360,16 @@ export class AgentService {
     if (!record.opening) record.opening = (async () => {
       // 查询上下文、统计和工具不发模型请求，因此不要求凭据；生成和压缩另行验证。
       const model = this.registeredModel(record.selection);
-      // 宿主业务资源接管默认演示提示与工具；普通会话仍保留 P1 的资料演示能力。
-      const customTools = [...(this.options.tools ?? (record.resources ? [] : [createFixtureTool()])), ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(adaptBusinessTool) ?? [])];
-      const prompt = record.resources ? (this.options.systemPrompt ?? '') + record.resources.systemPrompt : this.options.systemPrompt ?? SYSTEM_PROMPT;
+      const projectPath = this.projectPath(record);
+      if (projectPath) await validateProjectPath(projectPath);
+      // 小说资源与普通演示保持各自入口；明确选择项目的会话使用原生工具和项目提示。
+      const customTools = [...(this.options.tools ?? (record.resources || projectPath ? [] : [createFixtureTool()])), ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(adaptBusinessTool) ?? [])];
+      const prompt = record.resources ? (this.options.systemPrompt ?? '') + record.resources.systemPrompt : projectPath ? PROJECT_PROMPT : this.options.systemPrompt ?? SYSTEM_PROMPT;
       const { session } = await createAgentSession({
-        cwd: this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: this.runtime, model,
+        cwd: projectPath ?? this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: this.runtime, model,
         thinkingLevel: this.summary(record).thinkingLevel, sessionManager: record.manager,
-        settingsManager: createSettings(), resourceLoader: createResources(prompt + skillPrompt(record.skills ?? [])),
-        customTools, tools: customTools.map((tool) => tool.name),
+        settingsManager: createSettings(this.autoCompaction(record)), resourceLoader: createResources(prompt + skillPrompt(record.skills ?? [])),
+        customTools, tools: [...(projectPath ? PROJECT_TOOLS : []), ...customTools.map((tool) => tool.name)],
       });
       record.session = session;
       return session;
@@ -337,16 +378,22 @@ export class AgentService {
   }
 
   /** 先验证、再原子占用会话，忙时不排队；返回执行入口供 HTTP 在写 SSE 头后启动。 */
-  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], resourcesFactory?: () => Promise<RequestResources>): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
+  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], resourcesFactory?: () => Promise<RequestResources>, sources?: MessageSources): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
     if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'generating');
     let session: AgentSession;
     let resources: RequestResources | undefined;
+    let input: Awaited<ReturnType<NonNullable<AgentOptions['resolveSources']>>> | undefined;
     try {
-      await this.requireModel(record.selection);
+      const model = await this.requireModel(record.selection);
+      if (sources?.attachmentIds?.length || sources?.references?.length) {
+        if (!this.options.resolveSources) throw new AgentError(422, 'MESSAGE_SOURCES_UNAVAILABLE', '当前服务未配置附件与引用能力。');
+        input = await this.options.resolveSources(id, text, sources);
+        if (input.images.length && !model.input.includes('image')) throw new AgentError(422, 'MODEL_IMAGE_UNSUPPORTED', '当前模型不支持图片，请切换支持图片输入的模型。');
+      }
       // 占用会话后才编译业务上下文，避免两个创作请求并发建立相互覆盖的资源。
-      resources = resourcesFactory ? await resourcesFactory() : await this.options.resolveResources?.(id, text);
+      resources = resourcesFactory ? await resourcesFactory() : await this.options.resolveResources?.(id, text.trim() || '请查看随消息提供的资料。', sources);
       const skills = await this.options.resolveSkills?.(id, explicitSkills) ?? [];
       const key = JSON.stringify([resources?.key, skills.map(s => [s.id, s.version, s.autoLoad])]);
       if (record.resourceKey !== key) {
@@ -357,7 +404,8 @@ export class AgentService {
       }
       session = await this.open(record);
       await resources?.start?.();
-      record.activeTurn = record.manager.appendCustomEntry(TURN_START);
+      // 元数据保存用户原文与来源；Pi 消息保存实际上下文，公开历史不泄漏内部拼接格式。
+      record.activeTurn = record.manager.appendCustomEntry(TURN_START, input ? { input: { text, attachments: input.attachments, references: input.references } } : undefined);
     } catch (error) { release(); throw error; }
     const startIndex = record.manager.getEntryCount();
     return async (emit) => {
@@ -388,7 +436,7 @@ export class AgentService {
         if (record.stopRequested && event.type === 'message_start' && event.message.role === 'user') void session.abort();
       });
       try {
-        await session.prompt(text);
+        await session.prompt(input?.prompt ?? text, input ? { images: input.images.map(image => ({ type: 'image', ...image })) } : undefined);
         const last = record.manager.getEntries().slice(startIndex).findLast((entry) => entry.type === 'message' && entry.message.role === 'assistant');
         outcome = aborted || (last?.type === 'message' && last.message.role === 'assistant' && last.message.stopReason === 'aborted') ? 'aborted'
           : last?.type === 'message' && last.message.role === 'assistant' && ['stop', 'length'].includes(last.message.stopReason) ? 'completed' : 'failed';

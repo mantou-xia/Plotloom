@@ -1,0 +1,29 @@
+{
+  "source": "https://leibox.pantoria.cn/ai/packages/deep-agent-composer/react.json",
+  "documentation": "https://leibox.pantoria.cn/docs/animations/deep-agent-composer",
+  "retrieved": "2026-11-19",
+  "attribution": {
+    "kind": "project-source",
+    "provider": "LeiBox",
+    "implementation": "LeiBox component package",
+    "designReference": null,
+    "designAuthor": null,
+    "license": "Retain source notices and design-reference attribution; no blanket license is assigned by the catalog."
+  },
+  "sha256": {
+    "DeepAgentComposer.tsx": "a5de9e70cef92c417d8b68456d474505501498525bc1efddd114228489714f0d",
+    "DeepAgentComposerEngine.js": "140d27496414fbcb700c9df36cbdc8b4110c43349dfe22edfc77f9ecfb15618f",
+    "motion-runtime.ts": "6b1d4acd6566f263719961fd8c32e201db0d9f40a5b6aa57b7dcdddbb55a79bc",
+    "DeepAgentComposerEngine.d.ts": "95372ea1f3e946454d07810065b8ea4fa833dcbf025946fb88c74a28718c6c04"
+  },
+  "localChanges": {
+    "DeepAgentComposerEngine.js": {
+      "description": "保留原版布局与动效及 MorphingPopover；补充宿主异步配置、真实附件与技能/文件数据、接收后清空、动态档位、未知用量和能力隐藏。推理档位按实际数量单行均分。 按用户要求移除外层 padding 与实色背景，输入框表面使用 88% 不透明度。 增加 modelNames，收起按钮只显示模型名，菜单保留完整标签。",
+      "sha256": "7a38c2d5ca6754d380cf2a47ecdf4eb6a16d7fc658299ae6e0c17330cd5ea463"
+    },
+    "DeepAgentComposerEngine.d.ts": {
+      "description": "补充宿主数据及异步回调契约，不依赖业务协议。 增加 modelNames，收起按钮只显示模型名，菜单保留完整标签。",
+      "sha256": "d3a2e48264411f2774dbf76dcbebe46c17d0a4caf271ef2b43843c0460d83241"
+    }
+  }
+}

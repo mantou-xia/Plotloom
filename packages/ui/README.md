@@ -1,8 +1,133 @@
 # 通用组件库
 
+## Tooltip 提示气泡
+
+从 `@plotloom/ui/tooltip` 导入 `Tooltip`：
+
+```tsx
+<Tooltip content="保存当前内容"><Button onClick={save}>保存</Button></Tooltip>
+```
+
+`content` 为纯文字；`children` 为单个可聚焦元素，自定义组件须透传 ref、事件及 ARIA 属性。
+`delay` 为悬停延迟毫秒数（默认 0），`disabled` 仅禁用提示。空白内容不显示。
+`className`、`style` 作用于气泡。气泡默认上方显示，通过 Portal 避免滚动容器裁剪，空间不足自动避让。
+支持悬停、键盘聚焦、移入气泡保持阅读及 Esc 关闭；减少动态效果偏好下关闭动画。
+深色圆角、箭头、缩放与摇摆参考 Uiverse 的 gharsh11032000 / spotty-zebra-83；不包含参考按钮的文字切换。
+`shake` 控制出现时是否晃动，默认 `true`；设置 `shake={false}` 关闭晃动，仍保留缩放和淡入淡出。系统减少动态效果偏好优先于此参数。
+调试台「反馈组件 → Tooltip」可检查短文字、长文字、禁用、延迟及晃动开关。
+
 这里只维护通用框架标准、基础控件及实际多处复用的卡片/功能组件。具体页面、品牌导航、一次性业务展示及保存反馈在应用内就近组合，不作为库组件登记；不提前创建没有调用方的抽象。
 
-当前公开组件：Button、ScrollBox、Sidebar 及七个独立侧栏组件、AsciiOcean、ColorPicker、ColorSwatches、GlobalLayout、PageLayout、ThemeRoot。组件通过 props 接收内容、尺寸及操作，不依赖应用状态或后端实现。
+当前公开组件：Button、Card、ToastViewport、TaskComposer、MorphingPopover、ScrollBox、Sidebar 及七个独立侧栏组件、AsciiOcean、ColorPicker、ColorSwatches、GlobalLayout、PageLayout、ThemeRoot。组件通过 props 接收内容、尺寸及操作，不依赖应用状态或后端实现。
+
+## Toast 操作提示
+
+在应用 ThemeRoot 下挂载一个 `ToastViewport`（来自 `@plotloom/ui/toast`），工具函数从 `@plotloom/ui/toast/utils` 导入。
+
+- `toast.success/error/info/loading(message, { id?, duration? })` 返回消息 id；相同类型和内容自动合并并计数，传相同 id 则原位更新。duration 单位毫秒，0 不自动关闭；成功/信息默认 3500，错误 6000，处理中 0。
+- `toast.promise(() => Promise, { loading, success, error? })` 在同一条提示上更新结果；success 可根据返回值生成文案，error 可根据错误生成文案。返回原结果，失败继续抛出；AbortError 静默撤销。调用方须处理拒绝。
+- `toast.dismiss(id)` 带退出动画关闭；`toast.clear()` 立即清空。已关闭的异步操作完成时不重新弹出。
+- 右上角最多显示 3 条，其他先进先出排队；退出结束后补位，排队不计时。悬停或键盘聚焦暂停计时；内容更新重新计时。进入、退出及队列补位使用 180ms 动效，尊重减少动态效果偏好。
+- `createToastStore()` 创建独立实例，传给 `<ToastViewport store={store} />`；适用于调试台隔离。一个实例仅挂载一个视口。
+- 原生模态弹窗打开时视口自动挂载到弹窗内，避免被顶层遮挡；弹窗关闭恢复全局显示，切换挂载位置时可见提示重新计时。
+- 普通导航、后台请求成功不提示；页面加载、空态及聊天生成状态保留。业务请求在操作层包裹，不能在 Button 和 HTTP 层再次弹出重复提示。当前产品通过 `apps/web/src/utils/feedback.ts` 的 `runWithToast` 返回 `{ ok, value? }`，避免按钮产生未处理拒绝；后台失败使用 `notifyRequestError`。
+- Toast 按具体功能选择接入，不覆盖所有按钮。创建对话、发送消息、生成完成及停止生成不弹处理中或成功提示，只在失败时使用 `notifyRequestError`；新建业务对象、删除、保存等功能操作可使用完整操作提示。
+
+```tsx
+import { ToastViewport } from '@plotloom/ui/toast';
+import { toast } from '@plotloom/ui/toast/utils';
+
+<ToastViewport />
+toast.success('保存成功');
+// 有业务恢复逻辑时，捕获 promise 拒绝；请求本身不弹提示。
+await toast.promise(() => save(), { loading: '正在保存…', success: '保存成功' });
+```
+
+调试台「反馈组件 → ToastViewport」可编辑内容、类型、时长，验证并发、重复消息与异步成功/失败。
+
+## Card 通用卡片
+
+从 `@plotloom/ui/card` 导入 `Card`，通过 `children` 组合内容。
+
+- `material`：`normal`（默认）或 `liquid-glass`；后者折射卡片背后的真实页面内容，内部文字和控件保持清晰。
+- `borderRadius`：默认 8px，与基础控件圆角一致；支持数字（px）或 CSS 长度。
+- `padding`：默认 12px，支持数字（px）或 CSS 简写。
+- `backgroundColor`：默认 `#ffffff`，支持 CSS 颜色值；普通材质直接填充，液态玻璃取 10% 作为染色。
+- `bordered`：默认 `false`；开启后使用 1px 中性灰实线，无阴影。
+
+支持原生 div 属性、`ref`、`className`、`style`；公开外观参数优先于 style 中对应样式。调用方用背景差异和间距区分嵌套层级，不在带完整边框的父容器下直接放置带边框的 Card，也不为带边框的 Card 添加完整边框子项、阴影或 outline。
+
+```tsx
+import { Card } from '@plotloom/ui/card';
+
+<Card>默认卡片内容</Card>
+<Card borderRadius={16} padding={20} backgroundColor="#f8fafc" bordered>自定义卡片内容</Card>
+<Card material="liquid-glass" borderRadius={32} padding={24}>液态玻璃卡片内容</Card>
+```
+
+液态玻璃使用 `backdrop-filter` 与按尺寸生成的 SVG 位移图，只生成光学贴图，不截图、不复制页面内容、不要求背景图片。Chrome / Edge 等 Chromium 引擎启用折射；Firefox / Safari 等其他引擎采用透明模糊玻璃。背景必须在卡片后方可见；纯色背景无法显现折射，祖先的 opacity、filter、mask 或 backdrop-filter 可能限制浏览器可采样的背景范围。四角一致的圆形圆角效果最佳，复杂椭圆/不同角简写的折射模型按左上角近似。
+
+尺寸改变时更新位移图；滚动和背景内容更新无需重建。切回普通材质或卸载时清理观察器和动画帧。系统开启减少透明度或强制颜色时关闭透明滤镜，恢复实色。模型来自用户提供的 `liquid-glass.html`，原作者 MIT 许可保留在 `src/card/LICENSE-liquid-glass.txt`。
+
+调试台「基础组件 → Card」提供默认、带边框和液态玻璃样例，五个参数可实时调整。液态玻璃样例将卡片覆盖在真实文字、色块上，点击「移动背后内容」可检查实时采样和前景按钮交互。
+
+## TaskComposer 提示词输入框
+
+从 `@plotloom/ui/task-composer` 导入 `TaskComposer`、`TaskComposerOptions` 和 `ComposerMessage`，使用 `<TaskComposer options={options} className="..." />`。按用户 2026-11-19 的明确要求保留 LeiBox 原版布局、字体、胶囊形变、滑块和附件动效。菜单共用 `MorphingPopover`；引擎及类型声明补充宿主数据和异步回调，上游与本地校验值分别记录于 `src/task-composer/original/source.json`。
+
+| options 参数 | 含义 |
+| --- | --- |
+| `models / modelLabels / selectedModel / onModelChange` | 唯一模型 ID 列表、展示名称、当前模型；异步回调成功后更新选择。 |
+| `modelNames` | 按模型 ID 提供纯模型名，收起按钮只显示此名称；菜单仍使用 modelLabels 区分提供商。省略时沿用原标签。 |
+| `value / thinkingOptions / onValueChange` | 当前思考档位、实际可用档位及标签、异步保存；value 不是草稿。 |
+| `busy / stopping / onStop` | 生成与停止状态及回调。 |
+| `disabled / reducedMotion` | 禁用交互、减少动态效果；动态效果默认遵循系统设置。 |
+| `height` | 展示区域建议高度，默认 600px；正式聊天传 0 随内容布局。 |
+| `permissionOptions / onPermissionChange` | false 隐藏权限演示菜单；选择回调不授予真实权限。 |
+| `advancedMentions` | false 隐藏计划/目标等未实现的演示入口。 |
+| `projectPath / onSearchFiles` | 项目标识及异步文件候选搜索；组件不访问本机文件。 |
+| `skills` | 当前可选择技能的 id、name、description；支持 @ 与 / 菜单。 |
+| `context` | tokens（null 表示待估算）及 contextWindow。 |
+| `attachmentAccept / maxAttachments` | 文件选择类型与附件数量上限。 |
+| `onAttachmentUpload / onAttachmentRemove` | 上传接收 name、mimeType、base64 data，返回服务端 id/size；移除接收服务端 ID。错误附件阻止发送，可移除后重传。 |
+| `onSubmit` | 接收 text、model、thinking、attachments、skills、mentions、permission；false 或抛错保留草稿，异步宿主在服务端 accepted 后返回 true 才清空。 |
+
+原版内部管理草稿、临时附件和引用标记；通过回调注入真实业务数据，不依赖接口地址、Pi SDK 或应用状态。没有上传回调时仍可供组件调试台本地演示，不能当成后端上传。正式聊天由 `apps/web/src/features/agent/chat-composer.tsx` 完成公开协议适配，`composer-request.ts` 将标记还原为文字并发送真实附件/技能 ID。纯类型可从 `@plotloom/ui/task-composer/types` 导入，避免 Node 数据转换测试依赖 JSX 入口。后端能力清单见 `docs/task-composer-backend-adaptation.md`。
+
+调试台提供原版、生成中、停止中、禁用、无模型和减少动态效果六种样例，并记录公开回调。正式聊天已替换旧简易输入框，保留组件原版视觉和动效。
+
+来源：https://leibox.pantoria.cn/docs/animations/deep-agent-composer 。保留源码声明，来源许可说明见 `original/source.json`。依赖按原版清单安装；Shadow DOM 隔离原版样式，避免影响其他组件。本组件按本次用户指令保留原版视觉细节；不改写项目全局边框规范。
+
+## MorphingPopover 按钮形变面板
+
+从 `@plotloom/ui/morphing-popover` 导入。直接提取 LeiBox `MorphingMenuShell` 的形变逻辑，TaskComposer 的模型和权限菜单均共用此实现。按钮内容和面板内容由调用方组合，不依赖模型、权限或后端。
+
+```tsx
+import { useState } from 'react';
+import { Button } from '@plotloom/ui/button';
+import { MorphingPopover } from '@plotloom/ui/morphing-popover';
+
+function ToolPicker() {
+  const [open, setOpen] = useState(false);
+  return <MorphingPopover open={open} onOpenChange={setOpen} label="工具选择" panelWidth={264}
+    trigger={props => <Button {...props} variant="secondary">工具</Button>}>
+    <div style={{ padding: 12 }}>
+      <Button variant="ghost" onClick={() => setOpen(false)}>完成选择</Button>
+    </div>
+  </MorphingPopover>;
+}
+```
+
+- `open / onOpenChange`：受控开关；外部点击或 Escape 请求关闭。选择完成时由调用方关闭。
+- `trigger / children`：触发器和任意面板内容。推荐 trigger 渲染函数，将其属性透传给 Button，获得点击切换与展开语义；普通 ReactNode 需自行连接开关及 ARIA 属性。
+- `panelWidth`：数字像素或 CSS 长度；不传时按内容尺寸。`panelAlign` 为 `left / right`（默认 left），`panelPlacement` 为 `above / below`（默认 above）。以触发器底边或顶边为锚点，浮层限制在宿主视口内，内容过高时内部滚动。
+- `label`：面板的可访问名称，默认“功能面板”。`className / style` 作用于容器，`panelClassName` 作用于内容层。
+- `reducedMotion`：不传时遵循系统偏好。`staggerContent` 对内容中的 `[data-menu-item]` 或 `[role=menuitem]` 使用原版交错动画。普通选项无需自行设置 menuitem 角色。
+- `triggerLayout="block"` 支持铺满的触发器，默认 inline；`panelShadow / zIndex` 默认原版阴影及 50；`unstyled` 仅关闭内容层底色，外壳仍绘制表面；`layoutId` 用于标记动画节点。
+
+保留原版宽高独立弹簧、模糊与收回时序，动态内容重新测量；关闭动画结束后卸载面板，卸载清理动画和监听。普通 DOM 和 TaskComposer 的 Shadow DOM 使用同一份样式与上下文。面板为非模态浮层，不锁定页面焦点；父级应留出可见空间，避免 overflow 裁切。
+
+调试台「反馈组件 → MorphingPopover」提供向上、向下、右对齐、减少动态效果、自定义内容与收起状态六种样例。除收起状态外，切换后直接显示面板；通过“收起预览”后再展开或点击真实按钮体验形变。下方提供 trigger / children / open 的组合步骤和可复制的最小组件代码，代码跟随样例及面板宽度更新。自定义内容样例展示同一外壳可容纳说明、分栏和操作按钮，后续扩展对话框工具时替换按钮和 children 即可，无需复制动画实现。
 
 ## Sidebar 侧栏组件
 
@@ -133,3 +258,39 @@ import { AsciiOcean } from '@plotloom/ui/ascii-ocean';
 - 容器变窄时自动收缩侧栏范围，优先保留右侧空间，两列不换行；不自动持久化拖拽结果。
 - 嵌入自带滚动的 PageLayout / Sidebar 时设置 `style={{ height: '100%' }}`，使其适应卡片内部高度；正文页头继续由 PageLayout 管理。
 - 动效根据 LeiBox Elastic Panel Resize 的独立 DOM/SVG 实现适配到真实布局；设计参考 Alvish，来源及署名保留在 `src/layouts/use-elastic-sidebar.ts`。未引入演示场景运行时或额外依赖。
+
+## 通用表单组件
+
+所有组件与样式在 `src/form` 维护。调试台「表单组件」提供九个独立入口、参数编辑与提交/重置示例。浅灰背景、8px 圆角、无完整边框；`size="sm | md | lg"` 对应 32 / 40 / 48px 输入高度。下拉弹层、勾选标记和开关滑块带轻微回弹，遵循系统减少动态效果设置，键入时不缩放文本。
+
+| 导入路径 / 组件 | 常用参数与值 |
+| --- | --- |
+| `@plotloom/ui/input` · `Input` | `value/defaultValue` 为字符串；`onValueChange`；`type` 支持 text/password/email/url/tel/search；`clearable`、`startIcon/endIcon`；密码自动提供显隐按钮 |
+| `@plotloom/ui/textarea` · `Textarea` | 字符串值与 `onValueChange`；`rows`、`maxLength`、`showCount`；计数采用原生字符串长度规则 |
+| `@plotloom/ui/select` · `Select` | `options: { value: string; label: string; disabled?: boolean }[]`；单选值 `string \| null`，`multiple` 时为 `string[]`；`searchable/clearable` 默认 true；`emptyText`、`placeholder` |
+| `@plotloom/ui/checkbox` · `Checkbox` | `checked/defaultChecked`、`onCheckedChange`、`indeterminate`、`label`、`value` |
+| `@plotloom/ui/checkbox-group` · `CheckboxGroup` | `options` 同 Select；`value/defaultValue: string[]`、`onValueChange`、`orientation`；同名字段提交多个值 |
+| `@plotloom/ui/radio-group` · `RadioGroup` | `options` 同 Select；`value/defaultValue: string \| null`、`onValueChange`、`orientation`；方向键切换 |
+| `@plotloom/ui/switch` · `Switch` | `checked/defaultChecked`、`onCheckedChange`、`label`、`value` |
+| `@plotloom/ui/number-input` · `NumberInput` | `value: number \| null`、`defaultValue`、`onValueChange`；`min/max/step`；清空产生 null，关闭滚轮误操作，`inputRef` 指向实际输入框 |
+| `@plotloom/ui/form-field` · `FormField` | `label`、`description`、`error`、`required`、`disabled`；标签与说明/错误自动关联内部控件 |
+
+输入类支持 `disabled`、`readOnly`、`name`、`className/style`。没有 FormField 时必须提供自身标签或 `aria-label`。FormField 的 `required` 传给单个控件；复选组的「至少选择一项」需要调用方校验并传入 `error`，不把每个选项标记为必选。错误文案由调用方管理，不触发 Toast 或业务请求。
+
+非受控字段用 `defaultValue/defaultChecked` 初始化，可通过原生 `<button type="reset">` 恢复；阻止 reset 默认行为时保持现值。受控字段用 `value/checked` 与回调配合，重置时由调用方恢复状态。切换 Select 的单选/多选模式时使用不同 `key`，避免把字符串状态沿用到数组状态。清空和密码操作会将焦点返回文本输入；Select 支持方向键、Enter、Escape 与焦点归还。
+
+```tsx
+import { FormField } from '@plotloom/ui/form-field';
+import { Input } from '@plotloom/ui/input';
+import { Select } from '@plotloom/ui/select';
+
+<FormField label="名称" required description="填写显示名称" error={error}>
+  <Input name="name" value={name} onValueChange={setName} clearable />
+</FormField>
+<FormField label="类型">
+  <Select name="type" value={type} onValueChange={setType}
+    options={[{ value: 'a', label: '类型 A' }, { value: 'b', label: '类型 B' }]} />
+</FormField>
+```
+
+浏览器回归脚本为 `tests/ui/form-browser.js`，执行方式和验收记录见 `docs/form-components-validation.md`。

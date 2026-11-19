@@ -21,6 +21,7 @@ export interface SkillSessions {
   list(): Promise<SessionListItem[]>;
   profile(id: string): Promise<SessionSkillProfile>;
   setSkills(id: string, skillIds: string[] | null): Promise<void>;
+  projectTools?(id: string): Promise<string[] | undefined>;
 }
 export interface SkillSnapshot { id: string; name: string; description: string; version: string; files: Record<string, string>; autoLoad: boolean }
 const fail = (code: string, message: string, status = 409): never => { throw new WorkspaceError(code, message, status); };
@@ -36,8 +37,8 @@ export class SkillService {
     this.store = store; this.sessions = sessions; this.checkWorkspace = checkWorkspace; this.tools = tools;
   }
 
-  private view(skill: StoredSkill, workspaceId?: string | null): SkillInfo {
-    const missingTools = skill.declaredTools.filter(name => !this.tools(workspaceId).includes(name));
+  private view(skill: StoredSkill, workspaceId?: string | null, projectTools?: string[]): SkillInfo {
+    const missingTools = skill.declaredTools.filter(name => !(projectTools ?? this.tools(workspaceId)).includes(name));
     const warnings = [
       ...(missingTools.length ? ['缺少声明工具；此技能不会加载到模型。'] : []),
       ...(skill.compatibility ? ['环境说明尚需人工核对，应用不会安装运行环境。'] : []),
@@ -111,14 +112,18 @@ export class SkillService {
     await this.checkWorkspace(id);
     return this.store.run(async s => { this.validateIds(s, ids); s.workspaces[id] = ids; await this.store.persist(s); return { skillIds: ids }; });
   }
-  private activation(s: SkillState, profile: SessionSkillProfile): SkillActivation {
+  private activation(s: SkillState, profile: SessionSkillProfile, projectTools?: string[]): SkillActivation {
     const ids = profile.skillIds ?? this.defaults(s, profile.workspaceId);
-    const skills = ids.flatMap(id => { const found = s.skills.find(v => v.id === id); return found ? [this.view(found, profile.workspaceId)] : []; });
+    const skills = ids.flatMap(id => { const found = s.skills.find(v => v.id === id); return found ? [this.view(found, profile.workspaceId, projectTools)] : []; });
     return { ...profile, mode: profile.skillIds === null ? 'inherit' : 'override', effectiveSkillIds: ids, skills,
       unavailable: ids.flatMap(id => { const skill = skills.find(v => v.id === id); return !skill ? [{ id, reason: '技能已移除，请调整聊天设置。' }]
         : skill.runnable ? [] : [{ id, reason: `缺少工具：${skill.missingTools.join('、')}` }]; }) };
   }
-  async sessionSettings(id: string) { const profile = await this.sessions.profile(id); return this.store.run(async s => this.activation(s, profile)); }
+  /** 技能声明以当前会话实际工具诊断，项目能力不扩散到普通或小说聊天。 */
+  async sessionSettings(id: string) {
+    const [profile, projectTools] = await Promise.all([this.sessions.profile(id), this.sessions.projectTools?.(id)]);
+    return this.store.run(async s => this.activation(s, profile, projectTools));
+  }
   async setSessionSettings(id: string, ids: string[] | null) {
     await this.sessions.profile(id);
     await this.store.run(async s => { if (ids !== null) this.validateIds(s, ids); await this.sessions.setSkills(id, ids); });
@@ -135,8 +140,9 @@ export class SkillService {
   /** 先在同一仓储串行操作中确定版本并读出资源；修改/删除之后只影响后续请求。 */
   async snapshot(id: string, explicit: string[] = []): Promise<SkillSnapshot[]> {
     const profile = await this.sessions.profile(id);
+    const projectTools = await this.sessions.projectTools?.(id);
     return this.store.run(async s => {
-      const activation = this.activation(s, profile);
+      const activation = this.activation(s, profile, projectTools);
       for (const skillId of explicit) {
         const skill = activation.skills.find(v => v.id === skillId);
         if (!skill?.runnable) fail('SKILL_UNAVAILABLE', '显式选择的技能未启用、已移除或缺少工具。', 422);
