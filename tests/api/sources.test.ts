@@ -163,7 +163,9 @@ test('聊天附件与指定版本资料的独立 HTTP / SSE 验收', { timeout: 
         assert.equal(removing.status, 409);
         await json(filePath(chat.id, file));
       } else {
-        assert.equal(sending.status, 404); assert.equal(removing.status, 200);
+        // 删除占用同一会话锁时发送立即返回忙；删除已结束后才返回附件不存在。
+        assert([404, 409].includes(sending.status)); assert.equal(removing.status, 200);
+        if (sending.status === 409) assert.equal((await sending.json() as any).error.code, 'SESSION_BUSY');
         assert.deepEqual(await history(chat.id), []);
       }
     });

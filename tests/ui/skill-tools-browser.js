@@ -1,0 +1,81 @@
+// Playwright CLI run-code --filename；隔离正式装配后端 4432，产品 4433，试验台 4434。
+async (page) => {
+  const passed = [];
+  const assert = (value, label) => { if (!value) throw new Error(label); passed.push(label); };
+  await page.goto('http://127.0.0.1:4433');
+  await page.getByRole('button', { name: '技能', exact: true }).click();
+  const trigger = page.getByRole('button', { name: '查看 novel-writing 详情' });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'novel-writing' });
+  await dialog.waitFor();
+  assert(await dialog.getByText('技能声明的工具', { exact: true }).isVisible(), '点击技能展示工具声明');
+  assert(await dialog.locator('code', { hasText: 'propose_change' }).count() === 1, '展示小说工具用途与参数');
+  assert(await dialog.locator('code', { hasText: 'web_fetch' }).count() === 1, '基础目录包含网页抓取');
+  assert(await dialog.getByRole('switch').count() === 0, '一级技能详情只读');
+  await page.keyboard.press('Escape');
+  assert(await trigger.evaluate(node => node === document.activeElement), 'Escape 关闭并恢复焦点');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('navigation', { name: '设置导航' }).getByRole('button', { name: '技能', exact: true }).click();
+  const toggle = page.getByRole('switch', { name: 'novel-writing', exact: true });
+  const row = page.getByRole('group', { name: 'novel-writing', exact: true });
+  const baseline = await row.boundingBox();
+  const switchBox = await toggle.boundingBox();
+  for (let i = 0; i < 4; i++) {
+    const saved = page.waitForResponse(response => response.url().endsWith('/builtin-novel-writing/enabled') && response.request().method() === 'PUT');
+    await toggle.click(); await saved;
+    await page.waitForFunction(() => !document.querySelector('[role="switch"]')?.hasAttribute('disabled'));
+    const box = await row.boundingBox(); const control = await toggle.boundingBox();
+    assert(JSON.stringify(box) === JSON.stringify(baseline) && JSON.stringify(control) === JSON.stringify(switchBox), `切换 ${i + 1} 后设置行和控件位置稳定`);
+  }
+  assert(await toggle.getAttribute('aria-checked') === 'true', '全局开关保存并回显');
+  // 延迟响应覆盖保存中状态；快速点击不能发出重复写请求。
+  let requests = 0;
+  await page.route('**/api/skills/builtin-novel-writing/enabled', async route => {
+    requests++; await new Promise(resolve => setTimeout(resolve, 350)); await route.continue();
+  });
+  await toggle.click();
+  assert(await toggle.isDisabled(), '保存中禁用重复提交');
+  await toggle.evaluate(node => { node.click(); node.click(); });
+  assert(JSON.stringify(await row.boundingBox()) === JSON.stringify(baseline), '保存中不改变设置行位置');
+  await page.waitForResponse(response => response.url().endsWith('/builtin-novel-writing/enabled'));
+  await page.waitForFunction(() => document.querySelector('[role="switch"]')?.getAttribute('aria-checked') === 'false');
+  assert(requests === 1, '快速点击只发送一次保存');
+  await page.unroute('**/api/skills/builtin-novel-writing/enabled');
+  await page.route('**/api/skills/builtin-novel-writing/enabled', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TEST_FAILED', message: '保存失败验收' } }) }));
+  await toggle.click();
+  await page.getByText('保存失败验收', { exact: true }).waitFor();
+  assert(await toggle.getAttribute('aria-checked') === 'false', '保存失败保留服务端开关值');
+  assert(JSON.stringify(await row.boundingBox()) === JSON.stringify(baseline), '错误 toast 不挤动设置行');
+  await page.unroute('**/api/skills/builtin-novel-writing/enabled');
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await trigger.click();
+  await dialog.getByText(/全局状态：已停用/).waitFor();
+  await page.reload();
+  await page.getByRole('button', { name: '技能', exact: true }).click();
+  await trigger.click();
+  assert(await dialog.getByText(/全局状态：已停用/).isVisible(), '刷新页面保留全局关闭状态');
+  await page.screenshot({ path: 'output/skill-tools-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert(await dialog.evaluate(node => node.getBoundingClientRect().right <= innerWidth && node.getBoundingClientRect().left >= 0), '窄屏弹窗不横向溢出');
+  await page.screenshot({ path: 'output/skill-tools-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('http://127.0.0.1:4434/#tools.list');
+  await page.locator('#send-request').click();
+  await page.waitForFunction(() => document.querySelector('#result-state')?.getAttribute('data-phase') === 'success');
+  assert((await page.locator('#result-content').innerText()).includes('通过'), '试验台工具目录实际请求通过字段检查');
+  await page.goto('http://127.0.0.1:4434/#skills.enabled');
+  await page.locator('[data-path-parameter="skillId"]').fill('builtin-novel-writing');
+  await page.locator('#request-body').fill(JSON.stringify({ enabled: false }));
+  await page.locator('#send-request').click();
+  await page.waitForFunction(() => document.querySelector('#result-state')?.getAttribute('data-phase') === 'success');
+  assert((await page.locator('#result-meta').innerText()).includes('200'), '试验台实际关闭技能成功');
+  await page.locator('#request-body').fill(JSON.stringify({ enabled: 'false' }));
+  await page.locator('#send-request').click();
+  await page.waitForFunction(() => document.querySelector('#result-meta')?.textContent?.includes('400'));
+  passed.push('试验台非法开关参数返回 400');
+  await page.locator('#request-body').fill(JSON.stringify({ enabled: true }));
+  await page.locator('#send-request').click();
+  await page.waitForFunction(() => document.querySelector('#result-meta')?.textContent?.includes('200'));
+  await page.screenshot({ path: 'output/skill-tools-demo.png' });
+  return passed;
+}

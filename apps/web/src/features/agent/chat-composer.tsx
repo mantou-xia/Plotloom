@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { CompactionResult, ModelInfo, ProjectFiles, SessionConfig, SessionConfigRequest, SessionContext, SessionTools, ThinkingLevel } from '@plotloom/contracts';
 import type { Attachment } from '@plotloom/contracts/sources';
 import { ATTACHMENT_TYPES, SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import type { SkillActivation, SkillInfo } from '@plotloom/contracts/skills';
+import { chatDraft } from './chat-draft';
 import { TaskComposer, type ComposerMessage } from '@plotloom/ui/task-composer';
 import { Button } from '@plotloom/ui/button';
 import { Select } from '@plotloom/ui/select';
@@ -15,8 +16,9 @@ import { modelKey } from './new-chat-page';
 const thinkingLabels: Record<ThinkingLevel, string> = { off: '关闭', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高' };
 
 /** 组件保持纯 UI；这里负责公开协议转换、配置保存、附件上传及上下文刷新。 */
-export function ChatComposer({ sessionId, projectPath, busy, activity, stopping, revision, onSubmit, onStop, onRefresh }: {
+export function ChatComposer({ sessionId, projectPath, busy, activity, stopping, revision, attachmentDropTarget, onSubmit, onStop, onRefresh }: {
   sessionId: string; projectPath?: string; busy: boolean; activity?: string; stopping: boolean; revision: number;
+  attachmentDropTarget: RefObject<HTMLElement | null>;
   onSubmit: (message: ComposerMessage) => Promise<boolean>; onStop: () => void; onRefresh: () => void;
 }) {
   const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
@@ -85,7 +87,7 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
   const canStop = compactRunning || activity === 'generating';
   return <div className="plotloom-chat__input">
     <details className="plotloom-chat__settings">
-      <summary>上下文与技能{enabled?.effectiveSkillIds.length ? ` · ${enabled.effectiveSkillIds.length} 个已启用` : ''}</summary>
+      <summary>上下文与技能{enabled?.skills.some(skill => skill.runnable) ? ` · ${enabled.skills.filter(skill => skill.runnable).length} 个已启用` : ''}</summary>
       <div className="plotloom-chat__settings-body">
         <div className="plotloom-chat__context-actions">
           <span>{context ? `上下文 ${context.tokens === null ? '用量待估算' : `${context.tokens.toLocaleString()} / ${context.contextWindow.toLocaleString()} tokens`}` : '正在读取上下文…'}</span>
@@ -95,15 +97,16 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
         </div>
         <FormField label="本聊天启用的技能" description="启用后可通过 @ 或 / 选择本轮使用的技能；技能不会授予额外工具权限。">
           <Select multiple value={enabled?.effectiveSkillIds ?? []} disabled={!enabled || locked} onValueChange={ids => void saveSkills(ids)} aria-label="本聊天技能"
-            options={skills.map(skill => ({ value: skill.id, label: skill.name + (skill.declaredTools.some(name => !tools.includes(name)) ? '（缺少工具）' : ''),
-              disabled: skill.declaredTools.some(name => !tools.includes(name)) }))} placeholder="选择需要启用的技能" />
+            options={skills.map(skill => ({ value: skill.id, label: skill.name + (!skill.enabled ? '（已全局停用）' : skill.declaredTools.some(name => !tools.includes(name)) ? '（缺少工具）' : ''),
+              disabled: !skill.enabled || skill.declaredTools.some(name => !tools.includes(name)) }))} placeholder="选择需要启用的技能" />
         </FormField>
         {enabled?.unavailable.map(item => <p key={item.id}>{item.reason}</p>)}
       </div>
     </details>
-    {failed ? <Button size="sm" variant="text" onClick={() => setReload(value => value + 1)}>重试加载输入配置</Button> : null}
-    {compacting ? <p role="status">正在压缩上下文…</p> : null}
-    <TaskComposer options={{ height: 0, disabled: !config || failed, busy: locked, stopping,
+    <div className="plotloom-chat__config-status" role="status">
+      {failed ? <Button size="sm" variant="text" onClick={() => setReload(value => value + 1)}>重试加载输入配置</Button> : compacting ? '正在压缩上下文…' : null}
+    </div>
+    <TaskComposer options={{ height: 0, draftKey: sessionId, ...chatDraft('session:' + sessionId), disabled: !config || failed, busy: locked, stopping,
       onStop: canStop ? compactRunning ? () => {
         void requestJson(`${path}/compact/stop`, 'POST').then(onRefresh).catch(cause => notifyRequestError(cause, 'composer-compact-stop'));
       } : onStop : undefined,
@@ -121,7 +124,7 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
       permissionOptions: false, advancedMentions: false, projectPath,
       skills: enabled?.skills.filter(skill => skill.runnable) ?? [], context: context ?? undefined,
       onSearchFiles: projectPath ? query => requestJson<ProjectFiles>(`${path}/project-files`, 'POST', { query }) : undefined,
-      maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown',
+      maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown', attachmentDropTarget,
       onAttachmentUpload: async input => {
         if (!ATTACHMENT_TYPES.includes(input.mimeType as typeof ATTACHMENT_TYPES[number])) throw new Error('支持 PNG、JPEG、WebP、TXT 和 Markdown。');
         if (input.mimeType.startsWith('image/') && !config?.capabilities.input.includes('image')) throw new Error('当前模型不支持图片，请先切换模型。');

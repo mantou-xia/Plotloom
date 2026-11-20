@@ -40,6 +40,8 @@ export function SidebarControls({ component, controls, onChange }: {
     </select></label> : null}
     {session ? <>
       <label>相对时间<input value={controls.sessionTimeLabel} onChange={(event) => onChange({ sessionTimeLabel: event.target.value })} /></label>
+      <label>置顶禁用原因（留空启用）<input value={controls.sessionPinDisabledReason} onChange={event => onChange({ sessionPinDisabledReason: event.target.value })} /></label>
+      <label>归档禁用原因（留空启用）<input value={controls.sessionArchiveDisabledReason} onChange={event => onChange({ sessionArchiveDisabledReason: event.target.value })} /></label>
       <label>任务状态<select value={controls.sessionStatus} onChange={(event) => onChange({ sessionStatus: event.target.value as PreviewControls['sessionStatus'] })}>
         <option value="none">无状态</option><option value="running">正在进行</option><option value="unread">已完成未查看</option><option value="failed">失败</option>
       </select></label>

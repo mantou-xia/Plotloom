@@ -1,11 +1,28 @@
 import { lazy, Suspense, useRef, useState } from 'react';
 import { BoxModelOverlay } from './box-model-overlay.tsx';
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowRight, Copy, Ellipsis, Plus, Trash2 } from 'lucide-react';
+import { ActionMenu, ActionMenuItem } from '../action-menu/action-menu.tsx';
 import { ButtonGallery } from './button-gallery.tsx';
 import { SidebarAtomExample } from './sidebar-atom-example.tsx';
 import { SidebarExample } from './sidebar-example.tsx';
 import { MorphingPopoverExample } from './morphing-popover-example.tsx';
 import { ToastExample } from './toast-example.tsx';
+import { PrimaryTabsExample } from './primary-tabs-example.tsx';
+import { WorkspaceTabsExample } from './workspace-tabs-example.tsx';
+import { WorkspacePanelExample } from './workspace-panel-example.tsx';
+import { SkillItemExample } from './skill-item-example.tsx';
+import { UserMessageExample } from './user-message-example.tsx';
+import { AttachmentExample } from './attachment-example.tsx';
+import { CitationExample } from './citation-example.tsx';
+import { SourceReferenceExample } from './source-reference-example.tsx';
+import { MessageActionsExample } from './message-actions-example.tsx';
+import { MessageStatusExample } from './message-status-example.tsx';
+import { DialogExample } from './dialog-example.tsx';
+import { SettingsExample } from './settings-example.tsx';
+import { Disclosure } from '../disclosure/disclosure.tsx';
+import { Drawer } from '../drawer/drawer.tsx';
+import { Notice } from '../notice/notice.tsx';
+import { Dialog } from '../dialog/dialog.tsx';
 import { formCatalog } from './form-catalog.ts';
 import { Tooltip } from '../tooltip/tooltip.tsx';
 import { Button } from '../button/button.tsx';
@@ -22,8 +39,15 @@ import { componentSizeStyle, type PreviewControls } from './controls.ts';
 import './preview.css';
 
 // 原版含完整动效与图标依赖，仅在预览该组件时加载，避免拖慢其他组件的调试。
+const AgentActivityExample = lazy(() => import('./agent-activity-example.tsx').then(module => ({ default: module.AgentActivityExample })));
+const AgentProcessExample = lazy(() => import('./agent-process-example.tsx').then(module => ({ default: module.AgentProcessExample })));
+const MarkdownExample = lazy(() => import('./markdown-example.tsx').then(module => ({ default: module.MarkdownExample })));
+const CodeBlockExample = lazy(() => import('./code-block-example.tsx').then(module => ({ default: module.CodeBlockExample })));
 const TaskComposerExample = lazy(() => import('./task-composer-example.tsx').then(module => ({ default: module.TaskComposerExample })));
 const FormExample = lazy(() => import('./form-example.tsx').then(module => ({ default: module.FormExample })));
+const SplitPaneExample = lazy(() => import('./split-pane-example.tsx').then(module => ({ default: module.SplitPaneExample })));
+const ReaderFrameExample = lazy(() => import('./page-frame-example.tsx').then(module => ({ default: module.ReaderFrameExample })));
+const BrowserFrameExample = lazy(() => import('./page-frame-example.tsx').then(module => ({ default: module.BrowserFrameExample })));
 
 export interface ComponentPreviewProps {
   component: string;
@@ -38,18 +62,57 @@ export interface ComponentPreviewProps {
 export function ComponentPreview({ component, state, color, controls, onColorChange, onAction }: ComponentPreviewProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [clicks, setClicks] = useState(0);
+  const [disclosureDialogOpen, setDisclosureDialogOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [scrollItems, setScrollItems] = useState(state === 'empty' ? 0 : state === 'short' ? 1 : 24);
   const [pickerColor, setPickerColor] = useState<string | null>(state === 'black' ? '#000000' : state === 'white' ? '#ffffff' : null);
   const style = componentSizeStyle(controls);
   const click = () => { setClicks((count) => count + 1); onAction('onClick'); };
   const content = state === 'empty' ? null : Array.from({ length: state === 'overflow' ? 24 : 3 }, (_, index) => <div className="pl-example-block" key={index}>内容块 {index + 1}</div>);
   let target;
+  if (component === 'action-menu') target = <ActionMenu trigger={<Button variant="ghost" iconOnly tooltip aria-label="更多操作"><Ellipsis /></Button>}>
+    <ActionMenuItem icon={<Copy />} onSelect={() => onAction('复制')}>复制</ActionMenuItem>
+    <ActionMenuItem icon={<Trash2 />} danger onSelect={() => onAction('删除')}>删除</ActionMenuItem>
+  </ActionMenu>;
+  if (component === 'drawer') target = <><Button onClick={() => setDrawerOpen(true)}>打开抽屉</Button><Drawer open={drawerOpen} onOpenChange={setDrawerOpen} title="示例抽屉">{content}</Drawer></>;
+  if (component === 'notice') target = <Notice tone={state === 'error' || state === 'success' ? state : 'info'}>{state === 'success' ? '连接成功' : state === 'error' ? '无法连接，请检查服务地址。' : '正在检查连接…'}</Notice>;
+  if (component === 'disclosure') {
+    const disclosure = <Disclosure key={state} label="更多设置" defaultOpen={state === 'open'}>{content}</Disclosure>;
+    if (state === 'card') target = <Card style={style}>{disclosure}</Card>;
+    else if (state === 'dialog') target = <>
+      <Button onClick={() => setDisclosureDialogOpen(true)}>打开弹窗</Button>
+      <Dialog open={disclosureDialogOpen} onOpenChange={setDisclosureDialogOpen} title="折叠内容">
+        {disclosureDialogOpen ? disclosure : null}
+      </Dialog>
+    </>;
+    else target = <Disclosure key={state} style={style} label="更多设置" defaultOpen={state === 'open'}>{content}</Disclosure>;
+  }
+  if (component === 'settings-section' || component === 'settings-row') target = <SettingsExample key={`${component}-${state}`} component={component} state={state} controls={controls} style={style} onAction={onAction} />;
+  if (component === 'markdown-reader-frame') target = <Suspense fallback={<p role="status">正在加载阅读器…</p>}><ReaderFrameExample key={state} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'browser-frame') target = <Suspense fallback={<p role="status">正在加载浏览器框架…</p>}><BrowserFrameExample key={`${state}-${controls.browserFrameUrl}`} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'workspace-tabs') target = <WorkspaceTabsExample key={state} state={state} style={style} onAction={onAction} />;
+  if (component === 'workspace-panel') target = <WorkspacePanelExample key={state} state={state} style={style} onAction={onAction} />;
+  if (component === 'message-status') target = <MessageStatusExample key={state} state={state} controls={controls} style={style} onAction={onAction} />;
+  if (component === 'message-actions') target = <MessageActionsExample key={state} state={state} controls={controls} style={style} onAction={onAction} />;
+  if (component === 'split-pane-layout') target = <Suspense fallback={<p role="status">正在加载布局…</p>}><SplitPaneExample key={state} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'source-reference') target = <SourceReferenceExample key={state} state={state} controls={controls} style={style} onAction={onAction} />;
+  if (component === 'citation-marker') target = <CitationExample key={state} state={state} controls={controls} style={style} onAction={onAction} />;
+  if (component === 'attachment-card') target = <AttachmentExample key={state} state={state} style={style} onAction={onAction} />;
+  if (component === 'user-message-bubble') target = <UserMessageExample controls={controls} style={style} onAction={onAction} />;
+  if (component === 'skill-item') target = <SkillItemExample key={state} state={state} style={style} />;
+  if (['thinking-content', 'execution-timeline', 'tool-call-item'].includes(component)) target = <Suspense fallback={<p role="status">正在加载过程组件…</p>}><AgentProcessExample key={`${component}-${state}`} component={component} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'agent-activity-header') target = <Suspense fallback={<p role="status">正在加载过程展示区…</p>}><AgentActivityExample key={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'primary-tabs') target = <PrimaryTabsExample key={state} state={state} style={style} onAction={onAction} />;
+  if (component === 'code-block') target = <Suspense fallback={<p role="status">正在加载代码块…</p>}><CodeBlockExample key={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
+  if (component === 'markdown') target = <Suspense fallback={<p role="status">正在加载渲染器…</p>}><MarkdownExample key={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (formCatalog.some(entry => entry.id === component)) target = <Suspense fallback={<p role="status">正在加载组件…</p>}><FormExample key={`${component}-${state}`} component={component} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (component === 'tooltip') target = <Tooltip content={controls.tooltipContent} delay={controls.tooltipDelay} shake={controls.tooltipShake} disabled={controls.disabled}>
     <Button style={style} variant="secondary" onClick={() => onAction('Tooltip.children.onClick')}>悬停或聚焦查看提示</Button>
   </Tooltip>;
   if (component === 'morphing-popover') target = <MorphingPopoverExample key={state} state={state} controls={controls} onAction={onAction} />;
   if (component === 'toast') target = <ToastExample state={state} />;
+  if (component === 'dialog') target = <DialogExample key={state} state={state} title={controls.text}
+    description={controls.dialogDescription} style={style} onAction={onAction} />;
   if (component === 'card') target = <Card style={{ display: 'grid', alignContent: 'center', gap: 12, ...style }} borderRadius={controls.cardBorderRadius} material={controls.cardMaterial}
     padding={controls.padding} backgroundColor={controls.cardBackgroundColor} bordered={controls.cardBordered}>
     <strong>卡片标题</strong><div>卡片内容通过 children 传入，可在右侧切换材质与外观参数。</div>
@@ -73,7 +136,7 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
       </div>
     </ScrollBox>
   </>;
-  if (component === 'global-layout') target = <GlobalLayout style={style} sidebarWidth={controls.sidebarWidth} gap={controls.gap} contentPadding={controls.padding}
+  if (component === 'global-layout') target = <GlobalLayout variant={state === 'flat' ? 'flat' : 'inset'} style={style} sidebarWidth={controls.sidebarWidth} gap={controls.gap} contentPadding={controls.padding}
     sidebar={state === 'empty' ? null : <SidebarExample key={state} state={state} style={{ height: '100%' }} onAction={onAction} />}>
     {state === 'empty' ? null : <div style={{ display: 'grid', gap: 16 }}><strong>内容区</strong><p>侧栏融入主题背景，右侧内容卡片独立滚动。</p>{content}</div>}
   </GlobalLayout>;

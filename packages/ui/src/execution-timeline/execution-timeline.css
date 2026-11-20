@@ -1,0 +1,24 @@
+.pl-execution-timeline { width: 100%; min-width: 0; color: var(--pl-text, #202124); }
+/* 空态与实际过程使用同一高度，首条记录出现时不挤动下方内容。 */
+.pl-execution-timeline__empty { box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 10px; padding: 20px 16px; color: var(--pl-text-muted, #60636b); }
+.pl-execution-timeline__empty > svg { width: 28px; height: 28px; opacity: .55; }
+.pl-execution-timeline__empty-title { font-size: 14px; font-weight: 500; }
+.pl-execution-timeline__empty > p { margin: 0; font-size: 12px; line-height: 1.6; }
+.pl-execution-timeline__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 36px; }
+.pl-execution-timeline__label { padding-inline: 4px; font-size: 12px; color: var(--pl-text-muted, #60636b); }
+.pl-execution-timeline__title { flex-shrink: 0; }
+.pl-execution-timeline__actions { display: flex; align-items: center; gap: 4px; }
+/* 操作反馈只改变可见性，始终占位；不会遮住正文或挤动另一操作。 */
+/* 两种阅读模式共用固定大小的图标按钮，切换图标不改变占位。 */
+.pl-execution-timeline__expand { width: 32px; flex: 0 0 32px; }
+.pl-execution-timeline__body { height: calc(var(--pl-process-height) - 36px); }
+.pl-execution-timeline__viewport { height: 100%; overscroll-behavior-y: contain; overflow-anchor: none; }
+.pl-execution-timeline__list { list-style: none; margin: 0; padding: 4px 8px 12px 4px; overflow-wrap: anywhere; }
+.pl-execution-timeline__item { position: relative; margin: 0; padding: 0 0 16px; }
+.pl-execution-timeline__item:last-child { padding-bottom: 0; }
+/* 仅以中性灰实线连接相邻节点，不给每条记录套完整边框。 */
+.pl-execution-timeline__item:not(:last-child)::before { content: ''; position: absolute; left: 11.5px; top: 28px; bottom: -4px; width: 1px; background: var(--pl-border, #dedee3); }
+/* 保持同一滚动区与 Markdown DOM；仅释放高度，完整内容参与父级布局。 */
+.pl-execution-timeline[data-full=true] .pl-execution-timeline__body,
+.pl-execution-timeline[data-full=true] .pl-execution-timeline__viewport { height: auto; }
+.pl-execution-timeline[data-full=true] .pl-execution-timeline__viewport { overscroll-behavior-y: auto; }

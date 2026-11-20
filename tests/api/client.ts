@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import type { AgentEvent } from '../../packages/contracts/src/index.ts';
 
 /** 用真实监听端口和独立服务进程验证公开接口，包括重启，避免内存实例掩盖落盘问题。 */
-export async function startServer(env: NodeJS.ProcessEnv, requestTimeoutMs = 20000) {
-  const child = fork(fileURLToPath(new URL('../../apps/server/src/main.ts', import.meta.url)), [], {
+export async function startServer(env: NodeJS.ProcessEnv, requestTimeoutMs = 20000, entry = new URL('../../apps/server/src/main.ts', import.meta.url)) {
+  const child = fork(fileURLToPath(entry), [], {
     // 环境显式传递；禁止继承父进程的 --input-type、--test 或 env-file 启动参数。
     env: { ...process.env, ...env, PLOTLOOM_PORT: '0' }, execArgv: [], silent: true,
   });

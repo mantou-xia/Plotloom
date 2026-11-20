@@ -1,0 +1,82 @@
+.plotloom-settings-sidebar__header { padding-bottom: 28px; }
+.plotloom-provider-form { display: grid; gap: 16px; }
+.plotloom-avatar-picker { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 6px 14px; align-items: center; min-width: 0; margin: 0; padding: 0; border: 0; }
+.plotloom-avatar-picker legend { padding: 0 0 8px; font-size: 13px; font-weight: 550; }
+.plotloom-avatar-picker .plotloom-provider-avatar { grid-row: span 2; width: 52px; height: 52px; }
+.plotloom-avatar-picker small { color: var(--pl-text-muted); }
+.plotloom-avatar-picker [aria-pressed=true] { background: var(--pl-primary-subtle); color: var(--pl-primary-text); }
+.plotloom-provider-dialog { width: 600px; }
+.plotloom-provider-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.plotloom-provider-picture { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.plotloom-model-search, .plotloom-remote-models li { display: flex; align-items: center; gap: 12px; }
+.plotloom-remote-models { list-style: none; margin: 16px 0 0; padding: 0 12px; background: var(--pl-surface-muted); border-radius: 12px; }
+.plotloom-remote-models li { min-height: 44px; }
+.plotloom-remote-models li + li { border-top: 1px solid var(--pl-border); }
+.plotloom-remote-models li > span:first-of-type { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.plotloom-remote-models li svg { flex-shrink: 0; }
+.plotloom-provider-detail header { flex-wrap: wrap; }
+.plotloom-provider-detail [role="status"] { min-height: 1.6em; }
+.plotloom-provider-avatar, .plotloom-provider-initial { display: grid; place-items: center; background: var(--pl-primary-subtle); color: var(--pl-primary-text); font-weight: 650; }
+.plotloom-provider-avatar { width: 64px; height: 64px; border-radius: 50%; justify-self: center; font-size: 24px; }
+.plotloom-provider-form h3 { margin: 8px 0 0; font-size: 16px; }
+.plotloom-model-service { container-type: inline-size; display: grid; grid-template-columns: clamp(168px, 23%, 272px) minmax(0, 1fr); height: 100%; color: var(--pl-text); }
+.plotloom-provider-list { display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; padding: 20px 14px; background: color-mix(in srgb, var(--pl-primary) 3%, var(--pl-surface)); border-inline-end: 1px solid var(--pl-border); }
+.plotloom-provider-list .pl-form-control { background: var(--pl-surface); }
+.plotloom-provider-items { flex: 1; min-height: 0; overflow: auto; }
+.plotloom-provider-items .pl-sidebar-entry__actions:has([aria-expanded="true"]) { opacity: 1; pointer-events: auto; }
+.plotloom-provider-initial { width: 20px; height: 20px; border-radius: 6px; }
+.plotloom-provider-detail { padding: clamp(18px, 3vw, 48px); width: 100%; max-width: 1000px; min-width: 0; margin-inline: auto; overflow: auto; overflow-wrap: anywhere; }
+.plotloom-provider-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.plotloom-provider-detail h2 { margin: 0; font-size: 24px; }
+.plotloom-provider-detail dl { margin: 28px 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 16px 24px; padding-block: 20px; border-block-end: 1px solid var(--pl-border); }
+.plotloom-provider-detail dt, .plotloom-provider-detail h3 { font-size: 14px; font-weight: 600; }
+.plotloom-provider-detail dd { margin: 0; color: var(--pl-text-muted); }
+.plotloom-provider-inline { display: grid; gap: 14px; margin-top: 24px; }
+.plotloom-provider-field { display: grid; gap: 6px; min-width: 0; }
+.plotloom-provider-field > label { font-size: 13px; font-weight: 550; }
+.plotloom-provider-key { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.plotloom-provider-save { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.plotloom-provider-notice { height: 64px; overflow: auto; }
+.plotloom-provider-detail ul { padding: 0 14px; margin: 8px 0; list-style: none; border-radius: 12px; background: var(--pl-surface-muted); }
+.plotloom-provider-detail li { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 0; }
+.plotloom-provider-detail li + li { border-top: 1px solid var(--pl-border); }
+.plotloom-provider-detail li > span:first-of-type { flex: 1; min-width: 0; }
+.plotloom-provider-detail svg { flex-shrink: 0; }
+.plotloom-provider-detail small { color: var(--pl-text-muted); font-weight: 400; }
+.plotloom-provider-detail li small { display: block; }
+/* 内容区受可调主侧栏影响，空间不足时列表与详情按阅读顺序纵向排列。 */
+@container (max-width: 580px) {
+  .plotloom-provider-list, .plotloom-provider-detail { grid-column: 1 / -1; }
+  .plotloom-provider-items { flex: auto; max-height: 140px; }
+  .plotloom-provider-list { border-inline-end: 0; border-block-end: 1px solid var(--pl-border); }
+  .plotloom-provider-detail dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .plotloom-provider-detail dt:not(:first-child) { margin-top: 12px; }
+  .plotloom-provider-detail { overflow: visible; }
+}
+@media (max-width: 900px) { .plotloom-model-service { height: auto; min-height: 100%; align-content: start; } }
+.plotloom-settings-content .pl-settings-section__body > .plotloom-button { margin: 12px 24px 18px; }
+.plotloom-settings-sidebar__header h1 { margin: 22px 12px 0; font-size: 24px; line-height: 1.4; font-weight: 650; }
+.plotloom-settings-sidebar__group { margin: 0 12px 10px; color: var(--pl-text-muted); font-size: 12px; }
+.plotloom-settings-content { width: 100%; max-width: 960px; margin: 0 auto; padding: 52px 48px 80px; }
+.plotloom-settings-content__title { margin: 0 0 56px; font-size: 32px; font-weight: 650; line-height: 1.3; letter-spacing: -0.5px; outline: none; }
+.plotloom-settings-content__title:focus-visible { border-radius: 4px; box-shadow: 0 0 0 2px var(--pl-focus); }
+/* 各状态共用顶部留白，数据返回时图标和提示标题保持原位。 */
+.plotloom-archive-empty { container-type: inline-size; padding: clamp(32px, 7vh, 72px) 0 32px; text-align: center; }
+.plotloom-archive-empty__icon { display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 16px; border-radius: 14px; background: var(--pl-surface-muted); color: var(--pl-text-muted); }
+.plotloom-archive-empty h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; }
+.plotloom-archive-empty p { margin: 6px 0 0; color: var(--pl-text-muted); font-size: 14px; line-height: 1.6; text-wrap: balance; }
+@container (max-width: 150px) {
+  .plotloom-archive-empty p { display: none; }
+}
+@media (max-width: 800px) {
+  .plotloom-settings-content { padding: 32px 24px 48px; }
+  .plotloom-settings-content__title { margin-bottom: 36px; }
+}
+@media (max-width: 480px) {
+  .plotloom-settings-sidebar__header h1 { margin-left: 8px; font-size: 20px; }
+  .plotloom-settings-content { padding: 28px 16px; }
+  .plotloom-settings-content__title { font-size: 26px; }
+}
+.pl-settings-row.plotloom-archive-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px clamp(8px, 1vw, 16px); }
+.plotloom-archive-row h4 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plotloom-archive-row .pl-settings-row__control { display: flex; align-items: center; gap: 4px; }

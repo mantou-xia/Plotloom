@@ -12,17 +12,19 @@ export interface GlobalLayoutProps {
   maxSidebarWidth?: number;
   gap?: number;
   contentPadding?: number;
+  /** inset 为主界面卡片外壳；flat 为贴边双栏，以背景和单侧分隔线区分区域。 */
+  variant?: 'inset' | 'flat';
 }
 
 /** 主题外壳融合左侧栏并包裹右正文卡片；弹性把手调宽，两侧独立滚动，不感知业务状态。 */
 export function GlobalLayout({ sidebar, children, style, sidebarWidth = 256, minSidebarWidth = 180,
-  maxSidebarWidth = 440, gap = 20, contentPadding = 0 }: GlobalLayoutProps) {
+  maxSidebarWidth = 440, gap = 20, contentPadding = 0, variant = 'inset' }: GlobalLayoutProps) {
   const sidebarId = useId();
-  // 保留把手可命中的间距；窄屏下实际宽度边界由容器尺寸决定。
-  const panelGap = Math.max(16, gap);
+  // 平铺布局的把手覆盖分界线，不额外留缝；窄屏宽度仍由同一套弹性约束处理。
+  const panelGap = variant === 'flat' ? 0 : Math.max(16, gap);
   const { rootRef, handleRef, pathRef } = useElasticSidebar(sidebarWidth, minSidebarWidth, maxSidebarWidth, panelGap);
   return (
-    <div ref={rootRef} className="plotloom-global-layout" style={{ ...style, columnGap: panelGap, overflow: 'hidden' }}>
+    <div ref={rootRef} className="plotloom-global-layout" data-variant={variant} style={{ ...style, columnGap: panelGap, overflow: 'hidden' }}>
       <aside id={sidebarId} className="plotloom-global-layout__sidebar" aria-label="侧边栏">
         <ScrollBox className="plotloom-global-layout__scroll" aria-label="侧边栏内容">{sidebar}</ScrollBox>
       </aside>

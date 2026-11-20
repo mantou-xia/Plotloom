@@ -1,0 +1,5 @@
+.pl-notice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-radius: 8px; background: var(--pl-surface-muted); color: var(--pl-text-muted); font-size: 13px; line-height: 1.5; }
+.pl-notice[data-tone="success"] { color: #167442; background: color-mix(in srgb, #16a34a 10%, var(--pl-surface)); }
+.pl-notice[data-tone="error"] { color: #b42318; background: color-mix(in srgb, #dc2626 10%, var(--pl-surface)); }
+.pl-notice > svg { flex-shrink: 0; }
+.pl-notice > span { min-width: 0; overflow-wrap: anywhere; }

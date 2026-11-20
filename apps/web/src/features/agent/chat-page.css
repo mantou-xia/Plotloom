@@ -1,24 +1,22 @@
 /* 聊天是应用业务页面；布局层级用留白与背景区分，不叠加描边。 */
-.plotloom-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.plotloom-chat { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .plotloom-chat__header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 24px; }
 .plotloom-chat__header h1 { margin: 0; font-size: 18px; font-weight: 600; }
 .plotloom-chat__header span, .plotloom-chat__empty, .plotloom-chat__status, .plotloom-chat small { color: var(--pl-text-muted); font-size: 13px; }
-.plotloom-chat__messages { flex: 1; min-height: 0; padding: 0 24px; }
+.plotloom-chat__reading { position: relative; flex: 1; min-height: 0; }
+.plotloom-chat__messages { height: 100%; padding: 0 24px; }
 .plotloom-chat__thread { max-width: 800px; margin: auto; }
-.plotloom-chat__message { padding: 16px; margin-bottom: 20px; overflow-wrap: anywhere; }
-.plotloom-chat__message[data-role='user'] { background: var(--pl-surface-muted, #f8fafc); border-radius: 12px; }
-.plotloom-chat__message strong { font-size: 13px; }
-.plotloom-chat__message p { white-space: pre-wrap; line-height: 1.8; margin: 8px 0 0; }
-.plotloom-chat__message details { color: var(--pl-text-muted); margin-top: 8px; font-size: 13px; }
-.plotloom-chat__message summary { cursor: pointer; }
+.plotloom-chat__turn { padding: 12px 0; overflow-wrap: anywhere; }
+.plotloom-chat__response { margin-top: 24px; }
+.plotloom-chat__latest { position: absolute; right: 32px; bottom: 12px; }
 .plotloom-chat__bottom { padding: 0 24px 24px; width: 100%; max-width: 848px; box-sizing: border-box; margin: auto; }
-.plotloom-chat__status { min-height: 18px; margin: 8px 0; }
+.plotloom-chat__status { height: 32px; display: flex; align-items: center; }
+.plotloom-chat__config-status { height: 32px; display: flex; align-items: center; font-size: 13px; color: var(--pl-text-muted); }
 .plotloom-chat__project { overflow-wrap: anywhere; }
 .plotloom-chat__settings { font-size: 13px; padding: 0 16px; }
 .plotloom-chat__settings summary { cursor: pointer; color: var(--pl-text-muted); }
 .plotloom-chat__settings-body { display: grid; gap: 12px; padding-top: 12px; }
 .plotloom-chat__context-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
-.plotloom-chat__attachment { padding: 8px 0; }
 .plotloom-chat__attachment img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin-top: 8px; }
 .plotloom-chat__attachment pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
-@media (max-width: 640px) { .plotloom-chat__bottom { padding: 0 8px 8px; } .plotloom-chat__header { padding: 16px; } }
+@media (max-width: 640px) { .plotloom-chat__bottom { padding: 0 8px 8px; } .plotloom-chat__header { padding: 16px; } .plotloom-chat__messages { padding: 0 12px; } }

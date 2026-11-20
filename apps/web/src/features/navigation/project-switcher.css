@@ -1,0 +1,11 @@
+/* 项目浮窗复用组件库定位与动效；重置标题排版，列表用留白和浅底区分选中状态。 */
+.plotloom-project-switcher { display: inline-block; vertical-align: baseline; pointer-events: auto; }
+.plotloom-project-switcher__panel { padding: 12px; font-size: 14px; font-weight: 400; line-height: 1.5; letter-spacing: normal; text-align: left; text-wrap: wrap; }
+.plotloom-project-switcher__list { display: grid; gap: 4px; max-height: 280px; overflow-y: auto; margin-top: 10px; }
+.plotloom-project-switcher__list p { padding: 12px; }
+.plotloom-project-switcher__item.plotloom-button { width: 100%; min-height: 44px; justify-content: flex-start; padding: 10px 12px; }
+.plotloom-project-switcher__item[aria-pressed='true'] { background: var(--pl-surface-muted, #f6f6f7); }
+.plotloom-project-switcher__name { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+.plotloom-project-switcher__check { flex-shrink: 0; width: 18px; height: 18px; }
+.plotloom-project-switcher__footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e5e5; }
+.plotloom-project-switcher__footer .plotloom-button { width: 100%; min-height: 44px; justify-content: flex-start; padding: 10px 12px; }

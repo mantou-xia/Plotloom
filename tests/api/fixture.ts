@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { createServer, type ServerResponse } from 'node:http';
 
 export const TEST_KEY = 'p1-test-secret-must-not-leak';
+// 确定性指令从实际用户正文解析；原始模型请求保留日期后缀，供接口和缓存前缀断言。
 const contentText = (content: string | Array<{ text?: string }> | null) =>
-  typeof content === 'string' ? content : (content ?? []).map((part) => part.text ?? '').join('');
+  (typeof content === 'string' ? content : (content ?? []).map((part) => part.text ?? '').join('')).replace(/\n\n<plotloom_date_context>[\s\S]*<\/plotloom_date_context>$/, '');
 
 /** 只替换模型协议响应，服务、SDK、工具和 JSONL 均走生产入口。 */
 export async function createModelFixture() {
@@ -16,6 +17,8 @@ export async function createModelFixture() {
   const server = createServer(async (request, response) => {
     try {
       assert.equal(request.url, '/v1/chat/completions');
+      // 流式解码保留网络分块边界上的中文，避免长工具结果被夹具破坏。
+      request.setEncoding('utf8');
       let raw = '';
       for await (const chunk of request) raw += chunk;
       const body = JSON.parse(raw);
@@ -68,11 +71,17 @@ export async function createModelFixture() {
         // 按公开工具协议逐步执行测试计划；只替换模型决策，工具/存储/权限走生产实现。
         const plan = JSON.parse(prompt.slice(6));
         const start = body.messages.findLastIndex((m: any) => m.role === 'user');
-        const step = body.messages.slice(start + 1).filter((m: any) => m.role === 'tool').length;
+        const toolResults = body.messages.slice(start + 1).filter((m: any) => m.role === 'tool');
+        const step = toolResults.length;
         const next = () => {
           const call = plan.steps[step];
           if (call) writeChunk(response, { tool_calls: [{ index: 0, id: `writing-${requests.length}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } }] }, 'tool_calls');
-          else writeChunk(response, { content: plan.finalText ?? '本轮结束，请查看候选或待确认问题。' }, 'stop');
+          else {
+            // 用实际工具响应里的 ID 生成标记，测试可发现模型侧和公开快照之间的失配。
+            const content = (plan.finalText ?? '本轮结束，请查看候选或待确认问题。').replace(/\{\{source:(\d+)\}\}/g,
+              (_match: string, index: string) => JSON.parse(toolResults[Number(index)].content).source.id);
+            writeChunk(response, { content }, 'stop');
+          }
           finish(response);
         };
         if (plan.waitBefore === step) {

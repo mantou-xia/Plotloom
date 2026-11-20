@@ -70,6 +70,9 @@
 .plotloom-button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pl-surface, #fff), 0 0 0 4px var(--pl-focus, #2563eb); }
 .plotloom-button:disabled { opacity: 0.5; cursor: not-allowed; }
 .plotloom-button[data-loading] { opacity: 1; cursor: progress; }
+.pl-button-disabled-trigger { display: inline-flex; flex: 0 0 auto; cursor: not-allowed; }
+.pl-button-disabled-trigger[data-loading] { cursor: progress; }
+.pl-button-disabled-trigger > .plotloom-button { pointer-events: none; }
 .plotloom-button__content { display: inline-flex; align-items: center; justify-content: inherit; gap: inherit; width: 100%; min-width: 0; overflow-wrap: anywhere; }
 .plotloom-button__icon { display: inline-flex; flex: 0 0 auto; }
 .plotloom-button__icon svg, .plotloom-button[data-icon-only] svg { width: 16px; height: 16px; flex-shrink: 0; }

@@ -6,7 +6,7 @@ import type { PreviewControls } from './controls.ts';
 import './morphing-popover-example.css';
 
 /** 可直接粘贴的最小组合；与预览共用方向、宽度和内容类型，不包含调试台逻辑。 */
-function exampleCode(custom: boolean, width: number, placement: 'above' | 'below', align: 'left' | 'right', reduced: boolean) {
+function exampleCode(custom: boolean, width: number, placement: 'above' | 'below', align: 'left' | 'right', reduced: boolean, topLayer: boolean) {
   return `import { useState } from 'react';
 import { Button } from '@plotloom/ui/button';
 import { MorphingPopover } from '@plotloom/ui/morphing-popover';
@@ -17,7 +17,7 @@ export function MyComposerAction() {
   return (
     <MorphingPopover open={open} onOpenChange={setOpen}
       label="${custom ? '自定义面板' : '输出选项'}" panelWidth={${width}}
-      panelPlacement="${placement}" panelAlign="${align}"${reduced ? '\n      reducedMotion' : ''}
+      panelPlacement="${placement}" panelAlign="${align}"${reduced ? '\n      reducedMotion' : ''}${topLayer ? '\n      topLayer' : ''}
       trigger={props => (
         <Button {...props} size="sm" variant="secondary"
           style={{ borderRadius: 999 }}>
@@ -52,10 +52,11 @@ export function MorphingPopoverExample({ state, controls, onAction }: {
   const [copyStatus, setCopyStatus] = useState('');
   const custom = state === 'custom-content';
   const width = controls.width.mode === 'fixed' ? controls.width.value : 264;
-  const placement = state === 'below' ? 'below' : 'above';
+  const topLayer = state === 'top-layer';
+  const placement = state === 'below' || topLayer ? 'below' : 'above';
   const align = state === 'right' ? 'right' : 'left';
   const reduced = state === 'reduced-motion';
-  const code = exampleCode(custom, width, placement, align, reduced);
+  const code = exampleCode(custom, width, placement, align, reduced, topLayer);
   const changeOpen = (next: boolean) => { setOpen(next); onAction('onOpenChange(' + next + ')'); };
   /** 复制失败时保留可选中的完整代码，不把失败误报为成功。 */
   async function copyCode() {
@@ -69,10 +70,10 @@ export function MorphingPopoverExample({ state, controls, onAction }: {
       <Button size="sm" variant="secondary" onMouseDown={event => event.stopPropagation()} onClick={() => changeOpen(!open)}>{open ? '收起预览' : '展开预览'}</Button>
     </div>
     <p className="pl-morph-example__status" role="status">{open ? '已展开' : '已收起'} · {placement === 'above' ? '向上' : '向下'} · {align === 'left' ? '左对齐' : '右对齐'} · {reduced ? '无动画' : '弹簧形变'}</p>
-    <div className="pl-morph-example__stage">
+    <div className="pl-morph-example__stage" style={topLayer ? { overflow: 'hidden', height: 100, minHeight: 100 } : undefined}>
     <MorphingPopover open={open} onOpenChange={changeOpen}
       label={custom ? '自定义面板' : '输出选项'} panelWidth={width}
-      panelPlacement={placement} panelAlign={align}
+      panelPlacement={placement} panelAlign={align} topLayer={topLayer}
       reducedMotion={reduced ? true : undefined} staggerContent={!custom}
       trigger={props => <Button {...props} size="sm" variant="secondary" style={{ borderRadius: 999 }} endIcon={<ChevronDown />}>{custom ? '自定义工具' : '输出：' + selected}</Button>}>
       {custom ? <div className="pl-morph-example__custom">

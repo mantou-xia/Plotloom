@@ -16,14 +16,21 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
   await writeFile(models, JSON.stringify({ providers: { test: { api: 'openai-completions', baseUrl: fixture.baseUrl,
     models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 2048, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
   const env = { PLOTLOOM_DATA_DIR: data, PLOTLOOM_MODELS_PATH: models, PLOTLOOM_PROVIDER: 'test', PLOTLOOM_MODEL: 'fixture', PLOTLOOM_API_KEY: TEST_KEY };
-  let server = await startServer(env);
+  const selectionFile = join(dir, 'selection.json');
+  await writeFile(selectionFile, 'null');
+  const start = () => startServer({ ...env, TEST_SKILL_SELECTION: selectionFile }, 20000, new URL('./skill-server.ts', import.meta.url));
+  let server = await start();
   const json = (...args: Parameters<typeof server.json>) => server.json(...args);
   const msg = (id: string) => `/api/sessions/${id}/messages`;
   const setting = (id: string) => `/api/sessions/${id}/skills`;
   const send = async (id: string, text: string, skillIds?: string[]) => collect(await server.request(msg(id), 'POST', { text, ...(skillIds ? { skillIds } : {}) }));
   const text = (result: Awaited<ReturnType<typeof send>>) => result.filter(e => e.type === 'text_delta').map(e => e.delta).join('');
   const command = (skillId: string, path = 'SKILL.md', wait = false) => `${wait ? 'WAIT_SKILL' : 'SKILL'}:${JSON.stringify({ skillId, path })}`;
-  const restart = async () => { await server.close(); server = await startServer(env); };
+  const restart = async () => { await server.close(); server = await start(); };
+  const importSkill = async (root: string | null, expected = 200) => {
+    await writeFile(selectionFile, JSON.stringify(root));
+    return json('/api/skills/import-folder', 'POST', {}, expected);
+  };
   let skill: any; let imported: any; let workspace: any; let workspace2: any; let chat: any; let chat2: any; let normal: any;
   try {
     await t.test('内置诊断、自定义创建、复制、编辑与过期保护', async () => {
@@ -52,19 +59,24 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       await json(`/api/skills/${skill.id}/file`, 'PUT', { path: 'references', content: '文件与目录冲突', baseVersion: saved }, 400);
     });
     await t.test('完整目录导入、二进制保留、脚本不执行及源目录隔离', async () => {
+      const beforeCancel = (await json('/api/skills')).skills;
+      assert.deepEqual(await importSkill(null), { skill: null });
+      assert.deepEqual((await json('/api/skills')).skills, beforeCancel);
+      await json('/api/skills/import', 'POST', { root: dir }, 404);
+      await json('/api/skills/import-folder', 'POST', { root: dir }, 400);
       const root = join(dir, 'imported-skill'); await mkdir(join(root, 'references'), { recursive: true }); await mkdir(join(root, 'assets')); await mkdir(join(root, 'scripts'));
       await writeFile(join(root, 'SKILL.md'), source('imported-skill', '引用 references/readme.md', 'compatibility: 需要用户确认本地环境\nallowed-tools: read_skill\n'));
       await writeFile(join(root, 'references/readme.md'), '导入原始参考'); const bytes = Buffer.from([0, 255, 128, 1]); await writeFile(join(root, 'assets/icon.bin'), bytes);
       await writeFile(join(root, 'scripts/run.js'), 'throw new Error("不得执行")');
-      imported = await json('/api/skills/import', 'POST', { root }, 201);
+      imported = (await importSkill(root)).skill;
       assert(imported.warnings.some((s: string) => s.includes('不执行')) || imported.warnings.some((s: string) => s.includes('不会执行')));
       const binary = await json(`/api/skills/${imported.id}/file`, 'POST', { path: 'assets/icon.bin' }); assert.equal(binary.encoding, 'base64'); assert.deepEqual(Buffer.from(binary.content, 'base64'), bytes);
       await writeFile(join(root, 'references/readme.md'), '源目录更新');
       assert.equal((await json(`/api/skills/${imported.id}/file`, 'POST', { path: 'references/readme.md' })).content, '导入原始参考');
-      await json('/api/skills/import', 'POST', { root }, 409);
-      await json('/api/skills/import', 'POST', { root: join(dir, 'missing') }, 422);
+      await importSkill(root, 409);
+      await importSkill(join(dir, 'missing'), 422);
       const linked = join(dir, 'linked-skill'); await mkdir(linked); await writeFile(join(linked, 'SKILL.md'), source('linked-skill'));
-      await symlink(root, join(linked, 'outside'), 'junction'); await json('/api/skills/import', 'POST', { root: linked }, 400);
+      await symlink(root, join(linked, 'outside'), 'junction'); await importSkill(linked, 400);
     });
     await t.test('小说聊天固定归属、普通聊天与最近列表、空会话跨重启', async () => {
       workspace = await json('/api/workspaces', 'POST', { title: '甲', root: book }, 201);
@@ -72,7 +84,7 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       chat = await json(`/api/workspaces/${workspace.id}/sessions`, 'POST', { name: '甲聊天' }, 201);
       chat2 = await json(`/api/workspaces/${workspace2.id}/sessions`, 'POST', {}, 201);
       normal = await json('/api/sessions', 'POST', {}, 201);
-      assert.deepEqual((await json(`/api/workspaces/${workspace.id}/skills`)).skillIds, ['builtin-novel-writing']);
+      assert.deepEqual((await json(`/api/workspaces/${workspace.id}/skills`)).skillIds, ['builtin-novel-writing', skill.id, imported.id]);
       const initial = await json(setting(chat.id)); assert.equal(initial.mode, 'inherit'); assert.equal(initial.unavailable.length, 0);
       await json(setting(chat.id), 'PUT', { skillIds: [skill.id] }); await restart();
       assert.equal((await json(setting(chat.id))).workspaceId, workspace.id); assert.deepEqual((await json(setting(chat.id))).skillIds, [skill.id]);
@@ -89,7 +101,9 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       assert.deepEqual((await json(setting(chat.id))).effectiveSkillIds, [skill.id, imported.id]);
       await json(setting(chat.id), 'PUT', { skillIds: [] }); assert.deepEqual((await json(setting(chat.id))).effectiveSkillIds, []);
       await json(setting(chat.id), 'PUT', { skillIds: null });
-      assert.deepEqual((await json(setting(normal.id))).effectiveSkillIds, []);
+      assert.deepEqual((await json(setting(normal.id))).effectiveSkillIds, [skill.id, imported.id]);
+      // 普通聊天现在自动发现全局技能；显式空列表仍可独立限制该聊天。
+      await json(setting(normal.id), 'PUT', { skillIds: [] });
       await json(setting(chat.id), 'PUT', { skillIds: ['unknown'] }, 404);
       await json(`/api/workspaces/${workspace.id}/skills`, 'PUT', { skillIds: [skill.id, skill.id] }, 400);
     });

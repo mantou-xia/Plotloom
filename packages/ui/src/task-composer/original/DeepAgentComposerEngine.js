@@ -1,4 +1,5 @@
 import { MorphingPopover } from '../../morphing-popover/morphing-popover.tsx';
+import { AttachmentCard, AttachmentThumbnail } from '../../attachment/attachment-card.tsx';
 import { MenuTriggerOpenContext, MorphPanelLayoutContext } from '../../morphing-popover/contexts.ts';
 /* Original Deep Agent Composer, ModelThinkingSelector and EffortSlider; UI source preserved. */
 // src/lib/DeepAgent/original-entry.js
@@ -170,10 +171,12 @@ function mountOriginalDeepAgent(target, initial, variant, css, tokens, dictionar
       },
       async attachmentIngest(value) {
         if (options.onAttachmentUpload) {
+          const draftKey = options.draftKey;
           const data = value.data_url ? value.data_url.slice(value.data_url.indexOf(',') + 1)
             : btoa(Array.from(new TextEncoder().encode(value.text ?? ''), byte => String.fromCharCode(byte)).join(''));
           const mimeType = /\.(md|markdown)$/i.test(value.name) ? 'text/markdown' : /\.txt$/i.test(value.name) ? 'text/plain' : value.mime;
           const saved = await options.onAttachmentUpload({ name: value.name, mimeType, data });
+          if (destroyed || draftKey !== options.draftKey) throw new DOMException('草稿已切换', 'AbortError');
           uploadedAttachments.set(value.id, saved.id);
           return { id: saved.id, size_bytes: saved.size, extracted_text: value.text ?? null };
         }
@@ -186,10 +189,15 @@ function mountOriginalDeepAgent(target, initial, variant, css, tokens, dictionar
       }
     },
     async submit(text, attachments, skills, mentions) {
+      const draftKey = options.draftKey;
       const message = { text, model: settings.chat_model, thinking: settings.thinking_depth,
         attachments: attachments.map(item => ({ ...item, id: uploadedAttachments.get(item.id) ?? item.id })), skills, mentions, permission };
+      const { readDraft, onDraftChange } = options;
+      const submittedDraft = readDraft?.();
       const accepted = await options.onSubmit?.(message);
-      if (accepted === false) return false;
+      // 首条消息被接收时宿主可能已切页；仅清理发起发送的那份文字。
+      if (accepted !== false && readDraft?.() === submittedDraft) onDraftChange?.('');
+      if (accepted === false || destroyed || draftKey !== options.draftKey) return false;
       attachments.forEach(item => uploadedAttachments.delete(item.id));
       dispatch("agent-submit", message);
       return true;
@@ -216,6 +224,8 @@ function mountOriginalDeepAgent(target, initial, variant, css, tokens, dictionar
     root,
     update(next) {
       if (destroyed) return;
+      // 重置只清理当前输入的本地关联，不删除服务端旧草稿，也不重建 React 根节点。
+      if ('draftKey' in next && next.draftKey !== options.draftKey) uploadedAttachments.clear();
       options = { ...options, ...next };
       if (next.models) settings.available_models = next.models;
       if (next.selectedModel !== void 0) settings.chat_model = next.selectedModel;
@@ -2391,8 +2401,7 @@ function mountDeepAgentComposer(target, options = {}) {
     function ImagePreviewTrigger({
       src,
       alt,
-      triggerClassName,
-      imageClassName
+      triggerClassName
     }) {
       const { t: t2 } = useTranslation();
       const label = alt.trim() ? t2("composer.attachments.previewNamedImage", { name: alt }) : t2("composer.attachments.previewImage");
@@ -2408,7 +2417,8 @@ function mountDeepAgentComposer(target, options = {}) {
               triggerClassName
             ),
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("img", { src, alt, className: imageClassName }),
+              /* 上传前后共用真实缩略图；原有预览弹层继续负责键盘、关闭及焦点。 */
+              /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(AttachmentThumbnail, { src, name: alt }),
               /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
                 "span",
                 {
@@ -2611,8 +2621,7 @@ function mountDeepAgentComposer(target, options = {}) {
                   {
                     src: item.dataUrl,
                     alt: item.name,
-                    triggerClassName: "h-full w-full rounded-[10px] border border-border-theme bg-ui-tint",
-                    imageClassName: "h-full w-full object-cover"
+                    triggerClassName: "pl-attachment-image-trigger"
                   }
                 ) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "flex h-full w-full items-center justify-center rounded-[10px] border border-border-theme bg-ui-tint text-text-secondary", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(import_lucide_react3.Image, { "aria-hidden": "true", className: "h-5 w-5" }) }),
                 status && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
@@ -2646,30 +2655,14 @@ function mountDeepAgentComposer(target, options = {}) {
             item.id
           ) }, item.id);
         }
-        return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(AttachmentMotionItem, { exiting: !activeIds.has(item.id), onExited: () => removeExited(item.id), children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
-          "div",
-          {
-            className: "flex h-14 max-w-[220px] shrink-0 items-center gap-2 rounded-2xl bg-black/5 px-2 text-left",
-            children: [
-              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "flex h-10 w-10 items-center justify-center rounded-xl bg-white text-text-secondary", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(import_react_fontawesome2.FontAwesomeIcon, { icon: ["fas", item.kind === "text" ? "file-lines" : "file"] }) }),
-              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "min-w-0 flex-1", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "truncate text-[12px] font-medium text-text-base", children: item.name }),
-                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "truncate text-[11px] text-text-secondary", children: item.status === "processing" ? t2("composer.attachments.processing") : item.status === "error" ? item.error ?? t2("composer.attachments.failed") : item.kind === "text" ? t2("composer.attachments.text") : t2("composer.attachments.file") })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
-                IconButton,
-                {
-                  type: "button",
-                  "aria-label": t2("composer.attachments.removeAttachment", { name: item.name }),
-                  onClick: () => onRemove(item.id),
-                  className: "h-6 w-6 rounded-full",
-                  children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(import_react_fontawesome2.FontAwesomeIcon, { icon: ["fas", "xmark"], className: "text-[11px]" })
-                }
-              )
-            ]
-          },
-          item.id
-        ) }, item.id);
+        // 类型图标、扩展名及字节大小与已发送附件共用；保留原有增删动画和上传状态。
+        return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(AttachmentMotionItem, {
+          exiting: !activeIds.has(item.id), onExited: () => removeExited(item.id),
+          children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(AttachmentCard, {
+            name: item.name, size: item.size, status: item.status, error: item.error,
+            onRemove: () => onRemove(item.id)
+          })
+        }, item.id);
       }) }) });
     }
     var SETTINGS_CHANGED_EVENT = __deepAgentBridge.event;
@@ -2858,6 +2851,7 @@ function mountDeepAgentComposer(target, options = {}) {
       const composerRef = (0, import_react20.useRef)(null);
       const messageSendMotion = useMessageSendMotion();
       const [attachments, setAttachments] = (0, import_react20.useState)([]);
+      const [fileDragActive, setFileDragActive] = (0, import_react20.useState)(false);
       const [models, setModels] = (0, import_react20.useState)([]);
       const [selectedModel, setSelectedModel] = (0, import_react20.useState)("");
       const [modelCapabilities, setModelCapabilities] = (0, import_react20.useState)([]);
@@ -3426,6 +3420,21 @@ function mountDeepAgentComposer(target, options = {}) {
         }
       }, [overlayCloseSignal]);
       const submitting = (0, import_react20.useRef)(false);
+      const draftKey = __deepAgentBridge.options.draftKey;
+      const previousDraftKey = (0, import_react20.useRef)(draftKey);
+      // 在绘制前原位清空草稿，保留 textarea、模型按钮及其已初始化状态。
+      (0, import_react20.useLayoutEffect)(() => {
+        if (previousDraftKey.current === draftKey) return;
+        previousDraftKey.current = draftKey;
+        submitting.current = false;
+        setAttachments([]); setSelectedSkills([]); setSelectedMentions([]);
+        const restored = __deepAgentBridge.options.readDraft?.() ?? '';
+        setDraftValue(restored); pendingDraftValueRef.current = restored; onChange(restored);
+        setCursorPos(0); setSelectionRange(null);
+        setSlashResults([]); setSlashSelected(0); setAtSections([]); setAtSelected(0);
+        setIsModelDropdownOpen(false); setIsApprovalDropdownOpen(false); setIsContextPopoverOpen(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }, [draftKey, onChange]);
       // 服务端接收前保留所有草稿资料；配置中、上传中及重复提交均不得发送半成品。
       const submitWithAttachments = async () => {
         if (busy || switching || submitting.current || attachments.some(item => item.status !== 'ready')) return;
@@ -3436,7 +3445,7 @@ function mountDeepAgentComposer(target, options = {}) {
         if (textareaRef.current && mirrorRef.current && surface) {
           messageSendMotion?.prepare(textareaRef.current, mirrorRef.current, surface, draftValue);
         }
-        if (await onSubmit(readyAttachments, selectedSkills, selectedMentions, draftValue) === false) return;
+        if (await onSubmit(readyAttachments, selectedSkills, selectedMentions, draftValue) === false || draftKey !== __deepAgentBridge.options.draftKey) return;
         if (readyAttachments.length > 0) setAttachments([]);
         if (selectedSkills.length > 0) setSelectedSkills([]);
         if (selectedMentions.length > 0) setSelectedMentions([]);
@@ -3444,8 +3453,8 @@ function mountDeepAgentComposer(target, options = {}) {
         setCursorPos(0);
         setSelectionRange(null);
         pendingDraftValueRef.current = "";
-        } catch (error) { message.error(error instanceof Error ? error.message : '发送失败，草稿已保留'); }
-        finally { submitting.current = false; }
+        } catch (error) { if (draftKey === __deepAgentBridge.options.draftKey) message.error(error instanceof Error ? error.message : '发送失败，草稿已保留'); }
+        finally { if (draftKey === __deepAgentBridge.options.draftKey) submitting.current = false; }
       };
       const hasComposerContent = Boolean(
         stripSkillMarkers(draftValue).trim() || attachments.length > 0 || selectedSkills.length > 0 || selectedMentions.length > 0
@@ -3528,8 +3537,11 @@ function mountDeepAgentComposer(target, options = {}) {
           )
         );
       };
+      const canAcceptFiles = () => !busy && !__deepAgentBridge.options.disabled && !submitting.current;
       const addFiles = async (files, source) => {
-        if (busy) return;
+        if (!canAcceptFiles()) return;
+        // 文件读取和上传可能跨越项目切换；旧批次不能继续向新草稿添加文件。
+        const batchDraftKey = __deepAgentBridge.options.draftKey;
         const incoming = Array.from(files);
         const remaining = MAX_COMPOSER_ATTACHMENTS - attachments.length;
         if (remaining <= 0) {
@@ -3541,6 +3553,7 @@ function mountDeepAgentComposer(target, options = {}) {
           showAttachmentLimitWarning();
         }
         for (const file of accepted) {
+          if (batchDraftKey !== __deepAgentBridge.options.draftKey) return;
           const id = attachmentId();
           const isImage = file.type.startsWith("image/");
           const isText = isTextLikeFile(file);
@@ -3557,6 +3570,7 @@ function mountDeepAgentComposer(target, options = {}) {
           try {
             if (isImage) {
               const dataUrl = await readFileAsDataUrl(file);
+              if (batchDraftKey !== __deepAgentBridge.options.draftKey) return;
               const persisted = await attachmentIngest({
                 id,
                 session_id: null,
@@ -3579,6 +3593,7 @@ function mountDeepAgentComposer(target, options = {}) {
             } else if (isText) {
               const extractedText = await readFileAsText(file);
               const dataUrl = await readFileAsDataUrl(file);
+              if (batchDraftKey !== __deepAgentBridge.options.draftKey) return;
               const persisted = await attachmentIngest({
                 id,
                 session_id: null,
@@ -3600,6 +3615,7 @@ function mountDeepAgentComposer(target, options = {}) {
               });
             } else {
               const dataUrl = await readFileAsDataUrl(file);
+              if (batchDraftKey !== __deepAgentBridge.options.draftKey) return;
               const persisted = await attachmentIngest({
                 id,
                 session_id: null,
@@ -3636,11 +3652,64 @@ function mountDeepAgentComposer(target, options = {}) {
           void addTextAttachment(text, "paste");
         }
       };
+      const onFileDragOver = (event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        const allowed = canAcceptFiles();
+        event.dataTransfer.dropEffect = allowed ? "copy" : "none";
+        return allowed;
+      };
       const onDrop = (event) => {
-        if (event.dataTransfer.files.length === 0) return;
+        // 输入框内的放下事件也会冒泡到页面，已处理的文件只上传一次。
+        if (event.defaultPrevented || event.dataTransfer.files.length === 0) return;
         event.preventDefault();
         void addFiles(event.dataTransfer.files, "drop");
       };
+      const onPageFileDrag = (0, import_react20.useEffectEvent)(onFileDragOver);
+      const onPageDrop = (0, import_react20.useEffectEvent)(onDrop);
+      const attachmentDropTarget = __deepAgentBridge.options.attachmentDropTarget?.current;
+      const showFileDropHint = fileDragActive && canAcceptFiles();
+      // 由页面显式指定接收范围；离开会话时随输入框解绑，避免文件上传到旧会话。
+      (0, import_react20.useEffect)(() => {
+        const target = attachmentDropTarget;
+        if (!target) return;
+        let hideTimeout;
+        const clearHint = () => {
+          clearTimeout(hideTimeout);
+          setFileDragActive(false);
+        };
+        const onDrag = (event) => {
+          if (!onPageFileDrag(event)) {
+            clearHint();
+            return;
+          }
+          setFileDragActive(true);
+          // 系统拖拽取消时可能没有结束事件；持续收到 dragover 时续期。
+          clearTimeout(hideTimeout);
+          hideTimeout = setTimeout(clearHint, 1200);
+        };
+        // 从标题移动到记录或输入框时仍在同一接收区，避免遮罩闪烁。
+        const onLeave = (event) => {
+          if (!target.contains(event.relatedTarget)) clearHint();
+        };
+        const onTargetDrop = (event) => {
+          clearHint();
+          onPageDrop(event);
+        };
+        target.addEventListener("dragenter", onDrag);
+        target.addEventListener("dragover", onDrag);
+        target.addEventListener("dragleave", onLeave);
+        target.addEventListener("dragend", clearHint);
+        target.addEventListener("drop", onTargetDrop);
+        return () => {
+          clearTimeout(hideTimeout);
+          target.removeEventListener("dragenter", onDrag);
+          target.removeEventListener("dragover", onDrag);
+          target.removeEventListener("dragleave", onLeave);
+          target.removeEventListener("dragend", clearHint);
+          target.removeEventListener("drop", onTargetDrop);
+        };
+      }, [attachmentDropTarget]);
       const syncCursorFromTextarea = () => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -3898,12 +3967,21 @@ function mountDeepAgentComposer(target, options = {}) {
         }
       };
       return /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { ref: composerRef, className: "group/composer relative w-full", children: [
+        attachmentDropTarget && external2.createPortal(
+          (0, import_jsx_runtime25.jsx)("div", {
+            className: "plotloom-task-composer__drop-hint",
+            "data-active": showFileDropHint,
+            "aria-hidden": true,
+            children: (0, import_jsx_runtime25.jsx)("span", { children: "松开即可添加附件" })
+          }),
+          attachmentDropTarget
+        ),
         /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
           InputSurface,
           {
             "data-message-composer-surface": true,
             className: "flex flex-col overflow-visible rounded-[24px] shadow-[0_8px_24px_rgba(31,38,48,0.09)] focus-within:shadow-[0_10px_30px_rgba(31,38,48,0.13)]",
-            onDragOver: (event) => event.preventDefault(),
+            onDragOver: onFileDragOver,
             onDrop,
             children: /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "relative flex w-full flex-col p-3.5 pb-2.5", children: [
               /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
@@ -4248,7 +4326,7 @@ function mountDeepAgentComposer(target, options = {}) {
       { value: "deep", label: "\u6DF1\u5EA6", icon: import_lucide_react5.Brain }
     ];
     function OriginalDemo({ bridge, variant }) {
-      const [text, setText] = (0, import_react21.useState)("");
+      const [text, setText] = (0, import_react21.useState)(() => bridge.options.readDraft?.() ?? "");
       const [value, setValue] = (0, import_react21.useState)(bridge.settings.thinking_depth);
       (0, import_react21.useEffect)(() => bridge.subscribe(() => setValue(bridge.settings.thinking_depth)), [bridge]);
       return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("main", { className: "original-deep-agent-stage font-sans text-text-base", "data-original-ready": "true", children: variant === "slider" ? /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "original-effort-section px-3 pb-1 pt-0.5", children: [
@@ -4261,7 +4339,7 @@ function mountDeepAgentComposer(target, options = {}) {
         Composer,
         {
           value: text,
-          onChange: setText,
+          onChange: next => { setText(next); bridge.options.onDraftChange?.(next); },
           busy: bridge.options.busy ?? false,
           stopping: bridge.options.stopping ?? false,
           onStop: bridge.options.onStop,

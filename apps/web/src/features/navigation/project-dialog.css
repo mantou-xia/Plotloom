@@ -1,0 +1,7 @@
+/* 项目业务组合复用通用控件，以浅底和间距区分层级。长目录始终限制在内容宽度内。 */
+.plotloom-project-dialog { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; padding-top: 8px; }
+.plotloom-project-dialog__source h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.plotloom-project-dialog__folder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 148px; padding: 20px; border-radius: 12px; background: var(--pl-surface-muted, #f6f6f7); }
+.plotloom-project-dialog__folder p { max-width: 100%; margin: 0; overflow-wrap: anywhere; text-align: center; font-size: 14px; }
+.plotloom-project-dialog__folder [role='status'] { color: var(--pl-text-muted); font-size: 12px; }
+.plotloom-project-dialog__error { margin: 0; color: #b91c1c; font-size: 13px; line-height: 1.6; }

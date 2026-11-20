@@ -1,0 +1,57 @@
+.pl-markdown { width: 100%; min-width: 0; color: var(--pl-text, #202124); font: 15px/1.8 system-ui, "Microsoft YaHei", sans-serif; overflow-wrap: anywhere; }
+.pl-markdown :where(h1,h2,h3,h4,h5,h6) { margin: 1.4em 0 .6em; font-weight: 650; line-height: 1.4; }
+.pl-markdown h1 { font-size: 1.8em; } .pl-markdown h2 { font-size: 1.45em; } .pl-markdown h3 { font-size: 1.2em; }
+.pl-markdown :where(p,ul,ol,blockquote,table) { margin: .8em 0; }
+.pl-markdown :where(ul,ol) { padding-left: 1.65em; } .pl-markdown li + li { margin-top: .25em; }
+.pl-markdown a { color: var(--pl-primary-text, #2457a6); text-decoration: underline; text-underline-offset: 3px; }
+.pl-markdown img { max-width: 100%; height: auto; border-radius: 8px; }
+.pl-markdown blockquote { margin-inline: 0; padding: 8px 16px; background: var(--pl-surface-muted, #f6f6f7); border-left: 3px solid var(--pl-border, #d4d4d8); color: var(--pl-text-muted, #60636b); }
+.pl-markdown hr { border: 0; border-top: 1px solid var(--pl-border, #d4d4d8); margin: 24px 0; }
+.pl-markdown .pl-md-inline { padding: 2px 5px; border-radius: 4px; background: var(--pl-surface-muted, #f6f6f7); font-size: .9em; }
+.pl-markdown [data-streamdown="table-wrapper"] { max-width: 100%; overflow: auto; }
+.pl-markdown table { border-collapse: collapse; width: 100%; font-size: .93em; }
+.pl-markdown :where(th,td) { padding: 9px 12px; border-bottom: 1px solid var(--pl-border, #d4d4d8); text-align: left; }
+.pl-markdown th { background: var(--pl-surface-muted, #f6f6f7); font-weight: 600; }
+.pl-markdown .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 8px 0; }
+.pl-markdown .pl-md-block { margin: 16px 0; }
+.pl-markdown pre { margin: 0; padding: 16px; overflow: auto; max-height: 480px; white-space: pre; overflow-wrap: normal; font: 13px/1.75 ui-monospace, Consolas, monospace; tab-size: 2; }
+.pl-md-notice { padding: 12px 16px; color: var(--pl-text-muted, #60636b); }
+.pl-md-diagram { padding: 16px; background: var(--pl-surface, #fff); }
+.pl-md-diagram p { font-size: 13px; }
+.pl-md-diagram__canvas { width: 100%; min-width: 0; overflow: auto; }
+.pl-md-diagram__canvas--echarts { height: 340px; }
+.pl-md-diagram__canvas--mermaid svg { display: block; max-width: 100%; height: auto; margin: auto; }
+.pl-markdown :where(pre,summary,a):focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-focus, #6080b0); border: 0; }
+@media (max-width: 480px) { .pl-markdown { font-size: 14px; } .pl-md-diagram { padding: 8px; } }
+
+.pl-markdown > div > :first-child { margin-top: 0; }
+
+/* 动效只附着于正文单字；结束不保留滤镜与遮罩，停止流式时由 Streamdown 移除包装。 */
+.pl-markdown span[data-sd-animate] {
+  display: inline-block;
+  white-space: pre-wrap;
+  animation: var(--sd-animation) var(--sd-duration) var(--sd-easing) var(--sd-delay, 0ms) backwards;
+}
+.pl-markdown span[data-pl-settled] { animation: none; }
+/* 水墨：120ms 柔焦停留，接下来 90ms 聚焦，透明度在 360ms 内收尾。 */
+@keyframes sd-pl-ink {
+  0% { opacity: 0; filter: blur(.38em); }
+  28% { opacity: .42; filter: blur(.38em); }
+  33.33% { opacity: .42; filter: blur(.38em); }
+  58.33% { opacity: .6; filter: blur(0); }
+  100% { opacity: 1; filter: blur(0); }
+}
+@keyframes sd-pl-mist {
+  0% { opacity: 0; filter: blur(7px); transform: translateY(6px); }
+  50% { opacity: .5; filter: blur(1.75px); transform: translateY(3px); }
+  100% { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+/* 渐变遮罩扫过字形，局部暖光随显影消退；不复制文字，选择复制仍得到一份正文。 */
+@keyframes sd-pl-light {
+  0% { opacity: 0; mask-image: linear-gradient(100deg, #000 35%, transparent 65%); mask-size: 300% 100%; mask-position: 100% 0; text-shadow: 0 0 .45em #b68a49; }
+  45% { opacity: 1; text-shadow: 0 0 .25em #b68a49; }
+  100% { opacity: 1; mask-image: linear-gradient(100deg, #000 35%, transparent 65%); mask-size: 300% 100%; mask-position: 0 0; text-shadow: 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-markdown span[data-sd-animate] { animation: none; }
+}

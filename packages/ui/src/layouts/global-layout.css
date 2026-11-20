@@ -30,6 +30,10 @@
   background: var(--pl-surface, #fff);
 }
 .plotloom-global-layout__scroll { height: 100%; }
+/* 平铺外壳复用双栏尺寸与滚动规则；不叠加卡片边框或阴影。 */
+.plotloom-global-layout[data-variant='flat'] { --pl-layout-padding: 0px; border-radius: 0; background: var(--pl-surface-muted, #f6f6f7); }
+.plotloom-global-layout[data-variant='flat'] > .plotloom-global-layout__sidebar { border-right: 1px solid var(--pl-border, #d4d4d8); }
+.plotloom-global-layout[data-variant='flat'] > .plotloom-global-layout__main { border-radius: 0; }
 .plotloom-global-layout__handle { position: absolute; z-index: 2; top: var(--pl-layout-padding); bottom: var(--pl-layout-padding); width: 28px; transform: translateX(-50%); cursor: ew-resize; touch-action: none; outline: none; }
 .plotloom-global-layout__handle svg { position: absolute; top: 50%; left: 50%; width: 40px; height: 100px; transform: translate(-50%, -50%); pointer-events: none; opacity: 0; transition: opacity 150ms ease; overflow: visible; }
 .plotloom-global-layout__handle path { fill: none; stroke: #929298; stroke-width: 4; stroke-linecap: round; }

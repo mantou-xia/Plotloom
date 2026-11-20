@@ -1,0 +1,9 @@
+.pl-tool-call { min-width: 0; width: 100%; }
+/* 颜色辅助区分结果，保留勾/叉形状与状态文字，且不改变图标尺寸。 */
+.pl-tool-call .pl-process-node__icon[data-status=completed] { color: #15803d; }
+.pl-tool-call .pl-process-node__icon[data-status=failed] { color: #b91c1c; }
+.pl-tool-call__details { display: grid; gap: 12px; min-width: 0; }
+.pl-tool-call__label { margin: 0 0 6px; font-size: 11px; color: var(--pl-text-muted, #60636b); }
+.pl-tool-call__source { color: var(--pl-primary-text, #2457a6); font-size: 13px; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
+/* 长命令与结果软换行并自然撑高，沿用整条过程的滚动，不嵌套纵向滚动框。 */
+.pl-tool-call pre { margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--pl-surface-muted, #f6f6f7); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 ui-monospace, Consolas, monospace; tab-size: 2; }

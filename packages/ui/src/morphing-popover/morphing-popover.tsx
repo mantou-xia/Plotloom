@@ -28,6 +28,8 @@ export interface MorphingPopoverProps {
   zIndex?: number;
   staggerContent?: boolean;
   triggerLayout?: 'inline' | 'block';
+  /** 在浏览器顶层显示，避开滚动容器裁剪；仍保留原 DOM 的主题与事件关系。 */
+  topLayer?: boolean;
   /** 内容自行绘制背景时使用；外层形变面板仍负责表面背景。 */
   unstyled?: boolean;
   layoutId?: string;
@@ -39,7 +41,7 @@ const CLOSED_SHADOW = '0 0 0 rgba(0,0,0,0)';
 export function MorphingPopover({ open, onOpenChange, trigger, children, panelWidth,
   panelAlign = 'left', panelPlacement = 'above', label = '功能面板', className = '', panelClassName = '', style,
   reducedMotion, panelShadow = OPEN_SHADOW, zIndex = 50, staggerContent = false, triggerLayout = 'inline',
-  unstyled = false, layoutId,
+  unstyled = false, layoutId, topLayer = false,
 }: MorphingPopoverProps) {
   const panelId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -94,7 +96,10 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
       if (triggerLayout === "block") compact.style.width = `${anchor.clientWidth}px`;
       const button = compact.querySelector("button");
       const css = getComputedStyle(button ?? compact);
-      const width = compact.offsetWidth, height = compact.offsetHeight;
+      // offsetWidth/Height 会取整，导致浮层占位与原按钮相差小数像素，甚至触发标题换行。
+      // 读取布局尺寸保留精度；不取变换后的矩形，避免收起时的 scale 污染下一次占位。
+      const compactCss = getComputedStyle(compact);
+      const width = parseFloat(compactCss.width), height = parseFloat(compactCss.height);
       return {
         width,
         height,
@@ -105,6 +110,8 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
     };
     let closed = compactSize();
     const restClosed = () => {
+      if (shell.matches(':popover-open')) shell.hidePopover();
+      shell.removeAttribute('popover');
       gsap.set(compact, { opacity: 1, clearProps: "position,left,right,top,bottom,transform,maxWidth" });
       gsap.set(shell, { clearProps: "position,left,right,top,bottom,width,height,maxWidth,overflow,borderRadius,backgroundColor,boxShadow,transform,--morph-corner-curvature" });
       anchor.style.width = "";
@@ -120,9 +127,9 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
     if (open) setPresent(true);
     anchor.style.width = triggerLayout === "block" ? "100%" : `${closed.width}px`;
     anchor.style.height = `${closed.height}px`;
-    if (shell.style.position !== "absolute") {
+    if (shell.style.position !== (topLayer ? 'fixed' : 'absolute')) {
       gsap.set(shell, {
-        position: "absolute",
+        position: topLayer ? 'fixed' : 'absolute',
         width: closed.width,
         height: closed.height,
         maxWidth: "none",
@@ -131,12 +138,24 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
         backgroundColor: closed.background
       });
     }
-    gsap.set(shell, {
-      left: panelAlign === "left" ? 0 : "auto",
-      right: panelAlign === "right" ? 0 : "auto",
-      bottom: panelPlacement === "above" ? 0 : "auto",
-      top: panelPlacement === "below" ? 0 : "auto"
-    });
+    // 顶层外壳以视口坐标跟随原位占位，避免父级 overflow/transform 改变裁剪和定位。
+    const positionShell = () => {
+      const rect = anchor.getBoundingClientRect();
+      gsap.set(shell, {
+        left: panelAlign === 'left' ? topLayer ? rect.left : 0 : 'auto',
+        right: panelAlign === 'right' ? topLayer ? window.innerWidth - rect.right : 0 : 'auto',
+        bottom: panelPlacement === 'above' ? topLayer ? window.innerHeight - rect.bottom : 0 : 'auto',
+        top: panelPlacement === 'below' ? topLayer ? rect.top : 0 : 'auto',
+      });
+    };
+    if (topLayer) {
+      shell.setAttribute('popover', 'manual');
+      if (!shell.matches(':popover-open')) shell.showPopover();
+    } else if (shell.hasAttribute('popover')) {
+      if (shell.matches(':popover-open')) shell.hidePopover();
+      shell.removeAttribute('popover');
+    }
+    positionShell();
     gsap.set(compact, {
       position: "absolute",
       // 弹簧收回会短暂小于按钮的自然宽度。按钮不得跟随外壳被挤窄换行，
@@ -258,6 +277,7 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
       if (disposed) return;
       closed = compactSize();
       if (!latest.current.open) return;
+      positionShell();
       const next = expandedSize();
       if (Math.abs(next.width - expanded.width) < 0.5 && Math.abs(next.height - expanded.height) < 0.5 && Math.abs(next.x - expanded.x) < 0.5) return;
       const widthChanged = Math.abs(next.width - expanded.width) >= 0.5;
@@ -282,6 +302,7 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     document.addEventListener("focusin", outsideFocus);
     window.addEventListener("resize", retarget);
+    if (topLayer) window.addEventListener('scroll', retarget, true);
     media.addEventListener("change", play);
     return () => {
       disposed = true;
@@ -290,9 +311,10 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
       observer.disconnect();
       document.removeEventListener("focusin", outsideFocus);
       window.removeEventListener("resize", retarget);
+      if (topLayer) window.removeEventListener('scroll', retarget, true);
       media.removeEventListener("change", play);
     };
-  }, [open, showPanel, panelAlign, panelPlacement, panelShadow, triggerLayout, reducedMotion, panelWidth]);
+  }, [open, showPanel, panelAlign, panelPlacement, panelShadow, triggerLayout, reducedMotion, panelWidth, topLayer]);
 
   const triggerNode = typeof trigger === 'function' ? trigger({ onClick: () => onOpenChange(!open),
     'aria-expanded': open, 'aria-controls': showPanel ? panelId : undefined, 'aria-haspopup': 'dialog' }) : trigger;
@@ -303,7 +325,7 @@ export function MorphingPopover({ open, onOpenChange, trigger, children, panelWi
       <div ref={shellRef} className="pl-morphing-popover__shell morph-menu-shell" data-motion-id={layoutId ?? panelId}
         data-state={open ? 'open' : 'closed'} data-morph-placement={panelPlacement}
         style={{ zIndex: showPanel ? zIndex : undefined, pointerEvents: !open && present ? 'none' : undefined }}>
-        <div ref={compactRef} className="pl-morphing-popover__compact morph-menu-compact" aria-hidden={open}>
+        <div ref={compactRef} className="pl-morphing-popover__compact morph-menu-compact">
           <MenuTriggerOpenContext.Provider value={open}>{triggerNode}</MenuTriggerOpenContext.Provider>
         </div>
         {showPanel ? <div ref={panelRef} id={panelId} role="dialog" aria-label={label} data-morph-panel

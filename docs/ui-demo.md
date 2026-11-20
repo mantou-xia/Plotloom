@@ -23,6 +23,7 @@
 
 | 组件 | 示例状态 |
 | --- | --- |
+| SplitPaneLayout | 与 PageLayout 同级的分屏页面布局；展开、收起、独立滚动、窄容器覆盖、空内容；拖拽/键盘调宽、关闭恢复与内容插槽 |
 | Button | 全部按钮总览、主按钮、次按钮、浅底、透明、文字、链接样式、危险、加载、图标、禁用、长文本；同页平铺六种类型及尺寸、状态和图标组合 |
 | ScrollBox | 纵向、横向、双向、短内容、空内容；增减内容验证稳定占位，方向和显隐可独立调整 |
 | AsciiOcean | 鲨鱼与鱼群、暂停画面；指针避让、点击/Enter 水波、暂停与 0.25—2 倍速度控制 |
@@ -204,3 +205,58 @@
 - 长侧栏实际溢出时仍显示滚动条。脚本与截图：`output/playwright/scroll-overflow-check.js`、`scroll-no-overflow.png`、`scroll-with-overflow.png`。未出现页面运行异常，未验证其他浏览器。
 
 七条规则核对：只修复滚动提示；无业务或后端依赖；测量、观察与清理有职责注释；需求明确；修复现有行为，不替换公开接口；无新增边框或阴影；逻辑和样式统一在 packages/ui 的 ScrollBox。无业务接口变更。
+
+
+## 2026-11-19 MarkdownRenderer
+
+「内容组件 → MarkdownRenderer」提供基础排版、代码、公式、Mermaid、数据图表、流式、错误七个样例。右侧编辑 `content` 并切换流式模拟；图表源码切换与复制直接作用于真实组件。模拟流式可停止和重新播放。组件仅展示，不连接聊天后端。
+
+使用说明见 `packages/ui/README.md`；选型见 `docs/markdown-renderer-plan.md`；29 项 UI 测试、34 项浏览器断言和 3 项补充检查记录见 `docs/markdown-renderer-validation.md`。A2UI 留待后续实现。
+
+## 2026-11-19 CodeBlock
+
+「内容组件 → CodeBlock」提供 TypeScript、Python、JSON、纯文本、未知语言、长行与长代码、空代码、流式代码八个样例。右侧调整原始源码、语言与流式模拟；流式可停止和重播。代码块可脱离 Markdown 使用，普通 Markdown 围栏复用该组件。
+
+复制成功、权限拒绝、失败后重试、过期请求、真实高亮、双向滚动、键盘操作、窄屏及流式更新已验证。详见 `docs/code-block-validation.md`。
+
+
+## 2026-11-20 PrimaryTabs
+
+“基础组件 → PrimaryTabs”独立展示默认、整体禁用、禁用单项三种状态，替换原 SegmentedControl。灰色底座与白色滑块参考 curly-shrimp-52，支持 Tab 与面板关联。画布可修改首项文字和整体禁用，选中值通过受控回调显示；方向键跳过禁用项。技能页组合它与 Input、Button、PageLayout。验收见 `docs/skills-page-validation.md`。
+
+
+## 2026-11-19 AgentActivityHeader
+
+内容组件中新增 AgentActivityHeader，提供阅读、编写、搜索、执行、思考、未知工具、长思考内容、最终回答、失败、停止十个样例。
+
+右侧可调整阶段、工具名映射、活动、文案、粒子形态、视觉区高度、可选耗时、减少动态效果与思考内容。画布可模拟工具切换、追加思考内容、进入最终回答、完成回答与新任务；均为本地组件演示。运行时高度由 visualHeight 控制；粒子支持拖动旋转。
+
+2026-11-20 调整：思考时无收起按钮；结束后粒子和状态栏全部隐藏，只保留内容插槽。调试台自行组合滚动及内容折叠，展开内容不会重现 Header；真实思维链组件和后端阶段接入留待后续实现。验证见 [验收记录](agent-activity-validation.md)。
+
+## 2026-11-20 C07 UserMessageBubble
+
+内容组件中新增 UserMessageBubble，提供短文本、多行原文、长文本、字面内容、文字与附件、仅附件、空内容七个样例。右侧可编辑用户原文、切换附件插槽和调整尺寸；默认靠右、自适应宽度，保留空格与换行，长路径在窄屏换行。
+
+附件现使用与 TaskComposer 共享的文件卡片和真实图片缩略图；图片可点击预览，发送后没有删除按钮。AttachmentCard 独立提供文件与图片、草稿移除、状态切换三个样例。C07 浏览器检查更新为 27 项，附件额外 24 项通过；本轮整体构建受其他思考面板文件缺失阻塞。详见 [C07 验收记录](user-message-validation.md) 与 [附件验收](attachment-validation.md)。
+
+## 2026-11-20 C10 CitationMarker
+
+「内容组件 → CitationMarker」提供单个引用、连续引用、当前来源、不可用来源、长名称与多位编号五个状态。右侧可调编号、来源名、选中、禁用和尺寸；悬停或聚焦查看完整名称，点击、Enter 或空格触发来源回调。示例使用现有 Dialog 展示来源，关闭后恢复到引用按钮。
+
+类型检查、整体构建、29 项 UI 测试和 29 项 C10 浏览器检查通过；之前的思考面板缺失已不再阻塞当前构建。C11 及真实聊天接入待后续实施。详见 [C10 验收记录](citation-marker-validation.md)。
+
+## 2026-11-20 C11 SourceReference
+
+「内容组件 → SourceReference」提供混合、网页、文件、正文引用联动、长内容、链接不可用、空列表七个样例。右侧可编辑标题、URL、文件路径、摘要和片段，切换文件打开操作。
+
+列表和 C10 通过同一个来源 ID 打开详情；网页支持新窗口导航，文件操作记录调用方回调。详情独立滚动，关闭后焦点回到原入口。类型检查、构建、29 项 UI 测试与 29 项 C11 浏览器检查通过。详见 [C11 验收记录](source-reference-validation.md)；真实聊天来源数据尚未接入。
+
+## 2026-11-20 WorkspaceTabs
+
+布局组件新增 WorkspaceTabs：独立页面、标签溢出、空工作区、固定标签、自定义页面框架五个样例。示例通过公开 props 组合工具栏和长正文，输入草稿后切换标签可检查独立状态与滚动；支持新增、关闭、方向键、Home/End、Delete。自定义页面使用 page 插槽自行提供工具栏、正文和底栏。尺寸控件直接调整组件根元素，不以业务页作为示例。验收见 [工作区框架验收](workspace-frame-validation.md)。
+
+## 2026-11-20 MarkdownReaderFrame / BrowserFrame
+
+「布局组件」新增两个独立框架。MarkdownReaderFrame 提供阅读文档、长文档、尚未打开、空文件、正在读取、读取失败、自定义工具栏七个样例；右侧可修改文件名、路径、文本和工具栏。BrowserFrame 提供已连接示例、空白页、正在载入、访问失败、未连接、自定义工具栏六个样例；地址提交、历史、刷新、停止通过本地受控数据演示，不访问网络。
+
+框架已接入产品工作区，产品页暂不连接文件或原生浏览器宿主。验收及截图见 [页面框架验收](workspace-page-frames-validation.md)。

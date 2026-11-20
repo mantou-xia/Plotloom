@@ -37,7 +37,11 @@
 
 新建会话立即保存并可查询，重启后仍存在。SDK 1.5.2 不持久化仅有元信息的空会话，因此创建时将 SDK 公共 API 返回的头和元信息写入同一 JSONL，再交给 SessionManager 打开；之后消息、工具结果与压缩全部由 SDK 保存，没有第二份聊天历史。
 
-P1 模型配置只选择已注册且已配置凭据的模型。PUT 的默认选择保存于数据目录 `model-config.json`，重启后优先于环境默认值；不改变已有会话的模型。`configured` 表示存在可用凭据，不保证供应商一定接受凭据。无凭据仍可读取历史。自定义供应商通过根目录 `models.json` 按 SDK 格式登记，密钥由 `.env` / 本进程环境提供，不提供密钥写入接口。
+默认模型与思考档位保存在数据目录的 `model-config.json`，用于后续新建会话。`configured` 表示存在可用凭据。设置页通过 `GET /api/providers` 读取自定义供应商，通过同路径的 POST 新增、PUT 编辑。服务在数据目录的 `agent/providers.json` 保存设置页的覆盖值，包括本机明文 API Key；公开响应只返回配置状态。编辑时省略密钥会沿用已有凭据，更换已配置服务的源地址须重新输入密钥。原有 `models.json`、模型能力和环境凭据继续作为基础配置。
+
+供应商的额外端点存于 `endpoints`，模型通过 `modelApis` 指定协议，未指定时使用主端点。所有端点共用一个 Key。停用从后续调用起生效。DELETE /api/providers/:providerId 删除配置；文件来源保留屏蔽标记。POST /api/providers/check 和 POST /api/providers/discover 分别检测目录连通性和预览远端模型。两者只读取已保存端点的模型目录，未发送推理请求；预览结果需在页面确认后保存。
+
+供应商目录与配置保存响应只提供密钥配置状态。用户点击复制时，客户端向 `POST /api/providers/:providerId/credential` 提交空 JSON 对象。该响应包含有效 API Key 并设置 `Cache-Control: no-store`。前端将值写入剪贴板，界面保持掩码。接口试验台只使用测试凭据。
 
 创建请求必须有 JSON 对象，使用默认模型发送 `{}`。消息 `text` 必须是非空白字符串，最多 100000 字符；请求体上限 1 MiB。未知字段、类型错误和缺少必要参数返回 400。
 

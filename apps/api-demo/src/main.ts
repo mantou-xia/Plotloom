@@ -106,7 +106,7 @@ function renderEndpoint() {
     content.innerHTML = `<section class="doc-section"><div class="usage-note">${iconMarkup('Info')}<p>${selected.note}</p></div>
       ${pathFields.length ? `<h3>路径参数 <span class="inline-meta">会话 id 使用上方输入；资产 ID 在下方填写</span></h3>${fieldTable(pathFields)}${pathFields.filter((field) => field.name !== 'id').map((field) => `<div class="editor-heading"><label for="path-${field.name}">${escape(field.name)}</label></div><input id="path-${field.name}" data-path-parameter="${field.name}" value="${escape(assetParameters[field.name])}" placeholder="${escape(field.description)}" autocomplete="off" />`).join('')}` : ''}
       <h3>请求参数 <span class="inline-meta">${selected.examples.length ? 'application/json' : '无需请求体'}</span></h3>
-      ${bodyFields.length ? fieldTable(bodyFields) : `<p class="no-params">${selected.examples.length ? '使用默认模型时，发送空对象即可。' : '该接口不需要请求体，可以直接发起检查。'}</p>`}
+      ${bodyFields.length ? fieldTable(bodyFields) : `<p class="no-params">${selected.examples.length ? '该接口无需填写请求字段，发送空对象即可。' : '该接口不需要请求体，可以直接发起检查。'}</p>`}
       ${selected.request.some((item) => item.name === 'thinkingLevel') ? '<div id="model-controls"></div>' : ''}
       ${selected.id === 'attachments.upload' ? '<div class="editor-heading"><label for="attachment-file">选择附件文件</label></div><input id="attachment-file" type="file" accept=".png,.jpg,.jpeg,.webp,.txt,.md,.markdown" /><p class="section-note">选择后填入请求体，点击发送才会上传。图片最多 10 MiB，文本最多 1 MiB。</p>' : ''}
       ${selected.examples.length ? `<div class="editor-heading"><label for="request-body">请求体</label><select id="example-picker" aria-label="选择参数示例">${selected.examples.map((item, i) => `<option value="${i}">${item.name}</option>`).join('')}</select></div><textarea id="request-body" spellcheck="false" aria-describedby="body-help" rows="7">${escape(drafts.get(selected.id))}</textarea><div class="editor-footer"><span id="body-help">可编辑 JSON · 仅在点击后发送</span><button id="format-json" class="text-button">格式化</button><button id="reset-json" class="text-button">恢复示例</button></div>` : ''}
@@ -210,7 +210,8 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
   runs.set(endpoint.id, run);
   renderCatalog(); updateButtons(); renderResult();
   try {
-    const signal = endpoint.stream || endpoint.id === 'context.compact' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
+    // 系统窗口等待用户选择，不能使用普通 HTTP 的 20 秒超时；仍可主动中止。
+    const signal = endpoint.stream || endpoint.id === 'context.compact' || endpoint.id === 'skills.import-folder' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
     const response = await fetch(url, { method: endpoint.method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
     run.status = response.status;
     run.headers = Object.fromEntries(response.headers.entries());
@@ -244,7 +245,8 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
         if (endpoint.id === 'context.compact' && run.body.outcome === 'aborted' && run.phase === 'success') run.phase = 'stopped';
         if (['sessions.create', 'chats.create'].includes(endpoint.id) && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
         if (endpoint.id === 'attachments.upload' && targetSession === sessionId && typeof run.body.id === 'string') setAssetParameter('attachmentId', run.body.id);
-        if (['skills.create', 'skills.import', 'skills.copy'].includes(endpoint.id) && typeof run.body.id === 'string') setAssetParameter('skillId', run.body.id);
+        if (endpoint.id === 'skills.import-folder' && isObject(run.body.skill) && typeof run.body.skill.id === 'string') setAssetParameter('skillId', run.body.skill.id);
+        if (['skills.create', 'skills.copy'].includes(endpoint.id) && typeof run.body.id === 'string') setAssetParameter('skillId', run.body.id);
         if (endpoint.id === 'workspaces.create' && typeof run.body.id === 'string') setAssetParameter('workspaceId', run.body.id);
         if (endpoint.id === 'proposals.create' && typeof run.body.id === 'string') {
           setAssetParameter('proposalId', run.body.id);

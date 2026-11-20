@@ -1,5 +1,6 @@
 import Fastify, { type FastifyError } from 'fastify';
-import { AgentService, AgentError, publicError, PROJECT_TOOLS, type AgentOptions } from '@plotloom/agent-pi';
+import { AgentService, AgentError, publicError, type AgentOptions } from '@plotloom/agent-pi';
+import { toolDirectory } from './tool-directory.ts';
 import { registerRoutes } from './routes/agent.ts';
 import { registerWorkspaceRoutes } from './routes/workspaces.ts';
 import { WorkspaceService } from '@plotloom/application';
@@ -8,25 +9,30 @@ import { WorkspaceError } from '@plotloom/domain';
 import { SkillService } from '@plotloom/application/skills';
 import { FileSkillRepository } from '@plotloom/storage/skills';
 import { registerSkillRoutes } from './routes/skills.ts';
-import { WritingService, WRITING_TOOLS } from '@plotloom/application/writing';
+import { WritingService } from '@plotloom/application/writing';
 import { writingResources } from './writing.ts';
 import { registerWritingRoutes } from './routes/writing.ts';
 import { MessageSourceService } from '@plotloom/application/sources';
 import { FileAttachmentStore } from '@plotloom/storage/sources';
 import { registerSourceRoutes } from './routes/sources.ts';
+import { FileProjectStore } from '@plotloom/storage/projects';
+import { registerProjectRoutes } from './routes/projects.ts';
+import { createFolderPicker, type FolderPicker } from './platform/folder-picker.ts';
 
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
-export async function buildServer(options: AgentOptions & { logger?: boolean }) {
+export async function buildServer(options: AgentOptions & { logger?: boolean }, dependencies: { folderPicker?: FolderPicker } = {}) {
   const workspaces = new WorkspaceService(new FileWorkspaceStore(options.dataDir));
+  const directory = toolDirectory(options);
   let skills: SkillService;
   let writing: WritingService;
   let sources: MessageSourceService;
-  const agent = await AgentService.create({ ...options, resolveSkills: (id, explicit) => skills.snapshot(id, explicit),
+  const attachments = new FileAttachmentStore(options.dataDir);
+  const agent = await AgentService.create({ ...options, removeAttachments: id => attachments.removeSession(id), resolveSkills: (id, explicit) => skills.snapshot(id, explicit),
     resolveSources: (id, text, input) => sources.resolve(id, text, input),
     resolveResources: async (id, text, input) => (await agent.getSkillProfile(id)).workspaceId
       ? writingResources(writing, id, { task: 'discuss', instructions: text,
         references: input?.references?.map(({ workspaceId: _workspaceId, ...reference }) => ({ ...reference, role: 'other' })) }) : undefined });
-  sources = new MessageSourceService(new FileAttachmentStore(options.dataDir), workspaces, {
+  sources = new MessageSourceService(attachments, workspaces, {
     profile: id => agent.getSkillProfile(id), messages: async id => (await agent.getSession(id)).messages,
     idle: (id, operation) => agent.withIdleSession(id, operation),
   });
@@ -36,8 +42,8 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }) 
   skills = new SkillService(new FileSkillRepository(options.dataDir), {
     create: (request, profile) => agent.createSession(request, profile), list: () => agent.listSessions(),
     profile: id => agent.getSkillProfile(id), setSkills: (id, ids) => agent.setSkills(id, ids),
-    projectTools: async id => (await agent.getSession(id)).projectPath ? [...PROJECT_TOOLS, 'read_skill', ...(options.tools?.map(t => t.name) ?? [])] : undefined,
-  }, id => workspaces.get(id), workspaceId => [...(options.tools?.map(t => t.name) ?? (workspaceId === undefined || workspaceId === null ? ['read_fixture'] : [])), 'read_skill', ...(workspaceId === null ? [] : WRITING_TOOLS)]);
+    projectTools: async id => (await agent.getSession(id)).projectPath ? directory.names('project') : undefined,
+  }, id => workspaces.get(id), (workspaceId, project) => project ? directory.names('project') : workspaceId === undefined ? directory.all : directory.names(workspaceId === null ? 'ordinary' : 'novel'));
   const app = Fastify({
     logger: options.logger ?? false, disableRequestLogging: true, bodyLimit: 1024 * 1024,
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false } },
@@ -61,9 +67,12 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }) 
     }
   });
   registerRoutes(app, agent);
+  // 项目与技能共享原生选择器，防止并发打开多个系统窗口。
+  const folderPicker = dependencies.folderPicker ?? createFolderPicker();
+  registerProjectRoutes(app, new FileProjectStore(options.dataDir), folderPicker);
   registerSourceRoutes(app, sources);
   registerWorkspaceRoutes(app, workspaces);
-  registerSkillRoutes(app, skills);
+  registerSkillRoutes(app, skills, folderPicker, directory.tools);
   registerWritingRoutes(app, agent, writing, workspaces);
   // preClose 先停止 SSE 对应生成，避免 close 等待长连接而无法进入清理阶段。
   app.addHook('preClose', () => agent.close());

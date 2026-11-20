@@ -1,0 +1,12 @@
+.pl-drawer { box-sizing: border-box; position: fixed; inset: 12px 12px 12px auto; width: min(640px, calc(100vw - 24px)); max-width: none; height: calc(100dvh - 24px); max-height: none; margin: 0; padding: 0; border: 0; border-radius: 20px; background: var(--pl-surface, white); color: var(--pl-text); transform: translateX(calc(100% + 12px)); transition: transform 280ms ease, overlay 280ms allow-discrete, display 280ms allow-discrete; }
+.pl-drawer[open] { display: flex; flex-direction: column; transform: translateX(0); }
+.pl-drawer::backdrop { background: transparent; transition: background 280ms ease, overlay 280ms allow-discrete, display 280ms allow-discrete; }
+.pl-drawer[open]::backdrop { background: rgb(20 24 32 / 34%); }
+@starting-style {
+  .pl-drawer[open] { transform: translateX(calc(100% + 12px)); }
+  .pl-drawer[open]::backdrop { background: transparent; }
+}
+.pl-drawer__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px; }
+.pl-drawer__header h2 { margin: 0; font-size: 18px; }
+.pl-drawer__body { flex: 1; min-height: 0; padding: 0 24px 24px; }
+@media (prefers-reduced-motion: reduce) { .pl-drawer, .pl-drawer::backdrop { transition: none; } }

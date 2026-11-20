@@ -1,0 +1,24 @@
+.pl-disclosure { min-width: 0; }
+.pl-disclosure-trigger { display: inline-flex; align-items: center; width: fit-content; min-height: 32px; gap: 6px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; list-style: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 550; color: var(--pl-text-muted, #60636b); }
+.pl-disclosure-trigger::-webkit-details-marker { display: none; }
+.pl-disclosure-trigger:is(:hover, :focus-visible) { color: var(--pl-text, #202124); }
+.pl-disclosure-trigger:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-focus, #2563eb); }
+.pl-disclosure-trigger > svg { flex-shrink: 0; }
+.pl-disclosure__body { padding-block: 12px 4px; }
+
+/* 用内容的自然高度撑开宿主；收起时等高度过渡完成再隐藏内容。 */
+@supports (interpolate-size: allow-keywords) and selector(details::details-content) {
+  .pl-disclosure::details-content {
+    interpolate-size: allow-keywords;
+    block-size: auto;
+    overflow: clip;
+    contain: layout;
+  }
+  .pl-disclosure:not([open])::details-content { block-size: 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .pl-disclosure::details-content {
+      transition: block-size 300ms ease-in-out, content-visibility 300ms allow-discrete;
+    }
+  }
+}

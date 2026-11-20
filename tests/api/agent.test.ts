@@ -228,10 +228,10 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
     });
     for (const request of fixture.requests) {
       if (!request.tools?.length) continue; // 压缩由 SDK 独立摘要提示处理。
-      assert.deepEqual(request.tools.map((tool: any) => tool.function.name), ['read_fixture']);
+      assert.deepEqual(request.tools.map((tool: any) => tool.function.name), ['read_fixture', 'browser', 'web_fetch']);
       const system = JSON.stringify(request.messages.filter((message: any) => ['system', 'developer'].includes(message.role)));
-      assert.match(system, /Plotloom 的创作助手/);
-      assert.doesNotMatch(system, /项目开发规则|Self-Improvement|You are a coding/);
+      assert.match(system, /Plotloom 的通用助手/);
+      assert.doesNotMatch(system, /读取内置 scene 示例|项目开发规则|Self-Improvement|You are a coding/);
     }
     assert.deepEqual(fixture.errors, []);
   } finally {

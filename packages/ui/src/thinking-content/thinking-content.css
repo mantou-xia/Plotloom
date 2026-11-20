@@ -1,0 +1,4 @@
+.pl-thinking-content { min-width: 0; overflow-wrap: anywhere; }
+/* 思考是过程中的文本块，不增加独立滚动容器或整体状态工具栏。 */
+.pl-thinking-content .pl-markdown { color: var(--pl-text-muted, #60636b); font-size: 14px; }
+.pl-thinking-content .pl-markdown > div > :last-child { margin-bottom: 0; }

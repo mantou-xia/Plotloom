@@ -46,7 +46,7 @@ export const WRITING_CATALOG: EndpointDoc[] = [
   { id: 'writing.context', module: 'writing', name: '预览创作上下文', method: 'POST', path: '/api/sessions/:id/writing/context', success: 200,
     description: '校验小说归属、目标、选区及引用版本，返回实际资料快照，不发模型请求。', note: '预览不锁定磁盘；发送时重新校验。普通聊天 422、缺目标/选区 400、过期版本 409、资料超限 422。', request, response: context, examples, responseExample: contextExample },
   { id: 'writing.send', module: 'writing', name: '开始内容创作', method: 'POST', path: '/api/sessions/:id/writing/messages', success: 200, stream: true,
-    description: '依据固定上下文完成章节、续写、改写、大纲丰富或冲突讨论，实时返回工具与模型事件。', note: '复用全部 10 类 SSE 事件；completed 仅表示本轮结束，候选及审校另查创作结果。有冲突应提问，未采纳不改正式稿。停止用原会话 stop，断流不停止；无凭据 422、忙时 409。',
+    description: '依据固定上下文完成章节、续写、改写、大纲丰富或冲突讨论，实时返回工具与模型事件。与普通聊天一致，后端按本机时区在本轮模型输入末尾提供当前日期，公开用户正文保持原样。', note: '复用全部 10 类 SSE 事件；completed 仅表示本轮结束，候选及审校另查创作结果。有冲突应提问，未采纳不改正式稿。停止用原会话 stop，断流不停止；无凭据 422、忙时 409。',
     request, response: [f('sessionId', 'string', '每个 SSE 事件所属会话。', 'session-id')], examples, responseExample: { event: 'completed', data: { sessionId: 'session-id' } } },
   { id: 'writing.results', module: 'writing', name: '查询创作来源与候选', method: 'GET', path: '/api/sessions/:id/writing', success: 200,
     description: '查询本聊天创作及小说讨论记录、资料版本、审校问题和候选，最近记录在前。', note: '重启保留；未完成运行显示 aborted，不自动续跑。普通聊天 422、未知会话 404。停止后已完成候选仍可查询，正文保持未采纳状态。',

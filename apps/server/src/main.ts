@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { buildServer } from './bootstrap.ts';
 
-/** 仅监听回环地址；凭据从本进程环境加载，永远不进入 API 响应。 */
+/** 仅监听回环地址；环境凭据作为初始配置，页面保存的私有覆盖值由模型服务加载。 */
 async function main() {
   const provider = process.env.PLOTLOOM_PROVIDER;
   const model = process.env.PLOTLOOM_MODEL;

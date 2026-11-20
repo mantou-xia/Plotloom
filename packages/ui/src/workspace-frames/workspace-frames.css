@@ -1,0 +1,28 @@
+/* 两类内容页共用固定栏位，页面内容与外部资源由各自的调用方决定。 */
+.pl-content-frame { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; color: var(--pl-text); background: var(--pl-surface); }
+.pl-content-frame__toolbar { display: flex; align-items: center; gap: 10px; flex: 0 0 54px; min-width: 0; padding: 0 14px; border-bottom: 1px solid var(--pl-border); }
+.pl-content-frame__toolbar > svg { flex-shrink: 0; color: var(--pl-text-muted); }
+.pl-content-frame__identity { flex: 1; min-width: 0; line-height: 1.5; }
+.pl-content-frame__identity strong, .pl-content-frame__identity span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pl-content-frame__identity strong { font-size: 13px; font-weight: 550; }
+.pl-content-frame__identity span { font-size: 11px; color: var(--pl-text-muted); }
+.pl-content-frame__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pl-content-frame__body { flex: 1; min-height: 0; min-width: 0; }
+.pl-content-frame__statusbar { flex: 0 0 32px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-top: 1px solid var(--pl-border); color: var(--pl-text-muted); font-size: 11px; }
+.pl-content-frame__statusbar > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 操作高度小于含分隔线的底栏内高，避免聚焦按钮时容器为露出底边滚动 1px。 */
+.pl-content-frame__statusbar > button { --pl-button-height: 24px; flex-shrink: 0; padding: 2px 8px; }
+.pl-content-frame__state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; padding: 32px 24px; text-align: center; }
+.pl-content-frame__state-icon { display: flex; color: var(--pl-text-muted); }
+.pl-content-frame__state-icon svg { width: 30px; height: 30px; stroke-width: 1.5; }
+.pl-content-frame__state h2 { font-size: 17px; font-weight: 550; margin: 16px 0 8px; }
+.pl-content-frame__state-detail { max-width: 40ch; color: var(--pl-text-muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.pl-content-frame__spinner { animation: pl-content-frame-spin 1s linear infinite; }
+@keyframes pl-content-frame-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pl-content-frame__spinner { animation: none; } }
+.pl-markdown-reader__document { max-width: 840px; padding: 28px clamp(18px, 4vw, 44px) 56px; margin: 0 auto; }
+.pl-browser-frame__toolbar { gap: 8px; padding-inline: 10px; }
+.pl-browser-frame__navigation { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.pl-browser-frame__address { flex: 1; min-width: 0; margin: 0; }
+.pl-browser-frame__address .pl-form-input { width: 100%; border-radius: 18px; }
+.pl-browser-frame__viewport { position: relative; overflow: hidden; }

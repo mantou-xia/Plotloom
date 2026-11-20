@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import { LayoutGrid, Plus, Settings } from 'lucide-react';
+import { LayoutGrid, Plus, SquarePen, Settings } from 'lucide-react';
 import { SidebarActionButton } from '../sidebar/action-button.tsx';
 import { Sidebar } from '../sidebar/sidebar.tsx';
 import { SidebarGroup } from '../sidebar/group.tsx';
@@ -20,7 +20,7 @@ export function SidebarExample({ state, style, onAction }: { state: string; styl
     onAction(`onExpandedChange(${key}, ${expanded})`);
   };
   return <Sidebar style={{ ...style, overflow: 'hidden' }} header={<strong>侧栏示例</strong>}
-    fixNavItems={<SidebarNavItem label="新聊天（示例）" icon={<Plus />} onClick={() => onAction('onNewChat')} />}
+    fixNavItems={<SidebarNavItem label="新聊天（示例）" icon={<SquarePen />} onClick={() => onAction('onNewChat')} />}
     navItems={<SidebarNavItem label="功能页面" icon={<LayoutGrid />} active={selected === 'page'} onClick={() => select('page')} />}
     footer={<SidebarSettingsItem label="设置项" icon={<Settings />} active={selected === 'settings'} onClick={() => select('settings')} />}
     groups={<>

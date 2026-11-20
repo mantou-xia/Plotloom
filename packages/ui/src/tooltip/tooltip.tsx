@@ -1,4 +1,4 @@
-import { useId, useState, type CSSProperties, type ReactElement } from 'react';
+import { useCallback, useId, useRef, useState, type CSSProperties, type ReactElement } from 'react';
 import { Tooltip as Primitive } from 'deep-agent-base-ui/tooltip';
 import './tooltip.css';
 
@@ -18,13 +18,21 @@ export interface TooltipProps {
 /** 只提供提示气泡。复用已有浮层基础设施处理聚焦、Esc、悬停保持和视口避让，不改变触发器外观。 */
 export function Tooltip({ content, children, disabled = false, delay = 0, shake = true, className, style }: TooltipProps) {
   const id = useId();
+  const trigger = useRef<HTMLElement>(null);
+  const setTrigger = useCallback((node: HTMLElement | null) => { trigger.current = node; }, []);
   const [open, setOpen] = useState(false);
+  const [container, setContainer] = useState<HTMLDialogElement>();
   // 保留触发器已有说明；只在气泡挂载期间建立辅助技术关联。
   const description = [children.props['aria-describedby'], open ? id : undefined].filter(Boolean).join(' ') || undefined;
-  return <Primitive.Root disabled={disabled || !content.trim()} onOpenChange={setOpen}>
-    <Primitive.Trigger render={children} delay={delay} aria-describedby={description} />
-    <Primitive.Portal>
-      <Primitive.Positioner side="top" sideOffset={12} collisionPadding={12} className="pl-tooltip-positioner">
+  return <Primitive.Root disabled={disabled || !content.trim()} onOpenChange={next => {
+    // 原生模态层会遮住页面根部的气泡，提示必须挂载在触发器所属的模态层内。
+    if (next) setContainer(trigger.current?.closest<HTMLDialogElement>('dialog:modal') ?? undefined);
+    setOpen(next);
+  }}>
+    <Primitive.Trigger ref={setTrigger} render={children} delay={delay} aria-describedby={description} />
+    <Primitive.Portal container={container}>
+      <Primitive.Positioner side="top" sideOffset={12} collisionPadding={12} className="pl-tooltip-positioner"
+        positionMethod={container ? 'fixed' : 'absolute'}>
         <Primitive.Popup id={id} role="tooltip" data-shake={shake} className={['pl-tooltip', className].filter(Boolean).join(' ')} style={style}>
           {content}
           <Primitive.Arrow className="pl-tooltip__arrow" />

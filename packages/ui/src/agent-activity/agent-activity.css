@@ -1,0 +1,26 @@
+.pl-agent-activity { width: 100%; min-width: 0; color: var(--pl-text, #202124); container-type: inline-size; }
+.pl-agent-activity__body { display: grid; grid-template-columns: minmax(0, 44%) minmax(0, 1fr); gap: 24px; align-items: start; }
+.pl-agent-activity__visual { height: var(--pl-agent-height); min-width: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; overflow: hidden; }
+.pl-agent-activity__canvas { width: 100%; height: 100%; object-fit: contain; color: var(--pl-text, #2a2a2e); }
+/* 保留默认高度，同时允许内容插槽主动展开全部；左侧粒子尺寸不随之增长。 */
+.pl-agent-activity__right { min-height: var(--pl-agent-height); min-width: 0; display: flex; flex-direction: column; }
+.pl-agent-activity__header { display: flex; align-items: center; gap: 10px; height: 48px; flex: 0 0 48px; min-width: 0; padding-inline: 4px; font-size: 16px; font-weight: 500; }
+.pl-agent-activity__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-agent-activity__time { flex-shrink: 0; color: var(--pl-text-muted, #777); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 400; min-width: 5ch; text-align: right; }
+.pl-agent-activity__content { min-height: 0; flex: 1; }
+/* LeiBox 九宫格仅改变透明度，运行状态切换不改变图标或标题尺寸。 */
+.pl-agent-activity__thinking-icon { display: grid; grid-template-columns: repeat(3, 6px); gap: 2px; width: 22px; height: 22px; flex: 0 0 22px; }
+.pl-agent-activity__thinking-icon i { width: 6px; height: 6px; border-radius: 1px; background: currentColor; }
+.pl-agent-activity[data-phase=working][data-reduced-motion=false] .pl-agent-activity__thinking-icon i { animation: pl-thinking-pulse 1.1s ease-in-out infinite; animation-delay: calc(var(--i) * -.12s); }
+@keyframes pl-thinking-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .pl-agent-activity .pl-agent-activity__thinking-icon i { animation: none !important; } }
+.pl-agent-activity__canvas { cursor: grab; touch-action: pan-y; }
+.pl-agent-activity__canvas[data-dragging=true] { cursor: grabbing; }
+.pl-agent-activity__canvas:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-focus, #a3a3a3); }
+.pl-agent-activity[data-finished=true] .pl-agent-activity__body { display: block; }
+.pl-agent-activity[data-finished=true] .pl-agent-activity__right { min-height: 0; }
+@container (max-width: 540px) {
+  .pl-agent-activity__body { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .pl-agent-activity__visual { height: min(var(--pl-agent-height), 240px); }
+  .pl-agent-activity__header { font-size: 14px; }
+}

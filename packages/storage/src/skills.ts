@@ -24,11 +24,16 @@ export class FileSkillRepository implements SkillRepository {
       try { state = JSON.parse(await readFile(join(this.root, 'state.json'), 'utf8')); }
       catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; state = { format: 1, skills: [], workspaces: {} }; }
       if (state.format !== 1) throw new WorkspaceError('SKILL_STATE_INVALID', '技能清单格式无效，请检查备份。', 500);
+      // 已安装技能补齐全局准入字段；已保存的关闭状态在启动及内置升级时都必须保留。
+      if (state.skills.some(skill => skill.enabled === undefined)) {
+        state.skills.forEach(skill => { skill.enabled ??= true; });
+        await this.persist(state);
+      }
       if (!this.initialized) {
         const files = await this.readTree(fileURLToPath(new URL('../builtin/novel-writing', import.meta.url)));
         const version = bundleVersion(files); const current = state.skills.find(s => s.id === 'builtin-novel-writing');
         if (current?.version !== version) {
-          const skill: StoredSkill = { ...inspectSkill(decodeText(files['SKILL.md'])), id: 'builtin-novel-writing', source: 'builtin', origin: 'Plotloom', version, files: Object.keys(files).sort(), updatedAt: new Date().toISOString() };
+          const skill: StoredSkill = { ...inspectSkill(decodeText(files['SKILL.md'])), enabled: current?.enabled ?? true, id: 'builtin-novel-writing', source: 'builtin', origin: 'Plotloom', version, files: Object.keys(files).sort(), updatedAt: new Date().toISOString() };
           await this.write(skill, files); state.skills = [skill, ...state.skills.filter(s => s.id !== skill.id)]; await this.persist(state);
         }
         this.initialized = true;

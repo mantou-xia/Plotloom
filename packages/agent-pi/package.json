@@ -7,6 +7,9 @@
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@plotloom/contracts": "workspace:*",
+    "linkedom": "0.18.15",
+    "mdast-util-from-markdown": "2.1.0",
+    "playwright-core": "1.65.1",
     "typebox": "1.3.27"
   }
 }

@@ -3,3 +3,28 @@
   font-size: 16px;
   line-height: 1.5;
 }
+
+/* 浮层跟随接收区边界，指针仍命中原控件，拖放时布局和滚动位置保持稳定。 */
+.plotloom-task-composer__drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  background: color-mix(in srgb, var(--pl-primary, #2563eb) 18%, transparent);
+  transition: opacity 120ms ease;
+}
+.plotloom-task-composer__drop-hint[data-active="true"] { opacity: 1; }
+.plotloom-task-composer__drop-hint > span {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--pl-surface, #fff);
+  color: var(--pl-primary-text, #1d4ed8);
+  font-size: 14px;
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plotloom-task-composer__drop-hint { transition: none; }
+}

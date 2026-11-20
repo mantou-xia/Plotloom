@@ -1,0 +1,106 @@
+// Playwright CLI：组件调试台 run-code --filename tests/ui/page-frames-browser.js
+async (page) => {
+  const passed = [], errors = [];
+  const assert = (ok, label) => { if (!ok) throw new Error(label); passed.push(label); };
+  const onError = error => errors.push(error.message);
+  page.on('pageerror', onError);
+  const frame = page.frameLocator('iframe');
+  const select = async value => { await page.locator('#example-state').selectOption(value); };
+  try {
+    await page.setViewportSize({ width: 1800, height: 1100 });
+    await page.getByRole('button', { name: 'MarkdownReaderFrame 7', exact: true }).click();
+    const reader = frame.getByRole('region', { name: 'Markdown 阅读器', exact: true });
+    await reader.waitFor();
+    assert(await reader.getByRole('heading', { name: '工作区阅读指南', exact: true }).isVisible(), '真实复用Markdown渲染器');
+    assert(await reader.getByRole('table').count() === 1, 'Markdown表格正常展示');
+    const reading = frame.getByLabel('Markdown 阅读内容', { exact: true });
+    assert(await reading.evaluate(el => el.classList.contains('plotloom-scroll-box')), '阅读区使用统一ScrollBox');
+    await reader.screenshot({ path: 'output/playwright/markdown-reader-frame.png' });
+    await select('long');
+    const toolbarBefore = await reader.locator('.pl-content-frame__toolbar').boundingBox();
+    const footerBefore = await reader.locator('.pl-content-frame__statusbar').boundingBox();
+    await reading.evaluate(el => { el.scrollTop = 350; });
+    assert(await reading.evaluate(el => el.scrollTop) === 350, '长文档真实滚动');
+    assert((await reader.locator('.pl-content-frame__toolbar').boundingBox()).y === toolbarBefore.y
+      && (await reader.locator('.pl-content-frame__statusbar').boundingBox()).y === footerBefore.y, '滚动不移动文件栏和状态栏');
+    await page.getByRole('textbox', { name: '文件名', exact: true }).fill('很长的文档名称'.repeat(20) + '.md');
+    assert((await reader.locator('.pl-content-frame__toolbar').boundingBox()).height === toolbarBefore.height, '长文件名保持工具栏高度');
+    await select('empty');
+    assert(await reader.getByRole('heading', { name: '这个文档是空的' }).isVisible(), '已打开空文件与未打开区分');
+    await select('unopened');
+    assert(await reader.getByRole('heading', { name: '尚未打开文档' }).isVisible(), '未打开状态');
+    await reader.getByRole('button', { name: '打开 Markdown 文件' }).click();
+    assert(await reader.getByRole('heading', { name: '工作区阅读指南', exact: true }).isVisible(), '打开操作由样例回调提供文档');
+    await select('error');
+    await reader.getByRole('heading', { name: '无法读取文档' }).waitFor();
+    const beforeRetry = await reading.boundingBox();
+    await reader.getByRole('button', { name: '重试', exact: true }).click();
+    assert(await reading.getAttribute('aria-busy') === 'true', '重试回调进入加载状态');
+    assert((await reading.boundingBox()).y === beforeRetry.y && (await reading.boundingBox()).height === beforeRetry.height, '失败和加载切换不挤动阅读区');
+    await reader.getByRole('heading', { name: '工作区阅读指南', exact: true }).waitFor();
+    assert(await reading.getAttribute('aria-busy') === 'false', '读取完成由调用方更新状态');
+    await select('custom');
+    assert(await reader.getByText('自定义阅读工具栏', { exact: true }).isVisible(), '阅读器支持替换工具栏');
+    assert(await reader.getByRole('button', { name: '打开 Markdown 文件' }).count() === 0, '自定义工具栏不叠加默认控件');
+
+    await page.getByRole('button', { name: 'BrowserFrame 6', exact: true }).click();
+    const browser = frame.getByRole('region', { name: '浏览器框架', exact: true });
+    await browser.waitFor();
+    const address = browser.getByRole('textbox', { name: '网页地址' });
+    const viewport = browser.locator('.pl-browser-frame__viewport');
+    const node = await viewport.elementHandle();
+    assert(await browser.locator('iframe').count() === 0, '浏览器框架不伪造iframe网页');
+    assert(await address.inputValue() === 'https://example.test/guide', '宿主地址传入地址栏');
+    await browser.getByRole('button', { name: '后退', exact: true }).click();
+    assert(await address.inputValue() === 'https://example.test/', '后退回调更新历史地址');
+    await browser.getByRole('button', { name: '前进', exact: true }).click();
+    assert(await address.inputValue() === 'https://example.test/guide', '前进回调更新历史地址');
+    await address.fill('example.test/cancelled'); await address.press('Enter');
+    await browser.getByRole('button', { name: '停止载入' }).click();
+    await page.waitForTimeout(600);
+    assert(await browser.getByText('https://example.test/guide', { exact: true }).isVisible(), '停止取消样例待提交导航');
+    assert(await address.inputValue() === 'example.test/cancelled', '停止后保留未提交地址草稿');
+    await address.fill('example.test/read'); await address.press('Enter');
+    await browser.getByText('https://example.test/read', { exact: true }).waitFor();
+    assert(await address.inputValue() === 'https://example.test/read', '导航完成同步宿主确认后的网址');
+    const refreshBox = await browser.getByRole('button', { name: '刷新网页' }).boundingBox();
+    const bodyBox = await viewport.boundingBox();
+    await browser.getByRole('button', { name: '刷新网页' }).click();
+    const stopBox = await browser.getByRole('button', { name: '停止载入' }).boundingBox();
+    assert(refreshBox.x === stopBox.x && refreshBox.width === stopBox.width && refreshBox.height === stopBox.height, '刷新停止原位切换无尺寸变化');
+    await browser.getByRole('button', { name: '停止载入' }).click();
+    assert(await node.evaluate(el => el.isConnected) && (await viewport.boundingBox()).y === bodyBox.y, '加载状态不重建或移动网页承载区');
+    await browser.screenshot({ path: 'output/playwright/browser-frame.png' });
+    await select('error');
+    assert(await browser.getByRole('heading', { name: '无法访问此页面' }).isVisible(), '浏览器失败状态');
+    await browser.getByRole('button', { name: '刷新网页' }).click();
+    await browser.getByRole('heading', { name: '网页内容承载区域' }).waitFor();
+    assert(await browser.getByRole('heading', { name: '无法访问此页面' }).count() === 0, '刷新回调恢复内容');
+    await select('disconnected');
+    await address.fill('draft.test'); await address.press('Enter');
+    assert(await browser.getByRole('heading', { name: '浏览器尚未连接' }).isVisible(), '未连接不提交导航');
+    assert(await browser.getByRole('button', { name: '后退', exact: true }).isDisabled()
+      && await browser.getByRole('button', { name: '刷新网页' }).isDisabled(), '未连接禁用宿主操作');
+    await select('custom');
+    assert(await browser.getByText('自定义浏览器工具栏', { exact: true }).isVisible() && await address.count() === 0, '浏览器支持完整自定义导航栏');
+    await select('ready');
+    await page.locator('iframe').evaluate(el => { el.style.width = '360px'; });
+    await page.waitForTimeout(150);
+    assert(await browser.evaluate(el => el.scrollWidth <= el.clientWidth), '窄屏浏览器工具栏不横向溢出');
+    await browser.screenshot({ path: 'output/playwright/browser-frame-narrow.png' });
+    await page.locator('iframe').evaluate(el => { el.style.width = '1080px'; });
+
+    await page.getByRole('button', { name: 'WorkspaceTabs 5', exact: true }).click();
+    await select('custom-page');
+    const tabs = frame.locator('.pl-workspace-tabs');
+    assert(await tabs.locator('.pl-workspace-tabs__toolbar').count() === 0 && await tabs.locator('.pl-workspace-tabs__content').count() === 0, '完整页面插槽无默认工具栏或滚动容器');
+    await frame.getByRole('textbox', { name: '页面 1 草稿' }).fill('自定义页草稿');
+    await frame.getByLabel('自定义页面 1 内容', { exact: true }).evaluate(el => { el.scrollTop = 180; });
+    await frame.getByRole('tab', { name: '页面 2', exact: true }).click();
+    await frame.getByRole('tab', { name: '页面 1', exact: true }).click();
+    assert(await frame.getByRole('textbox', { name: '页面 1 草稿' }).inputValue() === '自定义页草稿', '完整页面插槽保留独立草稿');
+    assert(await frame.getByLabel('自定义页面 1 内容', { exact: true }).evaluate(el => el.scrollTop) === 180, '完整页面插槽保留独立滚动');
+    assert(!errors.length, `运行时无错误：${errors.join('; ')}`);
+    return { total: passed.length, passed };
+  } finally { page.off('pageerror', onError); }
+}

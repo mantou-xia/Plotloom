@@ -1,0 +1,8 @@
+/* 始终为重开入口留出标题栏空间，避免按钮出现时遮挡聊天名称或项目路径。 */
+.plotloom-workspace .plotloom-chat__header { padding-right: 140px; }
+.plotloom-global-layout__scroll:has(> .plotloom-app-content > .plotloom-workspace) { scrollbar-width: none; }
+.plotloom-workspace__empty { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100%; padding: 36px 24px; text-align: center; box-sizing: border-box; }
+.plotloom-workspace__empty h2 { font-size: 18px; font-weight: 550; margin: 16px 0 10px; }
+.plotloom-workspace__empty p { color: var(--pl-text-muted); font-size: 14px; line-height: 1.7; }
+.plotloom-workspace__empty > svg, .plotloom-workspace__empty > span { color: var(--pl-text-muted); }
+.plotloom-workspace__empty > span { font-size: 12px; line-height: 1.7; }

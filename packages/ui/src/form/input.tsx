@@ -33,9 +33,9 @@ export function Input({ size = 'md', type = 'text', value, defaultValue = '', on
     <BaseInput {...props} ref={input} type={type === 'password' && revealed ? 'text' : type} value={text} onValueChange={change}
       disabled={disabled || field.disabled} readOnly={readOnly} required={required ?? field.required} aria-invalid={invalid || field.invalid || props['aria-invalid']}
       className="pl-form-text" />
-    {clearable && text && !readOnly ? <Button className="pl-form-action" size="sm" variant="ghost" iconOnly aria-label="清空输入" disabled={disabled || field.disabled}
+    {clearable && text && !readOnly ? <Button className="pl-form-action" size="sm" variant="ghost" iconOnly tooltip aria-label="清空输入" disabled={disabled || field.disabled}
       onClick={() => { change(''); input.current?.focus(); }}><X /></Button> : null}
-    {type === 'password' ? <Button className="pl-form-action" size="sm" variant="ghost" iconOnly aria-label={revealed ? '隐藏密码' : '显示密码'}
+    {type === 'password' ? <Button className="pl-form-action" size="sm" variant="ghost" iconOnly tooltip aria-label={revealed ? '隐藏密码' : '显示密码'}
       aria-pressed={revealed} disabled={disabled || field.disabled} onClick={() => { setRevealed(current => !current); input.current?.focus(); }}>{revealed ? <EyeOff /> : <Eye />}</Button> : null}
     {endIcon ? <span className="pl-form-icon" aria-hidden="true">{endIcon}</span> : null}
   </div>;

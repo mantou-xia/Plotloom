@@ -1,5 +1,50 @@
 # 通用组件库
 
+## SettingsSection / SettingsRow 设置结构
+
+```tsx
+import { SettingsSection } from '@plotloom/ui/settings-section';
+import { SettingsRow } from '@plotloom/ui/settings-row';
+import { Switch } from '@plotloom/ui/switch';
+
+<SettingsSection title="偏好" description="管理当前偏好。">
+  <SettingsRow title="启用提示" description="在操作结束时提示。">
+    <Switch aria-label="启用提示" checked={enabled} onCheckedChange={setEnabled} />
+  </SettingsRow>
+</SettingsSection>
+```
+
+- 两者提供 `title`、可选 `description`、`children`，并透传根元素的 `className`、`style`、`ref` 等属性。
+- Section 的 children 直接组合 Row，分组复用 Card 的背景容器，相邻行仅用单侧分隔线；Row 本身没有卡片外框。
+- Row 的 children 可以是开关、下拉、选色器等既有控件，控件须提供自身可访问名称。行提供说明分组语义，不自动克隆控件或绑定其值。
+- 控件的值、禁用、保存回调和反馈由应用负责；保存反馈使用 toast 或稳定占位区域，避免改变行高。
+- 两者默认使用三级分组标题、四级行标题，适合置于设置分类的二级标题下。行按可用空间自然换行。
+- 调试台分别登记两个组件，提供多行组合、无说明、选色和窄容器示例，以及标题、说明和尺寸参数。
+
+## SplitPaneLayout 分屏页面布局
+
+与 `PageLayout` 同级：普通页面使用 PageLayout，需要左右分屏的页面使用 SplitPaneLayout，二选一；不要求也不依赖 GlobalLayout。
+
+```tsx
+import { SplitPaneLayout } from '@plotloom/ui/layouts/split-pane-layout';
+
+<SplitPaneLayout open={open} onOpenChange={setOpen} panelTitle="文档"
+  panel={<DocumentContent />} onPanelWidthChange={savePreferredWidth}>
+  <ConversationContent />
+</SplitPaneLayout>
+```
+
+- `children` / `panel` 注入两侧内容，`panelTitle` 为必填标题，`panelActions` 注入右侧标题操作；组件内含关闭按钮。
+- `open` / `onOpenChange` 受控开关。拖拽收起、关闭按钮、Esc 和窄屏遮罩均通知调用方。
+- `defaultPanelWidth=400` 仅初始化；`minPanelWidth=280`、`maxPanelWidth=720`、`minMainWidth=320` 均为像素，要求正数、最小值不大于最大值。默认宽度受可用空间及上下限约束。
+- `breakpoint=760` 按组件容器判断，实际阈值不低于两侧最小宽度加分隔条 8px。窄屏右侧覆盖当前视口，原生模态层处理背景交互与焦点约束。
+- 两侧使用 ScrollBox 独立滚动；关闭重开保留内容节点、输入与滚动位置，恢复最近用户调节宽度。窗口变窄造成的换行和可滚动范围变化仍遵循浏览器行为。
+- `onPanelWidthChange(px)` 在用户结束拖拽或键盘调宽后触发；组件不写存储。应用可保存并在下次挂载传回 `defaultPanelWidth`。
+- `className` / `style` 作用于根节点，默认宽高 100%，父级需提供有界高度。内容不应再套 PageLayout。
+- 底层依赖 `react-resizable-panels@4.24.1`（MIT）；仅使用 Group、Panel、Separator，未引入工作台业务能力。
+
+调试台「布局组件 → SplitPaneLayout」提供分屏、收起、独立滚动、窄容器和空内容五种示例。
+
 ## Tooltip 提示气泡
 
 从 `@plotloom/ui/tooltip` 导入 `Tooltip`：
@@ -79,6 +124,7 @@ import { Card } from '@plotloom/ui/card';
 | --- | --- |
 | `models / modelLabels / selectedModel / onModelChange` | 唯一模型 ID 列表、展示名称、当前模型；异步回调成功后更新选择。 |
 | `modelNames` | 按模型 ID 提供纯模型名，收起按钮只显示此名称；菜单仍使用 modelLabels 区分提供商。省略时沿用原标签。 |
+| `draftKey` | 字符串或数字；值变化时原位清空文本、附件和引用，保留编辑器 DOM、模型与思考档位。旧上传及发送结果不会回填新草稿。 |
 | `value / thinkingOptions / onValueChange` | 当前思考档位、实际可用档位及标签、异步保存；value 不是草稿。 |
 | `busy / stopping / onStop` | 生成与停止状态及回调。 |
 | `disabled / reducedMotion` | 禁用交互、减少动态效果；动态效果默认遵循系统设置。 |
@@ -94,7 +140,7 @@ import { Card } from '@plotloom/ui/card';
 
 原版内部管理草稿、临时附件和引用标记；通过回调注入真实业务数据，不依赖接口地址、Pi SDK 或应用状态。没有上传回调时仍可供组件调试台本地演示，不能当成后端上传。正式聊天由 `apps/web/src/features/agent/chat-composer.tsx` 完成公开协议适配，`composer-request.ts` 将标记还原为文字并发送真实附件/技能 ID。纯类型可从 `@plotloom/ui/task-composer/types` 导入，避免 Node 数据转换测试依赖 JSX 入口。后端能力清单见 `docs/task-composer-backend-adaptation.md`。
 
-调试台提供原版、生成中、停止中、禁用、无模型和减少动态效果六种样例，并记录公开回调。正式聊天已替换旧简易输入框，保留组件原版视觉和动效。
+调试台提供原版、生成中、停止中、禁用、无模型、原位重置草稿和减少动态效果七种样例，并记录公开回调。重置样例通过按钮改变 `draftKey`，用于检查文本与附件清空而模型控件不闪现。正式聊天已替换旧简易输入框，保留组件原版视觉和动效。
 
 来源：https://leibox.pantoria.cn/docs/animations/deep-agent-composer 。保留源码声明，来源许可说明见 `original/source.json`。依赖按原版清单安装；Shadow DOM 隔离原版样式，避免影响其他组件。本组件按本次用户指令保留原版视觉细节；不改写项目全局边框规范。
 
@@ -122,6 +168,7 @@ function ToolPicker() {
 - `trigger / children`：触发器和任意面板内容。推荐 trigger 渲染函数，将其属性透传给 Button，获得点击切换与展开语义；普通 ReactNode 需自行连接开关及 ARIA 属性。
 - `panelWidth`：数字像素或 CSS 长度；不传时按内容尺寸。`panelAlign` 为 `left / right`（默认 left），`panelPlacement` 为 `above / below`（默认 above）。以触发器底边或顶边为锚点，浮层限制在宿主视口内，内容过高时内部滚动。
 - `label`：面板的可访问名称，默认“功能面板”。`className / style` 作用于容器，`panelClassName` 作用于内容层。
+- `topLayer`：默认 false。触发器位于滚动或裁剪容器内时设为 true，展开期间使用原生非模态 popover 顶层与视口定位，避开祖先裁剪并跟随滚动；收起后恢复原位。调试台“跨越裁剪容器”样例展示此参数。
 - `reducedMotion`：不传时遵循系统偏好。`staggerContent` 对内容中的 `[data-menu-item]` 或 `[role=menuitem]` 使用原版交错动画。普通选项无需自行设置 menuitem 角色。
 - `triggerLayout="block"` 支持铺满的触发器，默认 inline；`panelShadow / zIndex` 默认原版阴影及 50；`unstyled` 仅关闭内容层底色，外壳仍绘制表面；`layoutId` 用于标记动画节点。
 
@@ -294,3 +341,271 @@ import { Select } from '@plotloom/ui/select';
 ```
 
 浏览器回归脚本为 `tests/ui/form-browser.js`，执行方式和验收记录见 `docs/form-components-validation.md`。
+
+
+## MarkdownRenderer 富文本渲染
+
+从 `@plotloom/ui/markdown` 导入，适用于 Agent 正文与其他 Markdown 内容展示：
+
+```tsx
+import { MarkdownRenderer } from '@plotloom/ui/markdown';
+
+<MarkdownRenderer content={markdown} streaming={isGenerating} />
+```
+
+- `content: string`：累计的完整 Markdown 文本；流式时由调用方持续追加，不向组件传单个增量片段。
+- `streaming?: boolean`：默认 false；生成期间为 true，完成或停止后为 false。组件不管理网络连接或消息状态。
+- `textEffect?: 'ink' | 'mist' | 'light'`：流式正文逐字渐现，分别为水墨晕开（默认）、雾中凝字、柔光显影。静态内容直接显示；已显示文字不重复播放，完成或停止后移除动画包装。系统开启减少动态效果时，收到的文字直接清晰显示。
+- 单字时长沿用参考：水墨 360ms，雾与柔光 640ms。正常错开间隔分别为 45ms / 320ms；快速输入时自动压缩间隔，避免显现队列长时间落后于接收进度。围栏代码、公式、图示和数据图表不拆字播放。
+- `className`、`style`：作用于根元素，可设置宽高；窄屏图表随容器重算尺寸。
+- 支持标题、列表、引用、GFM 表格/任务列表/删除线、链接、图片、行内代码。原始 HTML 以文本处理，不执行脚本。
+- 代码围栏显示语言、Shiki 高亮与复制；未知语言以纯文本保留。长代码在块内横向滚动。复制需要浏览器提供 Clipboard API，失败时给出手动复制提示。
+- 公式使用 `$...$` 或独占行的 `$$...$$`；采用 KaTeX 支持的 LaTeX 语法，不是完整 TeX 执行环境。普通货币美元符号用 `\$` 转义。
+- `mermaid` 围栏渲染图示；`echarts` 围栏接收严格 JSON，支持 `bar`、`line`、`pie`，可配置柱线组合及环形饼图。图表均支持源码切换与复制。
+- ECharts 支持的顶层配置为 `title`、`legend`、`grid`、`xAxis`、`yAxis`、`series`、`dataset`、`color`、`tooltip`；未开放地图、graphic、toolbox 或脚本回调。Tooltip 固定为 richText，禁止外部图片及链接跳转。
+- 流式图表未接收完整时显示接收状态；停止后按已有内容尝试展示，解析失败时保留源码与错误说明，其他正文继续显示。
+- Shiki、Mermaid、ECharts 按需加载；图表卸载释放观察器和实例，不引入 Tailwind。
+
+数据图表示例：
+
+````markdown
+```echarts
+{
+  "tooltip": { "trigger": "axis" },
+  "xAxis": { "type": "category", "data": ["周一", "周二", "周三"] },
+  "yAxis": { "type": "value" },
+  "series": [{ "type": "bar", "data": [12, 18, 15] }]
+}
+```
+````
+
+自定义语法的入口集中在内部 `MarkdownCode` 的语言分派处，目前只注册 Mermaid/ECharts；其他围栏保持代码展示。后续 A2UI 在此接入经过校验的声明式内容与受控组件，协议、动作回传和公开扩展 API 本轮未实现。
+
+调试台「内容组件 → MarkdownRenderer」提供七个样例，右侧可编辑内容、模拟流式输入并选择文字渐现效果；切换效果会重播以便比较。详见 `docs/markdown-renderer-validation.md`。
+
+## CodeBlock 独立代码块
+
+```tsx
+import { CodeBlock } from '@plotloom/ui/code-block';
+
+<CodeBlock code={source} language="typescript" streaming={isGenerating} />
+```
+
+- `code: string`：原始源码，不传 Markdown 围栏。展示和复制保留缩进、空行与末尾换行；空字符串禁用复制。
+- `language?: string`：默认 `text`。支持高亮器已注册的语言及别名，语言名会去除首尾空格并转小写；未知语言保留标识并按纯文本展示。语言留空时标识为「纯文本」。
+- `streaming?: boolean`：默认 false，增量接收期间为 true。组件显示当前代码并处理异步高亮更新，不管理网络连接；调用方在完成或停止后设为 false。
+- `className`、`style`：作用于组件根元素。源码使用统一 ScrollBox，长行横向滚动，内容区最高 480px；根元素设置固定高度时源码区可收缩，工具栏与源码分别布局。
+- 复制使用图标按钮并调用浏览器 Clipboard API；成功后图标变绿 2.2 秒再恢复，重复复制重新计时，不显示“已复制”文案；失败提示手动选择复制。内容变化或卸载后，旧复制请求不会污染当前状态。
+- 高亮按需加载，加载失败仍可阅读和复制原文。组件只展示源码，不运行代码，不包含下载、行号或编辑器能力。
+
+Markdown 的普通围栏复用 CodeBlock；Mermaid/ECharts 的源码模式复用同一高亮、滚动与复制实现。独立使用时不需要 Markdown 容器或样式。
+
+调试台「内容组件 → CodeBlock」提供 TypeScript、Python、JSON、纯文本、未知语言、长行与长代码、空代码、流式代码八个样例；右侧可编辑源码、语言和流式模拟。验收见 `docs/code-block-validation.md`。
+
+
+## SkillItem 技能条目
+
+从 `@plotloom/ui/skill-item` 导入 `SkillItem`。在 `ul/ol` 中使用，通过 `name`、`description`、`icon` 和可选 `warning` 提供展示内容，支持 `className/style`。组件不依赖 SkillInfo 或后端接口，技能来源、可用性判断和诊断文案由页面处理。
+
+组件自身不设置固定宽度或最大宽度，列数由外部布局控制；描述最多显示两行，title 保留全文。调试台“内容组件 → SkillItem”提供默认、诊断、长描述示例，可编辑公开参数并调整宽度。
+
+## PrimaryTabs 一级 Tab
+
+从 `@plotloom/ui/primary-tabs` 导入 `PrimaryTabs` 和 `PrimaryTabPanel`。`label` 为标签列表的无障碍名称；`options` 接收 `value/label/disabled`，label 可组合文字与数量；`value` 和 `onValueChange` 由调用方管理，`disabled` 禁用整组。根组件支持 `className/style`；children 组合 `PrimaryTabPanel`，面板通过相同的 `value` 关联标签，并支持 `className`。
+
+灰底、白色滑块和圆角比例参考 Uiverse 的 curly-shrimp-52，来源与 MIT 声明见 `src/primary-tabs/SOURCE.md`。选项最小宽度 130px、高度 28px，按最长内容等宽排列，窄容器横向滚动。滑块以 0.2 秒移动，系统减少动态效果时取消过渡；选中态不改变字重与尺寸。
+
+组件使用 Tab/tabpanel 语义，方向键循环选择并跳过禁用项；只挂载当前面板。调用方管理数据、请求和页面内容。调试台“基础组件 → PrimaryTabs”提供默认、整体禁用、禁用单项示例，并能编辑选项文字与禁用状态。旧 SegmentedControl 已按确认移除，不保留兼容入口。
+
+```tsx
+<PrimaryTabs label="内容分类" value={value} onValueChange={setValue}
+  options={[{ value: 'all', label: '全部' }, { value: 'recent', label: '最近' }]}>
+  <PrimaryTabPanel value="all">全部内容</PrimaryTabPanel>
+  <PrimaryTabPanel value="recent">最近内容</PrimaryTabPanel>
+</PrimaryTabs>
+```
+
+
+## AgentActivityHeader 状态与过程展示区
+
+从 `@plotloom/ui/agent-activity-header` 导入。组件通过 children 接收整个过程区域，组合 ExecutionTimeline；最终回答由外部作为相邻内容渲染。
+
+`<AgentActivityHeader key={runId} activity="reading" phase={phase} elapsedSeconds={seconds}><ExecutionTimeline items={entries} phase={phase} streaming={receivingEvents} /></AgentActivityHeader>`
+
+| 参数 | 说明 |
+| --- | --- |
+| activity | thinking（默认）、reading、writing、editing、searching、browsing、executing、processing；预设同时给出中文文案与形态 |
+| phase | working（默认）、answering、completed、failed、stopped；answering 必须是明确的最终回答阶段，不能由第一个正文增量推断 |
+| label / shape | 可覆盖工作阶段文案及粒子形态；shape 支持 cube、book、pencil、magnifier、folder、robot、bricks、gift、sphere |
+| visualHeight | 左侧展示区及右侧默认最小高度，正数 px，默认 360；右侧 header 占 48px，内容主动展开可撑高右侧 |
+| elapsedSeconds | 调用方提供的非负耗时，不传则不展示；组件不自动计时 |
+| reducedMotion | 显式减少动态效果，默认 false；同时尊重系统设置 |
+| children / className / style | 内容插槽与根元素样式；具体内容、滚动、结束后的内容折叠由调用方管理；运行时高度使用 visualHeight |
+
+working 期间状态栏为九宫格动画图标、文字与耗时，没有收起操作。进入 answering 或 completed 后隐藏粒子与整个状态栏，保留同一个 children 插槽；内容展开不会重新显示 Header。Header 不维护任何展开状态，旧展开参数已移除。调试台通过 ExecutionTimeline 管理整个过程的折叠与滚动。失败/停止保留内容并静止粒子。运行时切换活动保持高度；窄容器上下排列。
+
+通用组件不包含工具名或后端事件处理。调试台示例用 read/write/edit/grep/find/ls/powershell/bash/read_skill 演示映射，未知工具使用 processing；正式映射留给应用。原始来源与署名见 `src/agent-activity/SOURCE.md`。调试台提供十个样例，验收见 `docs/agent-activity-validation.md`。
+
+未知工具的 processing 预设使用旋转聚散粒子球 sphere。各形态具有独立循环动作：书页翻动、笔书写、放大镜扫描、文件夹开合与纸张探出、机械臂抓取、魔方转层、礼物抬盖，以及积木分块浮动。支持左右拖动、方向键旋转和 Home 恢复视角；减少动态效果时关闭自动动画，仍可手动旋转。停止时静止，最终回答时卸载粒子。ASCII 试验已移除。
+
+## ThinkingContent 单段思考内容（C04）
+
+从 `@plotloom/ui/thinking-content` 导入。接收 `content`（累计后的 Markdown 字符串）、`streaming`（默认 false）、`className / style`。只展示一段由接口公开的思考文本或摘要，复用 MarkdownRenderer；空白不占位，无独立高度、滚动、阶段或整体折叠。不同位置的思考段分别作为过程节点，不合并到工具之前。
+
+## ExecutionTimeline 统一过程列表（C05）
+
+从 `@plotloom/ui/execution-timeline` 导入 `ExecutionTimeline`、`ExecutionEntry`、`ProcessStatus`。旧 ThinkingPanel 已按用户确认移除，不保留兼容入口；整体阅读控制由此组件维护。
+
+| 参数 | 说明 |
+| --- | --- |
+| items | 必填，按实际发生顺序排列的记录数组；id 唯一且稳定，同一记录更新保留原 id 与位置；空数组不占位 |
+| streaming | 默认 false；接收过程增量时传 true，只有 working 阶段启用底部跟随；思考/说明节点还需显式标记自身 streaming |
+| phase | working（默认）、answering、completed、failed、stopped；调用方明确提供，不从正文内容推断 |
+| height | 固定阅读模式的整体高度，默认 312px，包含 36px 工具栏；应大于工具栏高度；展开全部时释放限制 |
+| className / style | 根元素样式；阅读高度使用 height 参数配置 |
+
+记录类型是 `thinking`（content、可选 title/streaming）、`message`（content、可选 title/streaming）、`tool`（工具公开字段）和 `event`（title、可选 description/status/content）。每种记录均含 `id`、`type`。步骤、重试、上下文整理、失败、停止等用实际事件的标题和说明表达；组件不生成业务事件、不排序、不猜测模型阶段。空白思考和说明自动隐藏；无思考模型仍可展示其他节点。
+
+默认内容可见、内部滚动。「展开全部」显示完整内容并撑开父级，「恢复定高」回到原阅读位置。流式开始时跟随最新；上翻或主动查看节点详情后暂停跟随，点击固定占位的「回到最新过程」恢复。静态长过程默认从头阅读。完整展开时由外层负责滚动，组件不操纵页面滚动。
+
+每个组件实例首次进入 answering 或 completed 时自动折叠一次，并恢复定高模式；之后可手动展开或收起，后续增量、完成、停止与失败均不覆盖用户选择。失败/停止发生在最终回答之前时保持已有内容可见。新任务使用 `key={runId}` 重建，不根据文本变化猜测任务边界。折叠与完整展开都保留同一 Markdown DOM。
+
+```tsx
+<AgentActivityHeader key={runId} activity="reading" phase={phase} visualHeight={360}>
+  <ExecutionTimeline items={entries} streaming={receivingEvents} phase={phase} height={312} />
+</AgentActivityHeader>
+{/* 最终回答独立显示在过程区域外。 */}
+<MarkdownRenderer content={answer} streaming={receivingAnswer} />
+```
+
+组合时默认阅读高度为视觉区高度减去 48px 状态栏；完整展开只增加右侧高度，粒子保持原尺寸。节点状态和最终回答阶段均由调用方提供，进入停止/完成阶段时应用也应同步更新实际工具状态；列表不会把未结束的工具擅自标为成功。
+
+## ToolCallItem 工具调用项（C06）
+
+从 `@plotloom/ui/tool-call-item` 导入 `ToolCallItem`、`ToolCallData`、`ToolCallStatus`。
+
+- `name / summary / status`：工具名称、可选操作摘要、running / completed / failed / stopped 状态。图标、状态文字固定占位，状态更新不自动展开。
+- `input / output`：可选原文字符串，对象由调用方格式化。undefined 表示未提供，空字符串明确展示空输入/空结果；HTML、命令均作为文本，不执行。长行软换行、自然撑高，不设置独立纵向滚动框。
+- `expanded / defaultExpanded / onExpandedChange`：支持受控或非受控展开，默认收起；同 id 更新保留用户选择。没有输入和结果时不显示空展开入口。
+- `className / style`：根元素样式。
+
+调试台「内容组件」分别提供 ThinkingContent 四个、ToolCallItem 七个、ExecutionTimeline 十个独立样例，公开参数可编辑，C03 插槽已组合统一过程。参考 Ant Design X ThoughtChain 的纵向节点与详情交互，未添加该库依赖。验收见 `docs/agent-process-validation.md`；真实聊天与接口契约接入仍待后续实施。
+
+## UserMessageBubble 用户消息气泡
+
+从 `@plotloom/ui/user-message-bubble` 导入。`text` 为原始字符串，保留空格和换行，不解析 Markdown/HTML；`attachments` 为附件 ReactNode 插槽，上传、打开和预览均由调用方实现。
+
+```tsx
+<UserMessageBubble text={messageText} attachments={attachmentElements} />
+```
+
+默认靠右、自适应内容宽度，最大为父级 85% 与 44rem 中较小者。长文本和无空格路径自动换行，正文自然撑高。仅附件时传 `text=""`；文本和附件均无内容时不占位。不增加时间、头像、发送状态或消息操作。`className`、`style` 作用于根元素。
+
+调试台提供七个样例，可编辑用户原文、切换真实附件展示和调整尺寸。文件卡片与 TaskComposer 共用，图片直接展示缩略图并可预览；真实聊天页面接入另行实现。验收见 `docs/user-message-validation.md`。
+
+## AttachmentCard 与附件缩略图
+
+从 `@plotloom/ui/attachment-card` 导入 `AttachmentCard`、`AttachmentThumbnail`。
+
+- 文件卡片接收 `name`、真实字节数 `size`、`status`（ready / processing / error）、`error`、`onOpen`、`onRemove`、`removeDisabled`、`className`、`style`。未提供大小显示“文件”；0 字节显示“0 B”。打开与移除为独立按钮，未传回调时不制造可点击入口。
+- 文件类型复用现有 Font Awesome 图标；Excel 绿、Word 蓝、PDF 红、PPT 橙、压缩包黄、文本与 Markdown 灰。长文件名仅省略名称，保留扩展名。详情状态固定在 16px 行内。
+- `AttachmentThumbnail` 接收 `src`、`name`，展示真实图片并固定为 68px。加载失败保留原尺寸并显示失败图标。预览由调用方组合 Dialog；TaskComposer 保留原有预览。
+- TaskComposer 与发送后的消息复用同一实现和样式；组件内样式同时适用于普通 DOM 与 Shadow DOM。发送后不传 `onRemove`。
+
+调试台 AttachmentCard 提供文件与图片、草稿移除、状态切换三个样例。这里只统一展示，不扩展后端支持的上传文件类型。详见 `docs/attachment-validation.md`。
+
+## CitationMarker 引用标记
+
+从 `@plotloom/ui/citation-marker` 导入。`index` 是从 1 开始的显示编号，`sourceTitle` 为完整来源名称；`onActivate` 由调用方打开或定位对应来源。组件不请求来源，也不自动解析 Markdown 中的数字。
+
+```tsx
+<p>这是一段有来源依据的内容。
+  <CitationMarker index={1} sourceTitle="人物关系记录.md" onActivate={() => openSource(sourceId)} />
+</p>
+```
+
+`active` 标识当前来源，`disabled` 禁用交互；`className`、`style` 作用于编号按钮。复用 Button 与 Tooltip，支持键盘、悬停提示及完整可访问名称。当前来源变化只改变颜色，来源提示不挤动正文。
+
+调试台提供五个状态，可修改编号、来源名、选中和禁用。详情见 `docs/citation-marker-validation.md`；与 C11 的联动在 SourceReference 调试样例展示，真实聊天接入另行实施。
+
+## SourceReference 来源列表与详情
+
+从 `@plotloom/ui/source-reference` 导入 `SourceReference` 和 `ReferenceSource`。来源项包含唯一 `id`、与正文一致的 `index`、`title`、可选 `summary` 与 `excerpt`。网页使用 `kind: 'web'` 和 `url`；文件使用 `kind: 'file'` 和 `path`。
+
+`selectedId` 与 `onSelectedChange` 控制详情，可直接与 C10 联动：
+
+```tsx
+const [selectedId, setSelectedId] = useState<string | null>(null);
+// sources 是调用方提供的 ReferenceSource[]，编号与 ID 的对应关系由调用方维护。
+<CitationMarker index={sources[0].index} sourceTitle={sources[0].title}
+  onActivate={() => setSelectedId(sources[0].id)} />
+<SourceReference sources={sources} selectedId={selectedId} onSelectedChange={setSelectedId}
+  onOpenFile={source => openFile(source.id)} />
+```
+
+列表展示域名或路径与两行摘要，点击在现有 Dialog 中查看完整内容。网页仅支持绝对 HTTP(S) 导航；文件打开通过可选 `onOpenFile` 回调，路径不会直接访问本机。内容按纯文本显示，无自动抓取或 Markdown 解析。`className`、`style` 控制列表根元素。
+
+调试台提供七个样例，支持 C10 联动、长内容、无效链接和空来源。验证见 `docs/source-reference-validation.md`。
+
+## MessageActions 回答操作（C12）
+
+从 `@plotloom/ui/message-actions` 导入 `MessageActions`、`MessageActionsProps`。`text` 为回答原文，直接传入浏览器剪贴板，保留 Markdown、空格和换行；空白内容禁用复制。不同消息使用各自的 React key。
+
+```tsx
+<MessageActions key={message.id} text={message.text}
+  onRegenerate={() => regenerateMessage(message.id)} regenerating={isRegenerating}
+  regenerateDisabled={!canRegenerate} onError={(action, error) => reportError(action, error)} />
+```
+
+`onRegenerate` 可返回 Promise；等待期间组件阻止重复触发，宿主以 `regenerating` 表达后续生成状态。未提供回调时隐藏此操作；`regenerateDisabled` 单独禁用重新生成，`disabled` 禁用全部操作。`onCopy` 在复制成功后通知，`onError(action, error)` 报告复制或重新生成失败。`className / style` 作用于根元素。
+
+两个操作均为 32px 图标按钮，复用 Button 与 Tooltip。复制成功或失败在原按钮反馈，2.2 秒后恢复；重新生成失败原位提示并允许重试。反馈可供读屏读取，不占布局空间。组件不请求模型，不替换消息、不推断重生成业务规则。
+
+调试台「AI 对话组件」提供七个样例和公开参数编辑。见 `docs/message-actions-validation.md`；真实聊天页面与业务接口接入留待页面组合阶段。
+
+## MessageStatus 消息状态（C13）
+
+从 `@plotloom/ui/message-status` 导入 `MessageStatus`、`MessageStatusProps`、`MessageStatusValue`。`status` 支持 `waiting / failed / stopped / null`；null 隐藏内容但保留默认 48px 行高，用于状态出现与消失时维持相邻内容位置。不同消息应使用各自的 React key。
+
+```tsx
+<MessageStatus key={message.id} status={messageStatus}
+  errorMessage={displayError} onRetry={canRetry ? retryMessage : undefined}
+  retrying={retryPending} retryDisabled={otherRequestPending}
+  onRetryError={reportRetryError} />
+```
+
+错误说明仅在失败时展示，按纯文本处理；长文案在固定行内省略，通过悬停或键盘聚焦查看全文。调用方负责提供适合用户阅读的错误信息。等待与停止使用中性色，失败采用红色图标和标题；等待图标遵循减少动效偏好。
+
+只有失败或停止且提供 `onRetry` 时显示重试。Promise 等待期间自动防重复，`retrying` 支持宿主控制忙碌，`retryDisabled` 禁用入口。回调拒绝在原按钮反馈，并通过 `onRetryError` 通知调用方。回调完成不自动改变消息状态；后续阶段由宿主更新 `status`。`className / style` 作用于根元素，保持默认高度可保证状态切换稳定。
+
+调试台「AI 对话组件」提供九个样例和公开参数编辑。验收见 `docs/message-status-validation.md`；真实聊天页面与重试协议接入另行实施。
+
+## WorkspaceTabs 内容工作区
+
+从 `@plotloom/ui/workspace-tabs` 导入。`tabs` 每项包含唯一 `id`、`title`、可选 `icon`，内容可以使用独立 `toolbar` 和 `content`，也可以通过 `page` 提供完整自定义页面；提供 `page` 后不再包默认工具栏与滚动区。`closable: false` 禁止关闭。`activeId / onSelect / onClose / onAdd` 由调用方控制，关闭后的相邻页选择也属于调用方。`actions` 放框架操作，`empty` 提供空态，`className / style` 直接作用于根元素。
+
+框架默认填满有界父容器。标签切换隐藏页面而不卸载，因此输入、滚动和组件状态保留；关闭标签才卸载。隐藏页的副作用不会自动暂停，接入宿主资源时由业务页按可见状态管理。刷新、离开聊天页后的持久化由应用决定，本阶段未实现。
+
+方向键、Home/End 切换标签，Delete 关闭可关闭标签。工具栏固定 54px，正文独立滚动。通用框架不识别网页或文件类型，不访问业务接口。
+
+`SplitPaneLayout.panelHeader` 为可选头部槽：省略沿用标题栏；传 null 让内容自带标签栏。自定义头部时调用方负责关闭入口，`panelTitle` 继续提供面板可访问名称。其余默认行为保持原样。
+
+## MarkdownReaderFrame 与 BrowserFrame
+
+从 `@plotloom/ui/markdown-reader-frame` 和 `@plotloom/ui/browser-frame` 导入。两者默认填满有界父容器，默认工具栏 54px、状态栏 32px；`className / style` 作用于根节点。`toolbar` 可替换整条工具栏，传 null 可移除；`actions` 扩展默认工具栏。可独立使用，也可作为 `WorkspaceTab.page`。
+
+```tsx
+const tabs = [
+  { id: 'document', title: '说明.md', page: <MarkdownReaderFrame fileName="说明.md" content={markdownText} /> },
+  { id: 'browser', title: '浏览器', page: <BrowserFrame connected={connected} url={url}
+      onNavigate={navigate} onReload={reload} onStop={stop} loading={loading}>{browserSurface}</BrowserFrame> },
+];
+```
+
+阅读器接收 `fileName / filePath / content / loading / error`。`content: undefined` 表示尚未打开，空字符串表示空文件；使用已有 MarkdownRenderer 渲染、ScrollBox 滚动。`onOpen / onRetry` 仅通知调用方，未提供打开回调时入口禁用。已存在正文时，加载和错误仅在固定状态栏反馈，不卸载正文。框架不读取本机文件，也不提供编辑能力。
+
+浏览器的 `url` 是宿主确认地址；地址草稿属于该组件实例。回车通过 `onNavigate` 提交去除首尾空白的原始地址，URL 解释与访问策略属于宿主。宿主更新 url 后同步地址栏；未连接时仍可保留草稿，但不派发导航。`canGoBack / canGoForward` 与 `onBack / onForward` 管理历史操作；`loading` 令刷新按钮原位变为停止，分别调用 `onReload / onStop`。`error` 和可选 `status` 在固定状态栏显示。
+
+`BrowserFrame.children` 是网页内容或原生视图的承载插槽，状态切换不重建它；不传 children 时按连接/错误状态展示空态。框架本身不访问网络、不创建 iframe、不管理原生浏览器会话。具体宿主连接与文件接口由应用后续接入。完整验收见 `docs/workspace-page-frames-validation.md`。
+
+SkillItem 新增可选 `onClick` 与 `status`：前者提供覆盖条目的原生按钮，支持键盘和可见焦点；后者用于固定位置状态文案。调试台示例用点击次数演示回调，不依赖业务接口。技能详情及全局保存由应用组合 Dialog、Switch 实现。

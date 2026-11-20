@@ -1,0 +1,111 @@
+// Playwright CLI：run-code --filename tests/ui/message-actions-browser.js
+async (page) => {
+  const passed = [], errors = [];
+  const assert = (ok, name) => { if (!ok) throw new Error(name); passed.push(name); };
+  const onError = error => errors.push(error.message);
+  page.on('pageerror', onError);
+  const frame = page.frameLocator('iframe');
+  const root = frame.getByRole('group', { name: '回答操作', exact: true });
+  const buttons = root.getByRole('button');
+  const same = (a, b) => ['x', 'y', 'width', 'height'].every(k => Math.abs(a[k] - b[k]) < .1);
+  const select = async state => { await page.locator('#example-state').selectOption(state); await page.waitForTimeout(180); };
+  try {
+    await page.bringToFront();
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:4320' });
+    await page.getByRole('button', { name: 'MessageActions 7', exact: true }).click();
+    await select('default');
+    await root.waitFor();
+    assert(await buttons.count() === 2, '默认展示复制与重新生成');
+    const before = await root.boundingBox(), copyBefore = await buttons.first().boundingBox(), regenBefore = await buttons.nth(1).boundingBox();
+    assert([copyBefore.width, copyBefore.height, regenBefore.width, regenBefore.height].every(value => Math.abs(value - 32) < .1), '图标按钮固定 32px');
+    assert(await buttons.first().locator('svg').count() === 1 && await buttons.nth(1).locator('svg').count() === 1, '两个操作均为真实图标');
+    await buttons.first().hover();
+    await frame.getByRole('tooltip', { name: '复制回答', exact: true }).waitFor();
+    assert(true, '悬停显示操作说明');
+    await root.evaluate(() => {
+      window.c12Write = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = text => { window.c12Written = text; return window.c12Write(text); };
+    });
+    await buttons.first().focus(); await page.keyboard.press('Enter');
+    await root.getByRole('button', { name: '已复制回答', exact: true }).waitFor();
+    const original = await page.getByRole('textbox', { name: '回答原文', exact: true }).inputValue();
+    assert(await root.evaluate(() => window.c12Written) === original, '写入剪贴板的参数与回答原文完全一致');
+    // Windows 剪贴板读回会规范为 CRLF；仅比较读回内容时统一平台换行。
+    assert((await root.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n') === original, '真实剪贴板保留 Markdown 内容与换行');
+    await root.evaluate(() => { navigator.clipboard.writeText = window.c12Write; });
+    assert(await root.getByRole('status').textContent() === '回答已复制', '成功反馈可供读屏读取');
+    assert(same(before, await root.boundingBox()) && same(regenBefore, await buttons.nth(1).boundingBox()), '复制成功不挤动操作栏或相邻按钮');
+    await root.screenshot({ path: 'output/playwright/message-actions-copied.png' });
+    await root.getByRole('button', { name: '复制回答', exact: true }).waitFor();
+    assert(same(before, await root.boundingBox()), '成功反馈消失不位移');
+    await root.evaluate(() => { window.c12Write = navigator.clipboard.writeText.bind(navigator.clipboard); navigator.clipboard.writeText = async () => { throw new Error('denied'); }; });
+    await buttons.first().click();
+    await root.getByRole('button', { name: '复制失败，点击重试', exact: true }).waitFor();
+    assert(same(copyBefore, await buttons.first().boundingBox()), '剪贴板拒绝时原位反馈失败');
+    await page.getByRole('status').filter({ hasText: 'onError：copy' }).waitFor();
+    assert(true, '复制错误通过公开回调通知调用方');
+    await root.evaluate(() => { navigator.clipboard.writeText = window.c12Write; });
+    await buttons.first().click(); await root.getByRole('button', { name: '已复制回答' }).waitFor();
+    assert(true, '复制失败后可以重试成功');
+    await buttons.nth(1).focus(); await page.keyboard.press('Space');
+    await root.getByRole('button', { name: '正在重新生成' }).waitFor();
+    assert(await buttons.nth(1).isDisabled() && await buttons.nth(1).getAttribute('aria-busy') === 'true', '异步回调等待期间禁用并展示忙碌');
+    const started = await page.getByRole('status').filter({ hasText: 'onRegenerate：开始' }).textContent();
+    await buttons.nth(1).evaluate(el => { el.click(); el.click(); });
+    assert(await page.getByRole('status').filter({ hasText: 'onRegenerate：开始' }).textContent() === started, '忙碌期间连续点击不会重复回调');
+    assert(same(before, await root.boundingBox()) && same(regenBefore, await buttons.nth(1).boundingBox()), '忙碌反馈保持按钮与操作栏位置尺寸');
+    await root.getByRole('button', { name: '重新生成', exact: true }).waitFor();
+    assert(await buttons.nth(1).isEnabled(), '回调完成后恢复操作');
+    await select('regenerating');
+    assert(await buttons.nth(1).isDisabled() && await buttons.first().isEnabled(), '宿主生成中仍可复制当前内容');
+    await page.getByRole('checkbox', { name: '正在重新生成', exact: true }).uncheck();
+    await root.getByRole('button', { name: '重新生成', exact: true }).waitFor();
+    assert(await buttons.nth(1).isEnabled(), '宿主结束生成后恢复操作');
+    await select('regenerate-disabled');
+    assert(await buttons.nth(1).isDisabled() && await buttons.first().isEnabled(), '支持独立禁用重新生成');
+    await select('disabled');
+    assert(await buttons.first().isDisabled() && await buttons.nth(1).isDisabled(), '全部禁用保留两个按钮');
+    await select('empty');
+    assert(await buttons.first().isDisabled() && await buttons.nth(1).isEnabled(), '空回答仅禁用复制');
+    await page.getByRole('textbox', { name: '回答原文', exact: true }).fill('  \n  ');
+    assert(await buttons.first().isDisabled(), '纯空白原文不能复制');
+    await select('copy-only');
+    assert(await buttons.count() === 1, '未传回调不提供重新生成入口');
+    await select('failure');
+    const failedBefore = await root.boundingBox();
+    await buttons.nth(1).click();
+    await root.getByRole('button', { name: '重新生成失败，点击重试' }).waitFor();
+    assert(await buttons.nth(1).isEnabled() && same(failedBefore, await root.boundingBox()), '回调失败原位反馈且允许重试');
+    await page.getByRole('status').filter({ hasText: 'onError：regenerate' }).waitFor();
+    assert(true, '重新生成错误通过公开回调通知调用方');
+    await root.screenshot({ path: 'output/playwright/message-actions-failed.png' });
+    await buttons.nth(1).click(); await root.getByRole('button', { name: '正在重新生成' }).waitFor();
+    assert(await buttons.nth(1).getAttribute('data-feedback') === null, '重试时清除失败反馈');
+    await root.getByRole('button', { name: '重新生成失败，点击重试' }).waitFor();
+    await select('default');
+    await root.evaluate(() => { window.c12Write = navigator.clipboard.writeText.bind(navigator.clipboard); navigator.clipboard.writeText = () => new Promise(resolve => { window.c12Resolve = resolve; }); });
+    await buttons.first().click(); await root.getByRole('button', { name: '正在复制' }).waitFor();
+    assert(await buttons.first().isDisabled(), '剪贴板等待期间阻止重复复制');
+    await page.getByRole('textbox', { name: '回答原文', exact: true }).fill('新的回答');
+    await root.evaluate(() => { navigator.clipboard.writeText = window.c12Write; window.c12Resolve(); });
+    await root.getByRole('button', { name: '复制回答', exact: true }).waitFor();
+    assert(await root.getByRole('status').textContent() === '', '旧复制结果不会冒充新回答已复制');
+    const rapidBefore = await root.boundingBox();
+    for (let i = 0; i < 4; i++) {
+      await buttons.first().click();
+      await root.getByRole('button', { name: '已复制回答' }).waitFor();
+      assert(same(rapidBefore, await root.boundingBox()), `快速重复复制 ${i + 1} 不位移`);
+    }
+    await page.locator('iframe').evaluate(el => { el.style.width = '160px'; });
+    assert(await root.evaluate(el => el.scrollWidth <= el.ownerDocument.documentElement.clientWidth), '窄预览中操作不横向溢出');
+    await page.locator('iframe').evaluate(el => { el.style.removeProperty('width'); });
+    await select('default');
+    await page.screenshot({ path: 'output/playwright/message-actions-workbench.png' });
+    assert(errors.length === 0, '无未处理的页面异常');
+    return { passed: passed.length, assertions: passed, errors };
+  } finally {
+    await root.evaluate(() => { if (window.c12Write) navigator.clipboard.writeText = window.c12Write; }).catch(() => {});
+    page.off('pageerror', onError);
+  }
+}

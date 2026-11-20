@@ -1,0 +1,12 @@
+.pl-code-block { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; color: var(--pl-text, #202124); background: var(--pl-surface-muted, #f6f6f7); border-radius: 10px; overflow: hidden; font: 13px/1.6 system-ui, "Microsoft YaHei", sans-serif; }
+.pl-code-block__toolbar { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; color: var(--pl-text-muted, #60636b); font-size: 12px; }
+.pl-code-block__toolbar > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }
+.pl-code-block__language { min-width: 0; overflow-wrap: anywhere; }
+/* 成功使用固定绿色，避免用户主色接近默认灰色时反馈不明显。 */
+.pl-code-block__copy[data-copied] { --pl-button-text: #15803d; }
+.pl-code-block__status { display: block; flex: none; padding: 0 12px; font-size: 12px; }
+.pl-code-block__status:empty { display: none; }
+.pl-code-block__scroll { flex: 0 1 auto; max-height: 480px; }
+.pl-code-block .pl-code-block__pre { box-sizing: border-box; width: max-content; min-width: 100%; margin: 0; padding: 16px; max-height: none; overflow: visible; white-space: pre; overflow-wrap: normal; font: 13px/1.75 ui-monospace, Consolas, monospace; tab-size: 2; }
+.pl-code-block__pre code { font: inherit; }
+.pl-code-block__line { display: inline; }

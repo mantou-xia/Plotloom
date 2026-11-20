@@ -18,12 +18,12 @@
   },
   "localChanges": {
     "DeepAgentComposerEngine.js": {
-      "description": "保留原版布局与动效及 MorphingPopover；补充宿主异步配置、真实附件与技能/文件数据、接收后清空、动态档位、未知用量和能力隐藏。推理档位按实际数量单行均分。 按用户要求移除外层 padding 与实色背景，输入框表面使用 88% 不透明度。 增加 modelNames，收起按钮只显示模型名，菜单保留完整标签。",
-      "sha256": "7a38c2d5ca6754d380cf2a47ecdf4eb6a16d7fc658299ae6e0c17330cd5ea463"
+      "description": "保留原版布局与动效及 MorphingPopover；补充宿主异步配置、真实附件与技能/文件数据、接收后清空、动态档位、未知用量和能力隐藏。推理档位按实际数量单行均分。 按用户要求移除外层 padding 与实色背景，输入框表面使用 88% 不透明度。 增加 modelNames，收起按钮只显示模型名，菜单保留完整标签。 增加 draftKey，原位重置草稿并隔离旧上传与发送结果，保留控件实例。 文件改用共享 AttachmentCard（类型颜色、保留扩展名、真实大小），图片共用 AttachmentThumbnail，保留原有预览、上传和移除动画。 支持宿主恢复和缓存未发送文字。",
+      "sha256": "1cdf4abdd771e7ad58c77359bed6b91551233105e3ed4f0e78bd21c5999dab09"
     },
     "DeepAgentComposerEngine.d.ts": {
-      "description": "补充宿主数据及异步回调契约，不依赖业务协议。 增加 modelNames，收起按钮只显示模型名，菜单保留完整标签。",
-      "sha256": "d3a2e48264411f2774dbf76dcbebe46c17d0a4caf271ef2b43843c0460d83241"
+      "description": "补充宿主数据及异步回调契约，不依赖业务协议。 增加 modelNames，收起按钮只显示模型名，菜单保留完整标签。 增加 draftKey，原位重置草稿并隔离旧上传与发送结果，保留控件实例。 补充附件真实字节数 size。 支持宿主恢复和缓存未发送文字。",
+      "sha256": "02dddbbef94f430547258aa272d0e77f5a926d6d4b06cc8bdf6abb50c14c9da2"
     }
   }
 }

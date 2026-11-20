@@ -1,0 +1,91 @@
+# 单栏 Agent 正式产品接入验收
+
+日期：2026-11-20。范围与决定见 `docs/plans/basic-agent-product.md`。
+
+## 实现结果
+
+- 正式 ChatPage 按一次用户请求组合用户消息、可见思考、过程说明、工具输入与结果、自动重试/压缩事件、最终回答和终止状态。工具结果更新原调用节点，使用公开 turnId 组织顺序。
+- 复用组件库的 TaskComposer、UserMessageBubble、AgentActivityHeader、ExecutionTimeline（含 ThinkingContent / ToolCallItem）、MarkdownRenderer（含 CodeBlock）、AttachmentCard、SourceReference、MessageActions、MessageStatus。
+- 原消息是后端快照的投影；生成中轮询，SSE 接受后清空草稿，结束/断流后重查。刷新后通过 URL 中的聊天 ID 恢复；离开页面不停止后端。
+- 最新请求可重试；保留旧历史，重放原文字、附件、引用和显式技能。使用当前模型与技能配置，工具可能再次执行，旧目标返回 409 RETRY_UNAVAILABLE。
+- 普通聊天支持独立可见浏览器；项目聊天同时使用既有文件和终端工具。浏览器按聊天独立目录隔离，首次使用才启动，支持导航、快照、ref 点击/填写、按键、滚动、前后退、刷新和标签选择。
+- 网页链接显示在实际访问步骤的展开详情中。最终回答明确引用本轮网页时，正文显示编号，回答下方可按需打开引用列表。用户提交的文件引用随用户消息展示。
+- 正文增量未确认结束时进入执行过程；模型正常结束或停止后再展示回答。自动重试中的失败消息保留在过程内，不拼成最终回答。
+
+## 自动化与接口试验台
+
+| 检查 | 结果 |
+| --- | --- |
+| `pnpm.cmd typecheck` | 通过 |
+| `pnpm.cmd web:build` | 通过；存在 Markdown/图表依赖带来的大包提示 |
+| `pnpm.cmd test:ui` | 29 项通过 |
+| `pnpm.cmd test:demo` | 11 项通过；61 条业务路由逐条对应目录及实际注册 |
+| `tests/api/basic-agent.test.ts` 与 `messages.test.ts` | 7 项通过，含真实文件写入、ref 填写/点击、浏览器隔离、等待中停止、附件重试、服务重启 |
+| 全量 `pnpm.cmd test` | 79 项全部通过 |
+
+接口试验台由真实页面点击调用，模型协议替身只控制模型输出，不替换 SDK、HTTP、文件工具或浏览器。已完成：创建会话、发送工具请求、详情字段检查、最新一轮重试成功、旧目标 409、运行中停止。新增接口和修改字段登记于 `packages/contracts/src/catalog.ts`；发送消息示例包含浏览器和写项目文件。
+
+## 正式页面验证
+
+`tests/ui/basic-agent-browser.js` 通过 Playwright CLI 在正式页面运行，覆盖十一轮对话：
+
+1. 简单对话、复制原文、复制状态图标不改变按钮位置。
+2. 最新一轮重新生成保留旧记录，刷新保留当前聊天。
+3. 可见思考进入过程，工具输入和结果合为一个节点。
+4. 长记录中向上阅读时不被轮询拉回底部；回到最新消息入口有效。
+5. 停止、停止后重试、失败反馈；停止前后输入区位置保持一致。
+6. 从输入器上传真实 TXT 附件、发送、刷新、卡片打开真实内容弹窗。
+7. 独立浏览器真实导航、填写并提交本地表单，访问链接归到对应工具步骤。完成后过程默认收起，正文链接可用。
+8. 浏览后生成期间无独立资料清单，展开工具详情可查看访问链接，停止后仍可查看。
+9. 正文编号与「引用来源」入口打开同一网页，未知标记不显示，刷新后引用可继续使用。
+
+正文引用阶段使用独立 HTTP 测试确认 browser 与 web_fetch 来源成功关联、按正文顺序去重，并覆盖未知 ID、历史轮次 ID 和行内代码。服务重启后历史引用可复现。接口试验台实际发送含有效与未知标记的消息，并查询会话详情确认只返回有效引用。SSE 保持原事件结构，`text_delta` 可能包含原始引用标记，校验结果通过会话详情的 `messages[].citations` 返回。
+
+生成中刷新和初始加载失败恢复另由 `tests/ui/basic-agent-recovery-browser.js` 检查：加载失败后重试成功、生成中刷新仍恢复过程、刷新后停止生效，三项通过。
+
+截图：`output/playwright/basic-agent-chat.png`、`basic-agent-browser.png`、`basic-agent-demo.png`。
+
+## 真实模型验收
+
+使用本机已配置 `krill-ai-codex / gpt-5.6-sol`，隔离数据目录与项目：`D:/Temp/Lenovo/plotloom-real-product-M9fuEa/project`。
+
+- 从正式页面提交自然语言任务；聊天 ID：`01a1f742-eeda-7138-a12b-82c13a10859f`。
+- 模型实际调用 `ls → write → read → browser navigate → browser fill → browser click`。
+- `agent-smoke.txt` 真实落盘且回读为 `Plotloom real integration OK`，已用独立文件读取核验。
+- 独立可见浏览器填写 `real-browser-ok` 并提交本地表单，结果地址为 `http://127.0.0.1:4435/submit?value=real-browser-ok`；工具快照和最终回答均包含页面实际显示值。
+- 最终请求状态 completed，会话 idle；页面中 6 个工具节点可展开查看。证据：`output/basic-agent-real-result.json`、`output/playwright/basic-agent-real.png`。
+
+本次实际访问验收覆盖本地受控网页；不宣称已经验证登录、验证码或任意外部网站。
+
+## 范围和限制
+
+- 本轮不实现分屏、C09 完整图片组或 Electron 浏览器工作区实验。工作区中另一项同步任务后来接入了 ChatWorkspace 外壳；保留其改动，聊天验收时收起右侧工作区，本轮浏览器仍是独立窗口。
+- 主要验收桌面本机使用。390px 宽度检查未发生文档横向溢出，但现有全局侧栏占宽较多，聊天标题与控件明显受挤压，不能据此宣称移动端已适配；本轮未扩展全局移动布局。
+- Windows 默认使用已安装的 Edge。其他系统默认 Chrome；浏览器不可启动或网页操作失败会返回可见工具错误。
+- 只展示模型公开返回的思考文本，不推断或制造未提供的思考内容。
+
+## 八条规则核对
+
+1. 不过度设计：只做已确认的基本对话、文件、独立浏览器与配套状态操作。
+2. 前后端解耦：应用只导入 contracts 和 ui，浏览器及 Pi 实例由后端管理；独立 HTTP 验收不依赖页面。
+3. 关键注释：请求互斥、重放、快照投影、阶段判定、滚动跟随及浏览器生命周期均有职责与原因注释。
+4. 先澄清：实现前已确认旧页处理、浏览器呈现方式和重试语义。
+5. 旧实现处理：用户已确认直接替换简易聊天页，不保留旧入口；既有 Electron 实验保持独立。
+6. 边框与层级：页面以留白及背景划分；附件/来源使用既有组件，未增加嵌套完整边框、彩色描边或 border+shadow 层级。
+7. 组件职责：业务轮次组合在 apps/web，通用能力复用 packages/ui；没有反向依赖。
+8. 反馈稳定：复制原按钮反馈、固定高度状态行、浮层预览；停止与复制前后位置检查通过，阅读时不强制滚动。
+
+## 复验入口
+
+- `node tests/ui/basic-agent-server.ts` 启动隔离协议替身服务（4432）及本地表单（4435），生成 `output/preview.txt`。
+- 正式前端以 `PLOTLOOM_WEB_API_TARGET=http://127.0.0.1:4432` 启动至 4433；试验台以 `PLOTLOOM_DEMO_API_TARGET=http://127.0.0.1:4432` 启动至 4434。
+- Playwright CLI 打开对应页面后，用 `run-code --filename` 执行 `tests/ui/basic-agent-browser.js`、`basic-agent-recovery-browser.js` 和 `basic-agent-demo-browser.js`。
+- 真实模型用生产服务入口配独立 PLOTLOOM_DATA_DIR；`basic-agent-real-browser.js` 从页面 URL 的 project 参数取得隔离项目目录，提交后核验实际文件和浏览器结果。
+
+状态：本轮桌面基础能力接入完成，未执行提交或合并。
+
+## 2026-11-20 聊天体验复验
+
+- 会话详情提供可选的 `messages[].elapsedSeconds`。在隔离模型服务上通过试验台实际完成创建、发送、查询详情、重试、过期重试目标 409 和停止。独立接口测试验证了正向耗时字段及异常和中止流程。
+- 在产品页面验证新聊天与历史会话分别保存多行文字，切回和刷新后恢复，接收发送后清空。用户消息可复制原文；完成按钮显示耗时，展开、收起和悬停高亮正常。
+- 活动面板浏览器脚本通过 53 项检查，覆盖粒子画布上下边界、宽窄屏、长内容、折叠和快速切换。正式聊天页面的发送、停止、重试、附件和复制反馈回归通过。

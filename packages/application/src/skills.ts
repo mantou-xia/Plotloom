@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { parseDocument } from 'yaml';
 import { invalid, WorkspaceError } from '@plotloom/domain';
 import { bundleVersion, decodeText, inspectSkill, skillName, skillPath, type SkillBundle } from '@plotloom/domain/skills';
-import type { SkillInfo, SkillFile, SkillActivation, SessionSkillProfile, ChatSummary } from '@plotloom/contracts/skills';
+import type { SkillInfo, SkillFile, SkillActivation, SessionSkillProfile, ChatSummary, ToolScope } from '@plotloom/contracts/skills';
 import type { CreateSessionRequest, SessionListItem, SessionSummary } from '@plotloom/contracts';
 
-export type StoredSkill = Omit<SkillInfo, 'missingTools' | 'warnings' | 'runnable'>;
+export type StoredSkill = Omit<SkillInfo, 'missingTools' | 'warnings' | 'runnable' | 'availableIn'>;
 export interface SkillState { format: 1; skills: StoredSkill[]; workspaces: Record<string, string[]> }
 export interface SkillRepository {
   run<T>(operation: (state: SkillState) => Promise<T>): Promise<T>;
@@ -32,22 +32,32 @@ export class SkillService {
   private readonly store: SkillRepository;
   private readonly sessions: SkillSessions;
   private readonly checkWorkspace: (id: string) => Promise<unknown>;
-  private readonly tools: (workspaceId?: string | null) => string[];
-  constructor(store: SkillRepository, sessions: SkillSessions, checkWorkspace: (id: string) => Promise<unknown>, tools: (workspaceId?: string | null) => string[]) {
+  private readonly tools: (workspaceId?: string | null, project?: boolean) => string[];
+  constructor(store: SkillRepository, sessions: SkillSessions, checkWorkspace: (id: string) => Promise<unknown>, tools: (workspaceId?: string | null, project?: boolean) => string[]) {
     this.store = store; this.sessions = sessions; this.checkWorkspace = checkWorkspace; this.tools = tools;
   }
 
   private view(skill: StoredSkill, workspaceId?: string | null, projectTools?: string[]): SkillInfo {
     const missingTools = skill.declaredTools.filter(name => !(projectTools ?? this.tools(workspaceId)).includes(name));
+    const scopes: Array<[ToolScope, string[]]> = [['ordinary', this.tools(null)], ['project', this.tools(null, true)], ['novel', this.tools('novel')]];
+    const availableIn = scopes.filter(([, tools]) => skill.declaredTools.every(name => tools.includes(name))).map(([scope]) => scope);
     const warnings = [
+      ...(!skill.enabled ? ['已全局停用，所有聊天下一轮不再加载。'] : []),
       ...(missingTools.length ? ['缺少声明工具；此技能不会加载到模型。'] : []),
       ...(skill.compatibility ? ['环境说明尚需人工核对，应用不会安装运行环境。'] : []),
       ...(skill.files.some(p => p.startsWith('scripts/')) ? ['脚本仅保留为文件，不会执行。'] : []),
     ];
-    return { ...skill, missingTools, warnings, runnable: missingTools.length === 0 };
+    return { ...skill, availableIn, missingTools, warnings, runnable: skill.enabled && missingTools.length === 0 && availableIn.length > 0 };
   }
   list() { return this.store.run(async s => ({ skills: s.skills.map(v => this.view(v)) })); }
   get(id: string) { return this.store.run(async s => this.view(find(s, id))); }
+  /** 全局准入独立于内容版本；只更新清单，已开始的生成继续使用内存快照。 */
+  setEnabled(id: string, enabled: boolean) {
+    return this.store.run(async state => {
+      const skill = find(state, id); skill.enabled = enabled;
+      await this.store.persist(state); return this.view(skill);
+    });
+  }
   file(id: string, path: string): Promise<SkillFile> {
     skillPath(path);
     return this.store.run(async s => {
@@ -60,7 +70,7 @@ export class SkillService {
   private async add(state: SkillState, files: SkillBundle, source: StoredSkill['source'], origin: string) {
     const version = bundleVersion(files); const meta = inspectSkill(decodeText(files['SKILL.md']));
     if (state.skills.some(s => s.name === meta.name)) fail('SKILL_NAME_EXISTS', '同名技能已存在，请使用其他名称。');
-    const skill: StoredSkill = { ...meta, id: randomUUID(), source, origin, version, files: Object.keys(files).sort(), updatedAt: new Date().toISOString() };
+    const skill: StoredSkill = { ...meta, enabled: true, id: randomUUID(), source, origin, version, files: Object.keys(files).sort(), updatedAt: new Date().toISOString() };
     await this.store.write(skill, files); state.skills.push(skill); await this.store.persist(state); return this.view(skill);
   }
   create(content: string) {
@@ -103,8 +113,10 @@ export class SkillService {
       await this.store.persist(s); await this.store.remove(skill); return { deleted: true };
     });
   }
-  private defaults(s: SkillState, id: string | null) {
-    return id === null ? [] : s.workspaces[id] ?? s.skills.filter(v => v.source === 'builtin' && v.name === 'novel-writing').map(v => v.id);
+  private defaults(s: SkillState, id: string | null, projectTools?: string[]) {
+    // 自动发现只包含当前环境能用的技能；显式配置仍保留不可用条目供诊断。
+    const tools = projectTools ?? this.tools(id);
+    return (id === null ? undefined : s.workspaces[id]) ?? s.skills.filter(v => v.enabled && v.declaredTools.every(name => tools.includes(name))).map(v => v.id);
   }
   private validateIds(s: SkillState, ids: string[]) { if (ids.length > 50 || new Set(ids).size !== ids.length) invalid('技能最多 50 项且不可重复。'); for (const id of ids) find(s, id); }
   async workspaceSettings(id: string) { await this.checkWorkspace(id); return this.store.run(async s => ({ skillIds: this.defaults(s, id) })); }
@@ -113,11 +125,11 @@ export class SkillService {
     return this.store.run(async s => { this.validateIds(s, ids); s.workspaces[id] = ids; await this.store.persist(s); return { skillIds: ids }; });
   }
   private activation(s: SkillState, profile: SessionSkillProfile, projectTools?: string[]): SkillActivation {
-    const ids = profile.skillIds ?? this.defaults(s, profile.workspaceId);
+    const ids = profile.skillIds ?? this.defaults(s, profile.workspaceId, projectTools);
     const skills = ids.flatMap(id => { const found = s.skills.find(v => v.id === id); return found ? [this.view(found, profile.workspaceId, projectTools)] : []; });
     return { ...profile, mode: profile.skillIds === null ? 'inherit' : 'override', effectiveSkillIds: ids, skills,
       unavailable: ids.flatMap(id => { const skill = skills.find(v => v.id === id); return !skill ? [{ id, reason: '技能已移除，请调整聊天设置。' }]
-        : skill.runnable ? [] : [{ id, reason: `缺少工具：${skill.missingTools.join('、')}` }]; }) };
+        : !skill.enabled ? [{ id, reason: '技能已全局停用。' }] : skill.runnable ? [] : [{ id, reason: `缺少工具：${skill.missingTools.join('、')}` }]; }) };
   }
   /** 技能声明以当前会话实际工具诊断，项目能力不扩散到普通或小说聊天。 */
   async sessionSettings(id: string) {

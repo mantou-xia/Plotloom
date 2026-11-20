@@ -1,0 +1,30 @@
+.pl-source-reference { min-width: 0; color: var(--pl-text, #202124); }
+.pl-source-reference__list { display: grid; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.pl-source-reference__list > li { min-width: 0; }
+.plotloom-button.pl-source-reference__item { width: 100%; padding: 12px; border-radius: 10px; text-align: left; font-weight: 400; }
+.pl-source-reference__item > .plotloom-button__content { align-items: flex-start; justify-content: flex-start; gap: 12px; }
+.pl-source-reference__item[aria-current] { background: var(--pl-surface-muted, #f6f6f7); }
+.pl-source-reference__number { display: inline-flex; flex: none; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding-inline: 4px; box-sizing: border-box; border-radius: 6px; background: var(--pl-surface-muted, #f6f6f7); color: var(--pl-text-muted, #60636b); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pl-source-reference__content { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.pl-source-reference__title { color: var(--pl-text, #202124); font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
+.pl-source-reference__location { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; color: var(--pl-text-muted, #60636b); }
+.pl-source-reference__location svg { flex: none; }
+.pl-source-reference__location > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pl-source-reference__summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; color: var(--pl-text-muted, #60636b); }
+.pl-source-reference__empty { margin: 0; padding: 16px 12px; font-size: 13px; color: var(--pl-text-muted, #60636b); }
+/* 详情高度固定，长内容交给现有 ScrollBox；打开、关闭或切换来源不改变背后的列表位置。 */
+.pl-dialog.pl-source-reference__dialog { width: 620px; height: min(560px, calc(100dvh - 48px)); }
+.pl-source-reference__dialog > .pl-dialog__header, .pl-source-reference__dialog > .pl-dialog__footer { flex-shrink: 0; }
+.pl-source-reference__dialog > .pl-dialog__footer { min-height: 72px; box-sizing: border-box; align-items: center; }
+.pl-source-reference__detail { font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.pl-source-reference__kind { color: var(--pl-text-muted, #60636b); font-size: 12px; }
+.pl-source-reference__detail h3 { margin: 6px 0 16px; font-size: 18px; line-height: 1.5; }
+.pl-source-reference__detail h4 { margin: 20px 0 8px; font-size: 13px; }
+.pl-source-reference__detail p { margin: 0; white-space: pre-wrap; }
+.pl-source-reference__detail dl { margin: 0; }
+.pl-source-reference__detail dt { color: var(--pl-text-muted, #60636b); font-size: 12px; }
+.pl-source-reference__detail dd { margin: 4px 0 0; white-space: pre-wrap; }
+.pl-source-reference__detail blockquote { margin: 0 0 8px; padding: 12px 14px; border-radius: 8px; background: var(--pl-surface-muted, #f6f6f7); white-space: pre-wrap; }
+.pl-source-reference__link { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 6px 10px; color: var(--pl-primary-text, #1d4ed8); font-size: 13px; text-underline-offset: 3px; }
+.pl-source-reference__link:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pl-focus, #2563eb); }
+.pl-source-reference__unavailable { color: var(--pl-text-muted, #60636b); font-size: 13px; }

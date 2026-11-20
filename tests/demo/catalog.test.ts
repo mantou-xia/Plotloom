@@ -16,12 +16,23 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 57);
+  assert.equal(routes.length, 72);
+  assert(registered.includes('PUT /api/sessions/:id/organization'));
+  assert(registered.includes('DELETE /api/sessions/:id'));
+  for (const id of ['sessions.list', 'chats.list', 'chats.workspace-list']) {
+    assert(API_CATALOG.find(item => item.id === id)?.response.some(field => field.name === 'sessions[].archivedAt' && !field.required));
+  }
+  assert.equal(routes.filter(route => route.includes('/api/providers')).length, 7);
+  assert.equal(routes.filter(route => route.endsWith('/api/providers')).length, 3);
+  assert.equal(routes.filter(route => route.endsWith('/retry')).length, 1);
+  assert.equal(routes.filter(route => route.includes('/api/projects')).length, 3);
+  assert.equal(routes.filter(route => route.includes('/project-directories')).length, 0);
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
   assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
   assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 22);
   assert.equal(routes.filter((route) => route.includes('/writing')).length, 3);
-  assert.equal(routes.filter((route) => route.includes('/api/skills')).length, 8);
+  assert.equal(routes.filter((route) => route.includes('/api/skills')).length, 9);
+  assert.equal(routes.filter(route => route === 'GET /api/tools').length, 1);
   assert.deepEqual(registered, routes);
   assert.equal(new Set(API_CATALOG.map((item) => item.id)).size, API_CATALOG.length);
   const directory = await mkdtemp(join(tmpdir(), 'plotloom-catalog-'));
@@ -94,4 +105,7 @@ test('附件路由、消息来源和历史回显都登记了可检查字段', ()
   const history = API_CATALOG.find(item => item.id === 'sessions.get')!;
   assert(history.response.some(field => field.name === 'messages[].attachments[].id'));
   assert(history.response.some(field => field.name === 'messages[].references[].content'));
+  for (const path of ['messages[].content[].source.id', 'messages[].citations[].id', 'messages[].citations[].title', 'messages[].citations[].url']) {
+    assert(history.response.some(field => field.name === path), path);
+  }
 });

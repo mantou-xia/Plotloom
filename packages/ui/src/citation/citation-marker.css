@@ -1,0 +1,24 @@
+/* 正文内只显示紧凑编号；来源名在浮层里，不因标题长短或选中态改变文字排版。 */
+.plotloom-button.pl-citation-marker {
+  --pl-button-height: 20px;
+  --pl-button-background: var(--pl-surface-muted, #f0f0f2);
+  --pl-button-hover: #e5e5e8;
+  --pl-button-active: #dcdce1;
+  --pl-button-text: var(--pl-text-muted, #60636b);
+  min-width: 22px;
+  height: 20px;
+  margin-inline: 2px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+.plotloom-button.pl-citation-marker[data-active] {
+  --pl-button-background: var(--pl-primary-subtle, #eff6ff);
+  --pl-button-text: var(--pl-primary-text, #1d4ed8);
+}
+.pl-citation-marker > .plotloom-button__content { white-space: nowrap; overflow-wrap: normal; }

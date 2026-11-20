@@ -2,13 +2,15 @@
 .plotloom-work-start { position: relative; isolation: isolate; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
 .plotloom-work-start__ocean { position: absolute; inset: 0; z-index: -1; }
 .plotloom-work-start__welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 48px 32px; pointer-events: none; background: radial-gradient(ellipse at center, rgb(255 255 255 / 92%), rgb(255 255 255 / 65%) 24%, transparent 65%); }
-.plotloom-work-start__welcome h1 { max-width: 960px; margin: 12px 0 16px; font-size: clamp(24px, 2.8vw, 42px); font-weight: 650; line-height: 1.6; letter-spacing: -0.035em; color: #242424; overflow-wrap: anywhere; text-wrap: balance; }
-.plotloom-work-start__welcome h1 span { padding: 3px 16px; border-radius: 999px; background: rgb(239 239 239 / 90%); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.plotloom-work-start__heading { max-width: 960px; margin: 12px 0 16px; font-size: clamp(24px, 2.8vw, 42px); font-weight: 650; line-height: 1.6; letter-spacing: -0.035em; color: #242424; overflow-wrap: anywhere; text-wrap: balance; }
+/* 欢迎区让指针穿透到海洋，仅项目胶囊恢复交互；保留原文字尺寸和圆角。 */
+.plotloom-work-start__project.plotloom-button { pointer-events: auto; padding: 3px 16px; border-radius: 999px; font: inherit; vertical-align: baseline; --pl-button-background: rgb(239 239 239 / 90%); }
 .plotloom-work-start__welcome p { margin: 0; color: #626262; font-size: 14px; line-height: 1.7; }
 .plotloom-work-start__welcome .plotloom-work-start__eyebrow { font-size: 12px; letter-spacing: 0.12em; }
 .plotloom-work-start__bottom { width: min(100%, 864px); box-sizing: border-box; align-self: center; padding: 0 32px 28px; }
-.plotloom-work-start__feedback { background: rgb(255 255 255 / 94%); color: var(--pl-text-muted); font-size: 13px; padding: 0 18px; }
-.plotloom-work-start__feedback:empty { display: none; }
+/* 提示区始终保留一行（含重试按钮）的高度，首次加载、失败及发送反馈均不挤动欢迎区。 */
+.plotloom-work-start__feedback { display: flex; align-items: center; min-height: 32px; box-sizing: border-box; background: rgb(255 255 255 / 94%); color: var(--pl-text-muted); font-size: 13px; line-height: 20px; padding: 0 18px; }
+.plotloom-work-start__feedback:empty { visibility: hidden; }
 @media (max-width: 640px) {
   .plotloom-work-start__welcome { padding: 32px 20px; }
   .plotloom-work-start__bottom { padding: 0 8px 12px; }

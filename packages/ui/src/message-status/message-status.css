@@ -1,0 +1,16 @@
+/* 状态内容及操作分别固定占位；隐藏状态保留行高，不用动画掩盖布局变化。 */
+.pl-message-status { position: relative; box-sizing: border-box; width: 100%; height: 48px; min-width: 0; color: var(--pl-text-muted, #60636b); }
+.pl-message-status__content { display: grid; grid-template-columns: 18px minmax(0, 1fr) 32px; gap: 10px; align-items: center; height: 48px; }
+.pl-message-status__content[hidden] { display: none; }
+.pl-message-status__text { min-width: 0; display: grid; gap: 2px; }
+.pl-message-status__title { font-size: 13px; line-height: 20px; font-weight: 550; }
+.pl-message-status__description { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; line-height: 18px; }
+.pl-message-status__description:focus-visible { outline: none; border-radius: 3px; box-shadow: 0 0 0 2px var(--pl-focus, #2563eb); }
+.pl-message-status__action { width: 32px; height: 32px; }
+.pl-message-status[data-state="failed"] .pl-message-status__icon,
+.pl-message-status[data-state="failed"] .pl-message-status__title,
+.pl-message-status [data-retry-error] { color: #b91c1c; }
+.pl-message-status[data-state="waiting"] .pl-message-status__icon { animation: pl-message-status-spin 1s linear infinite; }
+.pl-message-status__feedback { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@keyframes pl-message-status-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pl-message-status[data-state="waiting"] .pl-message-status__icon { animation: none; } }

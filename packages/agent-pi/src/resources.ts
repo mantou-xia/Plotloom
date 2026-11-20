@@ -2,11 +2,6 @@ import { readFile } from 'node:fs/promises';
 import { Type } from 'typebox';
 import { createExtensionRuntime, defineTool, SettingsManager, type ResourceLoader } from '@earendil-works/pi-coding-agent';
 
-export const SYSTEM_PROMPT = `你是 Plotloom 的创作助手，使用简体中文。
-用户要求读取资料时调用 read_fixture；区分资料中的事实和创作建议。
-给出 A、B 候选后结束本轮，等待用户下一条消息选择。
-你只拥有显式提供的只读工具，不执行命令，不修改正文。`;
-
 /** 固定只读资料；参数由 SDK 校验，避免把文件系统路径暴露成公共能力。 */
 export function createFixtureTool() {
   return defineTool({

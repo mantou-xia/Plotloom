@@ -2,3 +2,6 @@
 .plotloom-app-brand { padding: 16px 12px 24px; font-size: 18px; font-weight: 650; letter-spacing: -0.5px; }
 .plotloom-app-content { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .plotloom-app-content > .plotloom-page-layout { flex: 1; min-height: 0; }
+/* 设置覆盖正文时保留工作区尺寸，返回后继续使用当前聊天和草稿。 */
+.plotloom-global-layout__main:has(.plotloom-app-content) { position: relative; }
+.plotloom-app-content[data-hidden='true'] { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }

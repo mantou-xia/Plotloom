@@ -7,7 +7,9 @@
   --pl-session-status-text: color-mix(in srgb, var(--pl-text-muted, #60636b) 65%, var(--pl-primary-text, #1d4ed8));
   position: relative; width: 100%; isolation: isolate; container-type: inline-size;
 }
-.pl-sidebar-session-item > .pl-sidebar-entry__actions { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 1; opacity: 1; pointer-events: auto; min-width: 0; max-width: calc(100% - 32px); }
+/* 工具栏的留白和只读信息透传给整行按钮，只有功能按钮保留自己的点击区域。 */
+.pl-sidebar-entry.pl-sidebar-session-item > .pl-sidebar-entry__actions { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 1; opacity: 1; pointer-events: none; min-width: 0; max-width: calc(100% - 32px); }
+.pl-session-metadata__tag.pl-sidebar-action-button { pointer-events: auto; }
 .pl-sidebar-session-item .pl-sidebar-entry__label { text-overflow: clip; }
 /* 只遮罩文字层，露出真实行背景（包括侧栏渐变），不绘制异色阴影或遮住键盘焦点环。
    4px 抵消标题按钮右内边距与操作区占位之差，左侧 20px 渐隐衔接工具栏。 */

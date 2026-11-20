@@ -117,7 +117,7 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
       const stats = await server.json(path(id, '/stats'));
       assert.equal(stats.userMessages, 1); assert.equal(stats.assistantMessages, 1); assert.equal(stats.usage.totalTokens, 15);
       const tools = await server.json(path(id, '/tools'));
-      assert.deepEqual(tools.tools.map((tool: any) => tool.name), ['read_fixture']);
+      assert.deepEqual(tools.tools.map((tool: any) => tool.name), ['read_fixture', 'browser', 'web_fetch']);
       assert.equal(tools.tools[0].active, true); assert.equal(tools.tools[0].parameters.type, 'object');
       assert.doesNotMatch(JSON.stringify({ detail, context, stats, tools }), /thinkingSignature|signature|sessionFile|baseUrl|apiKey/);
       await restart(); assert.deepEqual((await server.json(path(id))).messages, detail.messages);

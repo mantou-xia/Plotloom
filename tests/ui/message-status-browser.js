@@ -1,0 +1,94 @@
+// Playwright CLI：run-code --filename tests/ui/message-status-browser.js
+async (page) => {
+  const passed = [], errors = [];
+  const assert = (ok, name) => { if (!ok) throw new Error(name); passed.push(name); };
+  const onError = error => errors.push(error.message);
+  page.on('pageerror', onError);
+  const frame = page.frameLocator('iframe'), root = frame.locator('.pl-message-status');
+  const retry = root.getByRole('button');
+  const title = root.locator('.pl-message-status__title');
+  const select = async value => { await page.locator('#example-state').selectOption(value); await page.waitForTimeout(150); };
+  const change = async value => { await page.getByRole('combobox', { name: '消息状态', exact: true }).selectOption(value); await page.waitForTimeout(60); };
+  const same = (a, b) => ['x', 'y', 'width', 'height'].every(k => Math.abs(a[k] - b[k]) < .1);
+  try {
+    await page.bringToFront();
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.getByRole('button', { name: 'MessageStatus 9', exact: true }).click();
+    await select('waiting'); await root.waitFor();
+    const before = await root.boundingBox();
+    assert(Math.abs(before.height - 48) < .1, '默认固定 48px 状态行');
+    assert(await title.textContent() === '等待响应' && await retry.count() === 0, '等待状态无正文也可展示且不能重试');
+    assert(await root.locator('[role="status"]').first().getAttribute('aria-live') === 'polite', '状态变化通过读屏播报');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    assert(await root.locator('.pl-message-status__icon').evaluate(el => getComputedStyle(el).animationName) === 'none', '减少动效偏好下等待图标停止旋转');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await change('failed');
+    assert(await title.textContent() === '生成失败' && await retry.isEnabled(), '失败展示可用重试入口');
+    assert(same(before, await root.boundingBox()), '等待切换失败不改变位置尺寸');
+    const actionBefore = await retry.boundingBox();
+    await retry.focus(); await page.keyboard.press('Enter');
+    await root.getByRole('button', { name: '正在重试' }).waitFor();
+    assert(await retry.isDisabled() && await retry.getAttribute('aria-busy') === 'true', '重试 Promise 等待期间禁用并显示忙碌');
+    const started = await page.getByRole('status').filter({ hasText: 'onRetry：开始' }).textContent();
+    await retry.evaluate(el => { el.click(); el.click(); });
+    assert(await page.getByRole('status').filter({ hasText: 'onRetry：开始' }).textContent() === started, '连续点击不会重复发起重试');
+    assert(same(actionBefore, await retry.boundingBox()) && same(before, await root.boundingBox()), '重试忙碌不改变按钮及状态行位置');
+    await root.getByRole('button', { name: '重试生成', exact: true }).waitFor();
+    assert(await title.textContent() === '生成失败', '回调成功不擅自改变宿主消息状态');
+    await change('stopped');
+    assert(await title.textContent() === '已停止' && await retry.isEnabled(), '停止状态可按回调允许重试');
+    assert(await title.evaluate(el => getComputedStyle(el).color) !== 'rgb(185, 28, 28)', '停止状态使用中性色');
+    await retry.focus(); await page.keyboard.press('Space');
+    await root.getByRole('button', { name: '正在重试' }).waitFor();
+    assert(true, '空格键可以触发重试');
+    await root.getByRole('button', { name: '重试生成', exact: true }).waitFor();
+    await change('hidden');
+    assert(await retry.count() === 0 && await root.getByRole('status').count() === 0, '隐藏状态没有可访问操作与状态文案');
+    assert(same(before, await root.boundingBox()), '隐藏时保留状态行占位');
+    for (const state of ['failed', 'waiting', 'stopped', 'hidden', 'failed']) {
+      await change(state);
+      assert(same(before, await root.boundingBox()), `快速切换 ${state} 不位移`);
+    }
+    await select('no-retry');
+    assert(await retry.count() === 0 && await title.textContent() === '生成失败', '不提供回调时不制造重试入口');
+    await select('disabled');
+    assert(await retry.isDisabled(), '调用方可以禁用重试');
+    await select('retrying');
+    assert(await retry.isDisabled() && await retry.getAttribute('aria-label') === '正在重试', '宿主重试处理中状态保持禁用');
+    await page.getByRole('checkbox', { name: '重试处理中', exact: true }).uncheck();
+    assert(await retry.isEnabled(), '宿主结束重试后恢复操作');
+    await select('retry-error');
+    const failedBefore = await root.boundingBox();
+    await retry.click(); await root.getByRole('button', { name: '重试未能发起，点击重试' }).waitFor();
+    assert(await retry.isEnabled() && same(failedBefore, await root.boundingBox()), '重试请求失败原位反馈并允许再次重试');
+    await page.getByRole('status').filter({ hasText: 'onRetryError' }).waitFor();
+    assert(true, '重试请求失败通知调用方');
+    await retry.click(); await root.getByRole('button', { name: '正在重试' }).waitFor();
+    assert(await retry.getAttribute('data-retry-error') === null, '再次重试清除旧错误图标');
+    await root.getByRole('button', { name: '重试未能发起，点击重试' }).waitFor();
+    await change('waiting'); await change('failed');
+    assert(await retry.getAttribute('aria-label') === '重试生成', '新的消息状态清除旧重试失败提示');
+    await select('long-error');
+    const description = root.locator('.pl-message-status__description');
+    const full = await page.getByRole('textbox', { name: '错误说明', exact: true }).inputValue();
+    assert(await description.textContent() === full, '长错误保留完整纯文本');
+    assert(await description.evaluate(el => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === 'ellipsis'), '长错误固定行内省略');
+    // Tooltip 仅在键盘可见焦点时打开；用真实 Tab 导航验证，而非仅设置程序焦点。
+    await description.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
+    await frame.getByRole('tooltip', { name: full, exact: true }).waitFor();
+    assert(true, '聚焦可读取完整错误说明');
+    await page.keyboard.press('Escape');
+    await page.getByRole('textbox', { name: '错误说明', exact: true }).fill('<img src=x onerror=alert(1)>');
+    assert(await description.textContent() === '<img src=x onerror=alert(1)>' && await root.locator('img').count() === 0, '错误说明按纯文本显示而不执行 HTML');
+    await change('stopped');
+    assert(await description.textContent() === '本次生成已停止。', '失败详情不会泄漏到停止状态');
+    await page.locator('iframe').evaluate(el => { el.style.width = '200px'; });
+    assert(await root.evaluate(el => el.scrollWidth <= el.clientWidth), '窄容器内容不横向溢出');
+    assert(Math.abs((await root.boundingBox()).height - 48) < .1, '窄容器仍保持状态行高度');
+    await page.locator('iframe').evaluate(el => { el.style.removeProperty('width'); });
+    await select('failed');
+    await page.screenshot({ path: 'output/playwright/message-status-workbench.png' });
+    assert(errors.length === 0, '无未处理页面异常');
+    return { passed: passed.length, assertions: passed, errors };
+  } finally { page.off('pageerror', onError); }
+}

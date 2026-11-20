@@ -1,15 +1,23 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { TaskComposer } from '../task-composer/task-composer.tsx';
+import { Button } from '../button/button.tsx';
 import type { PreviewControls } from './controls.ts';
 
-/** 调试台只传原版公开参数并记录回调，不增加原版之外的按钮、布局或模拟业务。 */
+/** 调试台展示公开参数与回调；重置样例验证清空数据时仍保留输入框和模型控件。 */
 export function TaskComposerExample({ state, controls, style, onAction }: {
   state: string; controls: PreviewControls; style: CSSProperties; onAction: (action: string) => void;
 }) {
   const [stopped, setStopped] = useState(false);
+  const [draftKey, setDraftKey] = useState(0);
+  const attachmentDropTarget = useRef<HTMLDivElement>(null);
   useEffect(() => { setStopped(false); }, [controls.composerBusy]);
-  return <div style={style}>
+  return <div ref={attachmentDropTarget} style={{ ...style, position: 'relative' }}>
+    {state === 'reset-draft' ? <Button variant="secondary" onClick={() => {
+      setDraftKey(value => value + 1); onAction('draftKey 改变：原位清空草稿');
+    }}>重置草稿</Button> : null}
     <TaskComposer options={{
+      draftKey,
+      attachmentDropTarget,
       height: controls.height.mode === 'fixed' ? controls.height.value : 480,
       disabled: controls.disabled,
       busy: controls.composerBusy && !stopped,

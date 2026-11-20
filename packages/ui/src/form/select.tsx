@@ -58,7 +58,8 @@ export function Select({ size = 'md', placeholder = '请选择', searchable = tr
       {clearable && !props.readOnly ? <Combobox.Clear className="pl-form-step" aria-label="清空选择"><X size={16} /></Combobox.Clear> : null}
     </div>
     <Combobox.Portal container={container}>
-      <Combobox.Positioner sideOffset={6} className="pl-form-select__positioner">
+      {/* 原生弹窗居中且正文可滚动，菜单按视口定位，避免扩张弹窗自身的滚动范围。 */}
+      <Combobox.Positioner positionMethod={container?.matches('dialog:modal') ? 'fixed' : 'absolute'} sideOffset={6} className="pl-form-select__positioner">
         <Combobox.Popup className="pl-form-select__popup" data-size={size}>
           {searchable ? <div className="pl-form-select__search"><Search size={16} aria-hidden="true" /><Combobox.Input aria-label="搜索选项" placeholder="搜索选项…" className="pl-form-text" /></div> : null}
           <ScrollBox className="pl-form-select__scroll" tabIndex={-1}>

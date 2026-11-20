@@ -35,9 +35,9 @@ export function ButtonGallery({ onAction }: { onAction: () => void }) {
       <Button startIcon={<Plus />} onClick={onAction}>前置图标</Button>
       <Button variant="secondary" endIcon={<ArrowRight />} onClick={onAction}>后置图标</Button>
       <Button variant="subtle" startIcon={<Plus />} endIcon={<ArrowRight />} onClick={onAction}>双侧图标</Button>
-      <Button variant="secondary" iconOnly aria-label="添加内容" onClick={onAction}><Plus /></Button>
-      <Button variant="secondary" iconOnly loading aria-label="添加内容中" onClick={onAction}><Plus /></Button>
-      <Button variant="secondary" iconOnly disabled aria-label="添加内容不可用" onClick={onAction}><Plus /></Button>
+      <Button variant="secondary" iconOnly tooltip aria-label="添加内容" onClick={onAction}><Plus /></Button>
+      <Button variant="secondary" iconOnly tooltip loading aria-label="添加内容中" onClick={onAction}><Plus /></Button>
+      <Button variant="secondary" iconOnly tooltip="当前无法添加内容" disabled aria-label="添加内容不可用" onClick={onAction}><Plus /></Button>
     </div></section>
   </div>;
 }

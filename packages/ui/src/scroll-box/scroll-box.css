@@ -20,6 +20,10 @@
   box-shadow: inset 0 0 0 2px var(--pl-focus, #60636b);
 }
 
+/* 标签导航不需要可拖动的轨道；始终隐藏而非悬停切换尺寸，保留原生滚动能力。 */
+.plotloom-scroll-box[data-scrollbar-visibility='hidden'] { scrollbar-width: none; }
+.plotloom-scroll-box[data-scrollbar-visibility='hidden']::-webkit-scrollbar { display: none; }
+
 /* 对尚未支持标准滚动条配色的浏览器保留同样的固定尺寸与透明轨道。 */
 @supports not (scrollbar-color: auto) {
   .plotloom-scroll-box::-webkit-scrollbar { width: 8px; height: 8px; }

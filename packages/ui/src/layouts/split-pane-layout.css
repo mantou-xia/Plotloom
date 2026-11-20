@@ -1,0 +1,28 @@
+.pl-split-pane { width: 100%; height: 100%; min-width: 0; min-height: 0; color: var(--pl-text); background: var(--pl-surface); }
+.pl-split-pane__group, .pl-split-pane__main { width: 100%; height: 100%; min-height: 0; }
+.pl-split-pane__main { overflow-wrap: anywhere; }
+.pl-split-pane__separator { position: relative; width: 8px; border: 0; outline: none; background: var(--pl-surface-muted); }
+.pl-split-pane__separator::after { content: ''; position: absolute; width: 1px; inset: 0 auto 0 50%; background: var(--pl-border); }
+.pl-split-pane__separator:hover { background: #e5e5e5; }
+.pl-split-pane__separator:focus-visible { box-shadow: inset 0 0 0 2px var(--pl-focus); }
+.pl-split-pane__panel { position: relative; inset: auto; margin: 0; padding: 0; width: 100%; height: 100%; max-width: none; max-height: none; min-width: 0; border: 0; outline: none; color: inherit; background: var(--pl-surface); overflow: hidden; }
+.pl-split-pane__panel[open] { display: flex; flex-direction: column; }
+.pl-split-pane__panel[data-mode='overlay'] { position: fixed; inset: 0 0 0 auto; width: min(440px, 100vw); height: 100dvh; }
+.pl-split-pane__panel::backdrop { background: rgb(0 0 0 / 24%); }
+.pl-split-pane__header { display: flex; align-items: center; gap: 8px; flex: 0 0 52px; min-width: 0; padding: 0 12px 0 20px; border-bottom: 1px solid var(--pl-border); }
+.pl-split-pane__header h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; }
+.pl-split-pane__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.pl-split-pane__body { flex: 1; min-height: 0; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 分栏运动中关闭滚动锚定，避免临时换行改变两侧阅读位置。 */
+  :where(.pl-split-pane[data-moving] .plotloom-scroll-box) { overflow-anchor: none; }
+  .pl-split-pane__panel[data-mode='overlay']::backdrop {
+    opacity: 1;
+    transition: opacity 320ms ease-out;
+  }
+  .pl-split-pane__panel[data-mode='overlay'][data-closing]::backdrop { opacity: 0; }
+  @starting-style {
+    .pl-split-pane__panel[data-mode='overlay']::backdrop { opacity: 0; }
+  }
+}

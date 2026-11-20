@@ -5,10 +5,6 @@ import { AgentError } from './errors.ts';
 
 /** 工具直接采用 Pi 原生实现；项目路径是默认 cwd，不提供沙箱或审批承诺。 */
 export const PROJECT_TOOLS = ['read', 'grep', 'find', 'ls', 'edit', 'write', process.platform === 'win32' ? 'powershell' : 'bash'];
-export const PROJECT_PROMPT = `你是 Plotloom 的项目助手，使用简体中文。根据用户任务读取、搜索、编辑项目文件，并在需要时执行终端命令。
-先检查项目的 AGENTS.md 和相关开发规则。修改前读取文件，遵守用户指定范围；完成后说明实际修改、验证结果和未完成项。不要把工具错误描述为成功。
-用户提供的项目相对路径以当前工作目录为基准。执行命令前检查目录，避免无关文件改动。`;
-
 /** 不创建用户目录；只有显式提交的现存绝对目录能成为新会话的项目。 */
 export async function validateProjectPath(path: string): Promise<string> {
   if (!isAbsolute(path)) throw new AgentError(422, 'PROJECT_PATH_INVALID', '项目目录必须是绝对路径。');

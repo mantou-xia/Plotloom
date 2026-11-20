@@ -16,7 +16,15 @@
 }
 /* 顶部到滚动区连续衔接；有无固定导航都不插入额外间距。 */
 .plotloom-sidebar__header { flex: 0 0 auto; }
-.plotloom-sidebar__fixed { flex: 0 0 auto; min-width: 0; }
+.plotloom-sidebar__fixed { position: relative; flex: 0 0 auto; min-width: 0; }
+/* 分界线覆盖在固定区底边，不占布局空间，避免滚动状态切换时内容跳动。 */
+.plotloom-sidebar__fixed[data-scrolled='true']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  border-bottom: 1px solid var(--pl-border, #d4d4d8);
+  pointer-events: none;
+}
 .plotloom-sidebar__body { flex: 1 1 0; min-height: 0; }
 .plotloom-sidebar__nav-items, .plotloom-sidebar__groups { min-width: 0; }
 /* 间距属于外层分类布局，内部 SidebarGroup 不再自带顶部留白。 */

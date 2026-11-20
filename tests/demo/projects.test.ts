@@ -16,3 +16,19 @@ test('项目创建、历史、文件候选和技能诊断在试验台有完整�
   for (const name of ['entries[].path', 'entries[].isDirectory', 'truncated']) assert(search.response.some(field => field.name === name));
   assert.match(search.note, /PROJECT_NOT_SELECTED/);
 });
+
+test('项目登记、空项目列表与系统选择器具有完整公开契约，旧浏览接口已删除', () => {
+  assert(!API_CATALOG.some(item => item.path === '/api/project-directories'));
+  const create = API_CATALOG.find(item => item.id === 'projects.create')!;
+  assert.equal(create.success, 201);
+  assert(create.request.every(field => field.required));
+  for (const name of ['id', 'name', 'path', 'createdAt']) assert(create.response.some(field => field.name === name));
+  assert.match(create.note, /409 PROJECT_ALREADY_EXISTS/);
+  const list = API_CATALOG.find(item => item.id === 'projects.list')!;
+  assert.match(list.description, /尚无聊天/);
+  const picker = API_CATALOG.find(item => item.id === 'projects.select-folder')!;
+  assert.equal(picker.method, 'POST');
+  assert.equal(picker.response[0].type, 'string | null');
+  assert.match(picker.note, /中止请求会关闭/);
+  for (const code of ['FOLDER_PICKER_BUSY', 'FOLDER_PICKER_FAILED', 'FOLDER_PICKER_UNAVAILABLE']) assert(picker.note.includes(code));
+});

@@ -1,3 +1,7 @@
+import { AgentActivityControls } from './agent-activity-controls.tsx';
+import { AgentProcessControls } from './agent-process-controls.tsx';
+import { Textarea } from '../form/textarea.tsx';
+import { FormField } from '../form/form-field.tsx';
 import type { ComponentDimension, PreviewControls } from './controls.ts';
 import { SidebarControls } from './sidebar-controls.tsx';
 import { buttonVariants } from './button-gallery.tsx';
@@ -27,9 +31,92 @@ export function ComponentControls({ component, controls, onChange }: Props) {
   if (component === 'page-layout') numbers.push({ key: 'maxWidth', label: '正文最大宽度（px）', min: 1, max: 2400 });
   if (component === 'color-swatches') numbers.push({ key: 'swatchSize', label: '圆点直径（px）', min: 24, max: 80 });
   return <>
+    {component === 'settings-section' || component === 'settings-row' ? <fieldset><legend>设置组件参数</legend>
+      <label>标题<input value={controls.settingsTitle} onChange={event => onChange({ settingsTitle: event.target.value })} /></label>
+      <FormField label="说明"><Textarea rows={3} value={controls.settingsDescription} onValueChange={value => onChange({ settingsDescription: value })} /></FormField>
+      <p className="pl-workbench__hint">title / description 控制文案，children 注入设置行或控件；清空说明可检查无说明布局。</p>
+    </fieldset> : null}
+    {component === 'markdown-reader-frame' || component === 'browser-frame' ? <fieldset><legend>页面框架参数</legend>
+      {component === 'markdown-reader-frame' ? <>
+        <label>文件名<input value={controls.readerFrameName} onChange={event => onChange({ readerFrameName: event.target.value })} /></label>
+        <label>文件路径<input value={controls.readerFramePath} onChange={event => onChange({ readerFramePath: event.target.value })} /></label>
+        <FormField label="Markdown 文本"><Textarea rows={10} value={controls.readerFrameContent} onValueChange={value => onChange({ readerFrameContent: value })} /></FormField>
+      </> : <label>初始网址<input value={controls.browserFrameUrl} onChange={event => onChange({ browserFrameUrl: event.target.value })} /></label>}
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.frameCustomToolbar} onChange={event => onChange({ frameCustomToolbar: event.target.checked })} />自定义工具栏插槽</label>
+      <p className="pl-workbench__hint">状态由样例切换。操作通过公开回调驱动；示例不读取文件或访问网络。</p>
+    </fieldset> : null}
+    {component === 'message-status' ? <fieldset><legend>消息状态参数</legend>
+      <label>消息状态<select value={controls.messageStatus} onChange={event => onChange({ messageStatus: event.target.value as PreviewControls['messageStatus'] })}>
+        <option value="waiting">等待响应</option><option value="failed">生成失败</option><option value="stopped">已停止</option><option value="hidden">隐藏并保留占位</option>
+      </select></label>
+      <FormField label="错误说明"><Textarea rows={4} value={controls.messageStatusError} onValueChange={value => onChange({ messageStatusError: value })} /></FormField>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.messageStatusCanRetry} onChange={event => onChange({ messageStatusCanRetry: event.target.checked })} />提供重试回调</label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.messageStatusRetrying} onChange={event => onChange({ messageStatusRetrying: event.target.checked })} />重试处理中</label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.disabled} onChange={event => onChange({ disabled: event.target.checked })} />禁用重试</label>
+      <p className="pl-workbench__hint">状态完全由调用方提供；重试回调完成不自动改变消息状态。</p>
+    </fieldset> : null}
+    {component === 'message-actions' ? <fieldset><legend>回答操作参数</legend>
+      <FormField label="回答原文"><Textarea rows={8} value={controls.messageActionsText} onValueChange={value => onChange({ messageActionsText: value })} /></FormField>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.messageActionsShowRegenerate} onChange={event => onChange({ messageActionsShowRegenerate: event.target.checked })} />提供重新生成回调</label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.messageActionsRegenerating} onChange={event => onChange({ messageActionsRegenerating: event.target.checked })} />正在重新生成</label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.messageActionsRegenerateDisabled} onChange={event => onChange({ messageActionsRegenerateDisabled: event.target.checked })} />禁用重新生成</label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.disabled} onChange={event => onChange({ disabled: event.target.checked })} />禁用全部操作</label>
+      <p className="pl-workbench__hint">复制使用浏览器剪贴板；重新生成只演示异步回调，不请求模型。</p>
+    </fieldset> : null}
+    {component === 'split-pane-layout' ? <fieldset><legend>分屏参数</legend>
+      <label>面板标题<input value={controls.splitPanelTitle} onChange={event => onChange({ splitPanelTitle: event.target.value })} /></label>
+      {([
+        ['splitMinWidth', '面板最小宽度（px）', 200, controls.splitMaxWidth],
+        ['splitMaxWidth', '面板最大宽度（px）', controls.splitMinWidth, 1200],
+        ['splitBreakpoint', '覆盖模式阈值（px）', 600, 1600],
+      ] as const).map(([key, label, min, max]) => <label key={key}>{label}<input type="number" min={min} max={max} key={controls[key]} defaultValue={controls[key]}
+        onBlur={event => commit(event.target, controls[key], min, max, value => onChange({ [key]: value }))}
+        onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>)}
+      <p className="pl-workbench__hint">打开/关闭由样例按钮控制；拖拽后的像素宽度通过回调交给应用，布局不读写存储。默认占满父容器。</p>
+    </fieldset> : null}
+    {component === 'source-reference' ? <fieldset><legend>来源展示参数</legend>
+      <label>来源标题<input type="text" value={controls.sourceTitle} onChange={event => onChange({ sourceTitle: event.target.value })} /></label>
+      <label>网页链接<input type="text" value={controls.sourceUrl} onChange={event => onChange({ sourceUrl: event.target.value })} /></label>
+      <label>文件路径<input type="text" value={controls.sourcePath} onChange={event => onChange({ sourcePath: event.target.value })} /></label>
+      <FormField label="来源摘要"><Textarea rows={3} value={controls.sourceSummary} onValueChange={value => onChange({ sourceSummary: value })} /></FormField>
+      <FormField label="引用片段"><Textarea rows={6} value={controls.sourceExcerpt} onValueChange={value => onChange({ sourceExcerpt: value })} /></FormField>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.sourceOpenFile} onChange={event => onChange({ sourceOpenFile: event.target.checked })} />提供文件打开操作</label>
+      <p className="pl-workbench__hint">数据仅用于组件演示；网页不会自动抓取，文件路径不会直接访问本机。</p>
+    </fieldset> : null}
+    {component === 'citation-marker' ? <fieldset><legend>引用标记参数</legend>
+      <label>引用编号<input key={controls.citationIndex} type="number" min="1" max="9999" defaultValue={controls.citationIndex}
+        onBlur={event => commit(event.target, controls.citationIndex, 1, 9999, value => onChange({ citationIndex: value }))}
+        onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
+      <label>来源名称<input type="text" value={controls.citationTitle} onChange={event => onChange({ citationTitle: event.target.value })} /></label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.citationActive} onChange={event => onChange({ citationActive: event.target.checked })} />当前来源</label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.disabled} onChange={event => onChange({ disabled: event.target.checked })} />禁用引用</label>
+      <p className="pl-workbench__hint">编号与来源由调用方关联。点击记录回调并展示来源样例，不自动解析 Markdown 或请求接口。</p>
+    </fieldset> : null}
+    {component === 'user-message-bubble' ? <fieldset><legend>用户消息参数</legend>
+      <FormField label="用户原文"><Textarea rows={10} value={controls.userMessageText} onValueChange={value => onChange({ userMessageText: value })} /></FormField>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.userMessageAttachments} onChange={event => onChange({ userMessageAttachments: event.target.checked })} />显示附件插槽</label>
+      <p className="pl-workbench__hint">正文按纯文本展示。附件按钮只是占位，具体文件卡片和图片组由 C08/C09 后续提供。</p>
+    </fieldset> : null}
+    {['thinking-content', 'execution-timeline', 'tool-call-item'].includes(component) ? <AgentProcessControls component={component} controls={controls} onChange={onChange} /> : null}
+    {component === 'agent-activity-header' ? <AgentActivityControls controls={controls} onChange={onChange} /> : null}
+    {component === 'code-block' ? <fieldset><legend>代码块参数</legend>
+      <FormField label="代码内容"><Textarea rows={12} value={controls.codeBlockContent} onValueChange={value => onChange({ codeBlockContent: value })} /></FormField>
+      <label>代码语言<input type="text" value={controls.codeBlockLanguage} onChange={event => onChange({ codeBlockLanguage: event.target.value })} placeholder="如 typescript、python、json" /></label>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.codeBlockStreaming} onChange={event => onChange({ codeBlockStreaming: event.target.checked })} />模拟流式代码</label>
+      <p className="pl-workbench__hint">语言留空或未支持时显示纯文本。复制保留原始缩进和换行；长行可横向滚动，长代码区域最高 480px。</p>
+    </fieldset> : null}
+    {component === 'markdown' ? <fieldset><legend>Markdown 参数</legend>
+      <FormField label="内容"><Textarea aria-label="Markdown 内容" rows={12} value={controls.markdownContent} onValueChange={value => onChange({ markdownContent: value })} /></FormField>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.markdownStreaming} onChange={event => onChange({ markdownStreaming: event.target.checked })} />模拟流式输入</label>
+      <label>文字渐现效果<select value={controls.markdownTextEffect} onChange={event => onChange({ markdownTextEffect: event.target.value as PreviewControls['markdownTextEffect'] })}>
+        <option value="ink">水墨晕开</option><option value="mist">雾中凝字</option><option value="light">柔光显影</option>
+      </select></label>
+      <p className="pl-workbench__hint">默认水墨晕开。开启模拟流式输入后可预览；切换效果会重播，系统减少动态效果时直接显示文字。</p>
+      <p className="pl-workbench__hint">公式使用 $ 或 $$；图示使用 mermaid 围栏；数据图表使用 echarts JSON 围栏。A2UI 暂未启用。</p>
+    </fieldset> : null}
     {formCatalog.some(entry => entry.id === component) ? <FormControls component={component} controls={controls} onChange={onChange} /> : null}
     <fieldset><legend>组件尺寸</legend><div className="pl-workbench__dimensions">
-      {(component === 'morphing-popover' ? ['width'] as const : ['width', 'height'] as const).map((axis) => {
+      {(['morphing-popover', 'agent-activity-header', 'thinking-content', 'execution-timeline', 'tool-call-item'].includes(component) ? ['width'] as const : ['width', 'height'] as const).map((axis) => {
         const label = component === 'morphing-popover' ? '面板宽度' : axis === 'width' ? '组件宽度' : '组件高度';
         const dimension = controls[axis];
         return <div key={axis}>
@@ -41,8 +128,12 @@ export function ComponentControls({ component, controls, onChange }: Props) {
             onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label> : null}
         </div>;
       })}
-    </div><p className="pl-workbench__hint">{component === 'morphing-popover' ? '自动采用示例面板的 264px 宽度；高度随内容变化。展开方向与对齐方式通过上方样例切换。' : '填满画布内的可用空间；自动使用组件自身尺寸。固定高度下内容可滚动。'}</p></fieldset>
+    </div><p className="pl-workbench__hint">{component === 'agent-activity-header' ? '运行时高度由视觉区决定；结束后 Header 隐藏，仅保留调用方提供的内容。' : component === 'morphing-popover' ? '自动采用示例面板的 264px 宽度；高度随内容变化。展开方向与对齐方式通过上方样例切换。' : '填满画布内的可用空间；自动使用组件自身尺寸。固定高度下内容可滚动。'}</p></fieldset>
     {component.startsWith('sidebar-') ? <SidebarControls component={component} controls={controls} onChange={onChange} /> : null}
+    {component === 'dialog' ? <fieldset><legend>弹窗属性</legend>
+      <label>标题<input type="text" value={controls.text} onChange={event => onChange({ text: event.target.value })} /></label>
+      <label>说明<input type="text" value={controls.dialogDescription} onChange={event => onChange({ dialogDescription: event.target.value })} /></label>
+    </fieldset> : null}
     {component === 'tooltip' ? <fieldset><legend>提示气泡参数</legend>
       <label className="pl-workbench__check"><input type="checkbox" checked={controls.tooltipShake} onChange={(event) => onChange({ tooltipShake: event.target.checked })} />出现时晃动</label>
       <label>提示内容<input type="text" value={controls.tooltipContent} onChange={(event) => onChange({ tooltipContent: event.target.value })} /></label>
@@ -85,7 +176,7 @@ export function ComponentControls({ component, controls, onChange }: Props) {
         <option value="vertical">纵向</option><option value="horizontal">横向</option><option value="both">双向</option>
       </select></label>
       <label>滚动条显示<select value={controls.scrollbarVisibility} onChange={(event) => onChange({ scrollbarVisibility: event.target.value as PreviewControls['scrollbarVisibility'] })}>
-        <option value="auto">悬停或聚焦显示</option><option value="always">始终显示</option>
+          <option value="auto">悬停或聚焦显示</option><option value="always">始终显示</option><option value="hidden">隐藏轨道（仍可滚动）</option>
       </select></label>
     </fieldset> : null}
     {component === 'button' ? <fieldset><legend>按钮属性</legend>

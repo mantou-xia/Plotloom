@@ -40,5 +40,8 @@ export class FileAttachmentStore implements AttachmentStore {
     }
     return result.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
+  /** 永久删除会话时同时移除专属附件目录。 */
+  async removeSession(sessionId: string) { await rm(this.directory(sessionId), { recursive: true, force: true }); }
+
   async remove(sessionId: string, id: string) { await rm(this.path(sessionId, id)); }
 }

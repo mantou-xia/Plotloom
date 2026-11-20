@@ -1,0 +1,12 @@
+/* 只负责条目内部排版；列数、最大宽度和外部间距由调用方布局控制。 */
+.plotloom-skill-item { position: relative; display: flex; align-items: flex-start; gap: 16px; min-width: 0; padding: 20px 0; }
+.plotloom-skill-item__trigger { position: absolute; inset: 0; z-index: 1; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+.plotloom-skill-item__trigger:hover { background: rgb(128 128 128 / 5%); }
+.plotloom-skill-item__trigger:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-text-muted, #60636b); }
+.plotloom-skill-item__status { display: block; margin-top: 8px; line-height: 20px; font-size: 12px; color: var(--pl-text-muted, #60636b); }
+.plotloom-skill-item__icon { display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 14px; background: var(--pl-surface-muted, #f4f4f5); color: var(--pl-text-muted, #60636b); }
+.plotloom-skill-item__content { min-width: 0; }
+.plotloom-skill-item h3 { margin: 1px 0 6px; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.plotloom-skill-item p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: var(--pl-text-muted, #60636b); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.plotloom-skill-item small { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; color: var(--pl-text-muted, #60636b); line-height: 1.5; overflow-wrap: anywhere; }
+.plotloom-skill-item small svg { flex-shrink: 0; margin-top: 2px; }

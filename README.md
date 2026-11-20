@@ -41,7 +41,9 @@ P2 资产接口不需要模型凭据。先在本机建立小说目录，再通�
 
 技能管理同样无需模型凭据；可创建自定义 SKILL.md、导入完整目录并按小说或聊天启用。内置写作技能在小说聊天自动加载，普通聊天因缺少小说工具不可运行该技能。调用和依赖边界见 [P2.1 接口](docs/api/p2.1-skills.md)。
 
-`models.json` 保存非敏感供应商和模型参数，`.env` 保存本机凭据。默认数据目录 `.plotloom-data` 已排除提交；同一数据目录同时运行一个服务。修改提示词可设置 `PLOTLOOM_SYSTEM_PROMPT_FILE` 后重启，注册工具通过后端 `AgentOptions.tools` 传入，不改执行循环。
+`models.json` 保存非敏感供应商和模型参数，`.env` 保存本机凭据。默认数据目录 `.plotloom-data` 已排除提交；同一数据目录同时运行一个服务。注册工具通过后端 `AgentOptions.tools` 传入。
+
+普通聊天、项目聊天、联网操作和引用规则的静态提示统一在 [系统提示词](packages/agent-pi/src/prompts/system-prompt.ts) 维护。该文件按基础提示、浏览器规则、引用规则、本轮技能的顺序拼接。小说上下文由 [创作模块](packages/application/src/writing.ts) 生成，技能提示由 [技能模块](packages/agent-pi/src/skills.ts) 生成。`PLOTLOOM_SYSTEM_PROMPT_FILE` 在后端启动时读取，用于替换普通聊天的基础提示，或作为小说提示的前缀。项目聊天使用固定的项目提示。
 
 确定性测试自行启动本机模型协议替身及服务子进程，不访问云端、不需要密钥。真实 HTTP 验收执行 `pnpm.cmd verify:real`，会调用配置的真实模型，结果保存到 `.plotloom-data/verify-*/report.json`。
 

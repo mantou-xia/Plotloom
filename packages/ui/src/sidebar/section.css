@@ -8,7 +8,10 @@
 .pl-sidebar-section__label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pl-sidebar-section__chevron { flex: 0 0 auto; transition: transform 160ms ease; }
 .pl-sidebar-section__toggle[aria-expanded='true'] .pl-sidebar-section__chevron { transform: rotate(90deg); }
-.pl-sidebar-section__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.pl-sidebar-section__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; opacity: 0; pointer-events: none; }
+/* 分类操作与分组一致：鼠标悬停或键盘聚焦时显示，触屏保持可见。 */
+.pl-sidebar-section__header:is(:hover, :focus-within) > .pl-sidebar-section__actions { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .pl-sidebar-section__actions { opacity: 1; pointer-events: auto; } }
 .pl-sidebar-section__content { min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   .pl-sidebar-section__chevron { transition: none; }

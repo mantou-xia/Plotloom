@@ -4,8 +4,8 @@ import './scroll-box.css';
 export interface ScrollBoxProps extends ComponentPropsWithRef<'div'> {
   /** 仅所选方向允许用户滚动；调用方通过 style 或 className 约束盒子尺寸。 */
   orientation?: 'vertical' | 'horizontal' | 'both';
-  /** 实际溢出时，auto 在悬停或焦点进入时显示，always 始终显示；均不改变占位。 */
-  scrollbarVisibility?: 'auto' | 'always';
+  /** auto 悬停或聚焦显示，always 始终显示；hidden 不预留轨道，仍可滚动。 */
+  scrollbarVisibility?: 'auto' | 'always' | 'hidden';
 }
 
 /** 统一滚动入口：保持原生滚轮、触摸、键盘及 ref 能力，只改变滚动条颜色而不切换布局。 */
@@ -49,6 +49,6 @@ export function ScrollBox({ orientation = 'vertical', scrollbarVisibility = 'aut
       // 固定滚动机制，避免通用尺寸样式的 overflow:auto 破坏占位保证。
       overflowX: orientation === 'vertical' ? 'hidden' : 'scroll',
       overflowY: orientation === 'horizontal' ? 'hidden' : 'scroll',
-      scrollbarGutter: orientation === 'horizontal' ? 'auto' : 'stable',
+      scrollbarGutter: orientation === 'horizontal' || scrollbarVisibility === 'hidden' ? 'auto' : 'stable',
     }} />;
 }
