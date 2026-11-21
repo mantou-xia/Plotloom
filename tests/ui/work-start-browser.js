@@ -4,7 +4,9 @@ async (page) => {
   const assert = (condition, message) => { if (!condition) throw new Error(message); passed.push(message); };
   const model = { provider: 'test', id: 'writer', name: 'Writer', configured: true, reasoning: true, thinkingLevels: ['off', 'high'], input: ['text', 'image'], contextWindow: 100000, maxTokens: 8192 };
   const base = { provider: model.provider, model: model.id, status: 'idle', activity: 'idle', thinkingLevel: 'off', workspaceId: null, updatedAt: '2026-11-19T00:00:00Z' };
-  const sessions = [ { ...base, id: 'project-history', name: '项目历史', projectPath: 'D:\\projects\\Plotloom', messages: [] }, { ...base, id: 'ordinary-history', name: '普通历史', messages: [] } ];
+  const project = { id: 'plotloom', name: 'Plotloom', path: 'D:\\projects\\Plotloom' };
+  const workspace = { id: 'story', title: '灯塔', root: 'D:\\novels\\灯塔' };
+  const sessions = [ { ...base, id: 'project-history', name: '项目历史', projectPath: 'D:\\projects\\Plotloom', messages: [] }, { ...base, id: 'novel-history', name: '小说历史', workspaceId: workspace.id, messages: [] } ];
   const creations = [];
   const submissions = [];
   let failSend = true;
@@ -17,13 +19,16 @@ async (page) => {
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/api/models') return json({ models: noModels ? [] : [model] });
     if (path === '/api/model-config') return json({ provider: 'test', model: 'writer', thinkingLevel: 'off', configured: true });
+    if (path === '/api/projects') return json({ projects: [project] });
+    if (path === '/api/workspaces') return json({ workspaces: [workspace] });
     if (path === '/api/chats') return json({ sessions });
     if (path === '/api/skills') return json({ skills: [] });
-    if (path === '/api/sessions' && req.method() === 'POST') {
+    if ((path === '/api/sessions' || path === `/api/workspaces/${workspace.id}/sessions`) && req.method() === 'POST') {
       const input = req.postDataJSON();
       if (failCreate) return json({ error: { code: 'INVALID_PROJECT', message: '项目目录不存在' } }, 400);
       creations.push(input);
-      const session = { ...base, ...input, id: 'created-' + creations.length, messages: [] };
+      const session = { ...base, ...input, id: 'created-' + creations.length, workspaceId: path === '/api/sessions' ? null : workspace.id,
+        name: path === '/api/sessions' ? '项目新聊天' : '小说新聊天', messages: [] };
       sessions.push(session); return json(session, 201);
     }
     const parts = path.split('/');
@@ -43,13 +48,18 @@ async (page) => {
     return json({});
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('http://127.0.0.1:4319');
-  await page.getByRole('button', { name: '项目历史', exact: true }).waitFor();
+  await page.goto(new URL('/', page.url()).href);
+  const recent = page.locator('.pl-sidebar-section').filter({ has: page.getByRole('button', { name: '最近', exact: true }) });
+  const projectHistory = recent.getByRole('button', { name: '项目历史', exact: true });
+  await projectHistory.waitFor();
+  assert(await recent.getByRole('button', { name: '小说历史', exact: true }).isVisible(), '最近同时汇总项目和小说聊天');
+  await page.locator('.plotloom-work-start .plotloom-task-composer [data-motion-surface][inert]').waitFor();
+  assert(creations.length === 0, '未选项目时输入区不可操作');
   assert(creations.length === 0, '打开初始页不创建空会话');
-  await page.getByRole('button', { name: '项目历史', exact: true }).click();
+  await projectHistory.click();
   await page.getByRole('heading', { name: '项目历史' }).waitFor();
   await page.getByRole('button', { name: '新聊天', exact: true }).click();
-  await page.getByRole('heading', { name: '你想在 Plotloom 中完成什么？' }).waitFor();
+  await page.getByRole('heading', { name: '你想在 切换项目：Plotloom 中完成什么？' }).waitFor();
   assert(await page.getByRole('img', { name: /ASCII 鲨鱼/ }).count() === 1, '工作初始页复用鲨鱼鱼群背景');
   assert(creations.length === 0, '新聊天继承 Windows 项目目录且不提前创建会话');
   assert(await page.locator('.plotloom-work-start__bottom .plotloom-task-composer').count() === 1
@@ -67,14 +77,16 @@ async (page) => {
   await page.getByRole('region', { name: '聊天', exact: true }).waitFor();
   assert(creations.length === 1 && submissions.length === 2, '发送重试复用会话，accepted 后进入聊天记录');
   await page.getByRole('button', { name: '新聊天', exact: true }).click();
-  await page.getByRole('heading', { name: '你想在 Plotloom 中完成什么？' }).waitFor();
+  await page.getByRole('heading', { name: '你想在 切换项目：Plotloom 中完成什么？' }).waitFor();
   assert(await editor.inputValue() === '', '再次新聊天清空草稿并保留项目');
-  await page.getByRole('button', { name: '普通历史', exact: true }).click();
-  await page.getByRole('heading', { name: '普通历史' }).waitFor();
-  await page.getByRole('button', { name: '新聊天', exact: true }).click();
-  await page.getByRole('heading', { name: '有什么想法，开始聊聊吧。' }).waitFor();
-  assert(true, '切换普通聊天后不继承上一个项目');
-  await page.getByRole('button', { name: '项目历史', exact: true }).click();
+  await page.getByRole('button', { name: '灯塔', exact: true }).hover();
+  await page.getByRole('button', { name: '在 灯塔 中新建聊天', exact: true }).click();
+  await page.getByRole('heading', { name: '继续创作《灯塔》' }).waitFor();
+  await editor.fill('讨论灯塔故事');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await recent.getByRole('button', { name: '小说新聊天', exact: true }).waitFor();
+  assert(creations.length === 2 && !('projectPath' in creations[1]), '小说使用工作区入口创建，发送后出现在最近');
+  await projectHistory.click();
   await page.getByRole('heading', { name: '项目历史' }).waitFor();
   await page.getByRole('button', { name: '新聊天', exact: true }).click();
   failCreate = true;
@@ -91,7 +103,8 @@ async (page) => {
   noModels = true;
   await page.reload();
   await page.getByText('暂无已配置凭据的模型，请先配置本机模型。', { exact: true }).waitFor();
-  assert(await page.getByRole('button', { name: '发送', exact: true }).isDisabled(), '无模型时显示提示并禁止发送');
+  await page.locator('.plotloom-work-start .plotloom-task-composer [data-motion-surface][inert]').waitFor();
+  assert(creations.length === 2, '无模型时显示提示且输入区不可操作');
   await page.unroute('**/api/**');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.reload();

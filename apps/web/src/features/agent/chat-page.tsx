@@ -1,24 +1,76 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown } from 'lucide-react';
-import type { SessionDetail, SubmitMessageRequest, RetryMessageRequest } from '@plotloom/contracts';
+import { Pencil } from 'lucide-react';
+import { Input } from '@plotloom/ui/input';
+import type { AgentQuestionAnswer, SessionDetail, SubmitMessageRequest, RetryMessageRequest, ToolApprovalDecision } from '@plotloom/contracts';
 import type { ComposerMessage } from '@plotloom/ui/task-composer';
 import { Button } from '@plotloom/ui/button';
 import { ScrollBox } from '@plotloom/ui/scroll-box';
+import { ToolApprovalCard, type ToolApprovalState } from '@plotloom/ui/tool-approval-card';
+import { QuestionCard } from '@plotloom/ui/question-card';
 import { ChatComposer } from './chat-composer';
+import { ChatScrollToLatest } from './chat-scroll-to-latest';
+import type { OpenTurnChanges } from '../workspace/chat-workspace';
 import { ChatTurn } from './chat-turn';
 import { chatTurns } from './chat-turns';
 import { composerRequest } from './composer-request';
 import { consumeAgentStream } from './client';
 import { request, requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
+import type { OpenCitations } from '../workspace/citation-sources-page';
 import './chat-page.css';
 
-/** 页面始终读取权威快照；SSE 仅处理接受确认，离开页面断开连接但不停止后台任务。 */
-export function ChatPage({ title, sessionId, onSessionsChange, settingsRevision = 0 }: { title?: string; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number }) {
+const operationLabels = { create: '创建项目文件', overwrite: '覆盖项目文件', edit: '修改项目文件' };
+
+/** 失焦时提交标题；失败保留草稿，用户可重新聚焦并再次离开以重试。 */
+function ChatTitle({ name, onSave }: { name: string; onSave: (name: string) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const editButton = useRef<HTMLButtonElement>(null);
+  async function save(value: string) {
+    if (saving) return;
+    const next = value.trim();
+    if (!next || next === name) {
+      setDraft(null);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(next);
+      // 失焦后保留用户已移到的焦点，避免打断同一次点击或 Tab 导航。
+      setDraft(null);
+    } catch (error) { notifyRequestError(error, 'chat-rename'); }
+    finally { setSaving(false); }
+  }
+  return <header className="plotloom-chat__header">{draft === null ? <>
+    <h1 title={name}>{name}</h1>
+    <Button ref={editButton} variant="ghost" size="sm" iconOnly tooltip aria-label="重命名对话" onClick={() => setDraft(name)}><Pencil size={16} /></Button>
+  </> :
+    <Input className="plotloom-chat__title-input" size="sm" aria-label="对话名称" value={draft} onValueChange={setDraft}
+      autoFocus onFocus={event => event.target.select()} maxLength={120} readOnly={saving}
+      onBlur={event => void save(event.currentTarget.value)} onKeyDown={event => {
+        if (event.nativeEvent.isComposing || saving) return;
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+        if (event.key === 'Escape') {
+          setDraft(null);
+          requestAnimationFrame(() => editButton.current?.focus({ preventScroll: true }));
+        }
+      }} />
+  }</header>;
+}
+
+/** 页面以服务端快照为准；SSE 触发刷新，离开页面断开连接但不停止后台任务。 */
+export function ChatPage({ title, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges }: {
+  onRename: (id: string, name: string) => Promise<string>;
+  title?: string; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
+}) {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [approvalResult, setApprovalResult] = useState<{ id: string; state: ToolApprovalState } | null>(null);
+  const deciding = useRef<string | null>(null);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [answeredId, setAnsweredId] = useState<string | null>(null);
   const attachmentDropTarget = useRef<HTMLElement>(null);
   const [reload, setReload] = useState(0);
   const [controlsRevision, setControlsRevision] = useState(0);
@@ -28,10 +80,17 @@ export function ChatPage({ title, sessionId, onSessionsChange, settingsRevision 
   const mounted = useRef(false);
   const viewport = useRef<HTMLDivElement>(null);
   const thread = useRef<HTMLDivElement>(null);
+  const bottom = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
   const busy = pending || session?.status === 'running';
   const turns = useMemo(() => session ? chatTurns(session) : [], [session]);
+  const approvals = session?.pendingApprovals ?? [];
+  // 顺序展示待批调用，逐项处理可保留相同操作位置。
+  const approval = approvals[0];
+  const awaitingApproval = session?.activity === 'awaiting_approval';
+  const question = session?.pendingQuestion;
+  const composerSuspended = awaitingApproval || !!question;
 
   useEffect(() => {
     mounted.current = true;
@@ -60,15 +119,26 @@ export function ChatPage({ title, sessionId, onSessionsChange, settingsRevision 
     return () => { abort.abort(); clearTimeout(timer); };
   }, [path, pending, reload, onSessionsChange, sessionId]);
 
-  // 仅用户仍靠近底部时跟随，异步 Markdown 和图片尺寸变化也遵守同一阅读意图。
+  // 按浮层实际高度给最后一轮留出滚动空间。输入区和正文变高时，仅在用户仍靠近底部时跟随。
   useLayoutEffect(() => {
-    const element = viewport.current, content = thread.current;
-    if (!element || !content) return;
-    const resize = new ResizeObserver(() => {
+    const page = attachmentDropTarget.current, element = viewport.current;
+    const content = thread.current, floating = bottom.current;
+    if (!page || !element || !content || !floating) return;
+    let bottomHeight = -1;
+    const syncLayout = () => {
+      const height = Math.ceil(floating.getBoundingClientRect().height);
+      if (height !== bottomHeight) {
+        bottomHeight = height;
+        page.style.setProperty('--chat-bottom-height', `${height}px`);
+      }
       if (follow.current) element.scrollTop = element.scrollHeight;
       setAway(element.scrollHeight - element.clientHeight - element.scrollTop > 48);
-    });
-    resize.observe(content); resize.observe(element);
+    };
+    const resize = new ResizeObserver(syncLayout);
+    resize.observe(content, { box: 'border-box' });
+    resize.observe(element);
+    resize.observe(floating, { box: 'border-box' });
+    syncLayout();
     return () => resize.disconnect();
   }, []);
 
@@ -101,6 +171,10 @@ export function ChatPage({ title, sessionId, onSessionsChange, settingsRevision 
         if (!mounted.current || abort.signal.aborted) return;
         if (event.sessionId !== sessionId) throw new Error('收到不属于当前聊天的事件。');
         if (event.type === 'accepted') { accepted?.(true); setReload(value => value + 1); void onSessionsChange(); }
+        if (event.type === 'tool_approval_required' || event.type === 'user_answer_required') {
+          setReload(value => value + 1);
+          void onSessionsChange();
+        }
         if (event.type === 'failed') notifyRequestError(new Error(event.error.message), `chat-send-${sessionId}`);
       });
     } catch (cause) {
@@ -119,9 +193,44 @@ export function ChatPage({ title, sessionId, onSessionsChange, settingsRevision 
     finally { if (mounted.current) setStopping(false); }
   }
 
+  /** 以服务端确认的决定禁用原按钮，快照轮询随后移除已处理项目。 */
+  async function decideApproval(id: string, decision: ToolApprovalDecision) {
+    if (deciding.current) return;
+    deciding.current = id;
+    setDecidingId(id);
+    try {
+      await requestJson(`${path}/tool-approvals/${encodeURIComponent(id)}`, 'POST', { decision });
+      if (mounted.current) setApprovalResult({ id, state: decision === 'approve' ? 'approved' : 'denied' });
+    } catch (cause) {
+      if (mounted.current) notifyRequestError(cause, `chat-tool-approval-${sessionId}`);
+    } finally {
+      deciding.current = null;
+      if (mounted.current) { setDecidingId(null); setReload(value => value + 1); }
+    }
+  }
+
+  /** 等服务端接受答案，再锁定该题并刷新快照；提交失败时保留用户的选择或自填内容。 */
+  async function answerQuestion(id: string, answer: AgentQuestionAnswer) {
+    if (deciding.current || answeredId === id || stopping) return;
+    deciding.current = id;
+    setDecidingId(id);
+    try {
+      await requestJson(`${path}/questions/${encodeURIComponent(id)}/answer`, 'POST', answer);
+      if (mounted.current) { setAnsweredId(id); void onSessionsChange(); }
+    } catch (cause) {
+      if (mounted.current) notifyRequestError(cause, `chat-question-${sessionId}`);
+    } finally {
+      deciding.current = null;
+      if (mounted.current) { setDecidingId(null); setReload(value => value + 1); }
+    }
+  }
+
   return <section ref={attachmentDropTarget} className="plotloom-chat" aria-label="聊天">
-    <header className="plotloom-chat__header"><h1>{title || session?.name || '新聊天'}</h1>
-      <span className="plotloom-chat__project" title={session?.projectPath}>{session?.projectPath ? `${session.projectPath} · 直接执行` : '普通聊天'}</span></header>
+    <ChatTitle name={title || session?.name || '新聊天'} onSave={async next => {
+      const name = await onRename(sessionId, next);
+      setSession(current => current && { ...current, name });
+      await onSessionsChange();
+    }} />
     <div className="plotloom-chat__reading">
       <ScrollBox ref={viewport} className="plotloom-chat__messages" aria-label="聊天记录" onScroll={event => {
         const element = event.currentTarget;
@@ -129,24 +238,35 @@ export function ChatPage({ title, sessionId, onSessionsChange, settingsRevision 
       }}>
         <div ref={thread} className="plotloom-chat__thread">
           {!session && !loadFailed ? <p role="status">正在加载聊天…</p> : session && !turns.length ? <p className="plotloom-chat__empty">有什么想法，开始聊聊吧。</p> : null}
-          {turns.map(turn => <ChatTurn key={turn.id} turn={turn} busy={busy} onRetry={turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
+          {turns.map(turn => <ChatTurn key={turn.id} turn={turn} busy={busy} onOpenCitations={onOpenCitations} onOpenTurnChanges={onOpenTurnChanges}
+            onRetry={turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
+          {loadFailed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新查询聊天记录</Button> : null}
         </div>
       </ScrollBox>
-      <Button className="plotloom-chat__latest" variant="secondary" size="sm" iconOnly aria-label="回到最新消息"
-        style={{ visibility: away ? 'visible' : 'hidden' }} onClick={() => {
-          follow.current = true;
-          if (viewport.current) { viewport.current.scrollTop = viewport.current.scrollHeight; viewport.current.focus({ preventScroll: true }); }
-          setAway(false);
-        }}><ArrowDown /></Button>
     </div>
-    <div className="plotloom-chat__bottom">
-      <div className="plotloom-chat__status" role="status">
-        {loadFailed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新查询聊天记录</Button>
-          : busy ? session?.activity === 'compacting' ? '正在压缩上下文…' : '正在处理…' : null}
-      </div>
-      {session ? <ChatComposer sessionId={sessionId} projectPath={session.projectPath} busy={busy} activity={pending ? 'generating' : session.activity}
-        attachmentDropTarget={attachmentDropTarget} stopping={stopping} revision={controlsRevision + settingsRevision}
-        onSubmit={send} onStop={() => void stop()} onRefresh={() => setReload(value => value + 1)} /> : null}
+    <div ref={bottom} className="plotloom-chat__bottom">
+      {session ? <div className="plotloom-chat__composer-slot">
+        <ChatScrollToLatest visible={away} viewport={viewport} />
+        {/* 保留编辑器和占位，切换卡片时草稿、附件及阅读视口保持原位。 */}
+        <div className="plotloom-chat__composer-content" data-suspended={composerSuspended || undefined}
+          inert={composerSuspended} aria-hidden={composerSuspended || undefined}>
+          <ChatComposer sessionId={sessionId} projectPath={session.projectPath} busy={busy}
+            activity={awaitingApproval ? session.activity : pending ? 'generating' : session.activity}
+            attachmentDropTarget={attachmentDropTarget} stopping={stopping} revision={controlsRevision + settingsRevision}
+            onSubmit={send} onStop={() => void stop()} onRefresh={() => setReload(value => value + 1)} />
+        </div>
+        {question ? <div className="plotloom-chat__composer-card">
+          <QuestionCard key={question.id} question={question.question} options={question.options}
+            submitting={decidingId === question.id || answeredId === question.id} stopping={stopping}
+            onAnswer={answer => void answerQuestion(question.id, answer)} onStop={() => void stop()} />
+        </div> : awaitingApproval && approval ? <div className="plotloom-chat__composer-card">
+          <ToolApprovalCard key={approval.id} operation={operationLabels[approval.operation]}
+            path={approval.path} preview={approval.preview} state={approvalResult?.id === approval.id ? approvalResult.state : 'pending'}
+            pendingLabel={approvals.length > 1 ? `${approvals.length} 项操作待审批` : undefined}
+            submitting={decidingId === approval.id} stopping={stopping} onStop={() => void stop()}
+            onDecision={stopping ? undefined : decision => void decideApproval(approval.id, decision)} />
+        </div> : null}
+      </div> : null}
     </div>
   </section>;
 }

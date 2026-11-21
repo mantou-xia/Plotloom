@@ -48,27 +48,40 @@ export interface WorkspacePanelProps {
   features: readonly WorkspaceFeature[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 每次提供新的对象时打开或选中同 ID 的页面；清除请求时移除该页。 */
+  requestedTab?: WorkspaceTab;
   className?: string;
   style?: CSSProperties;
 }
 
 /** 同一标签切换和收起时保留已打开页面；关闭当前标签优先选右邻页。 */
-export function WorkspacePanel({ children, features, open, onOpenChange, className = '', style }: WorkspacePanelProps) {
-  const [{ tabs, activeId }, setTabs] = useState<{ tabs: PanelTab[]; activeId: string }>({ tabs: [{ id: '1' }], activeId: '1' });
+export function WorkspacePanel({ children, features, open, onOpenChange, requestedTab, className = '', style }: WorkspacePanelProps) {
+  const [{ tabs, activeId, previousRequest }, setTabs] = useState<{
+    tabs: PanelTab[]; activeId: string; previousRequest?: WorkspaceTab;
+  }>({ tabs: [{ id: '1' }], activeId: '1' });
   const serial = useRef(1);
+  // 从主区打开的内容与手动打开的标签共享生命周期，重复请求只更新该页并选中它。
+  if (previousRequest !== requestedTab) {
+    const remaining = tabs.filter(tab => tab.id !== previousRequest?.id || tab.id === requestedTab?.id);
+    const next = requestedTab && !remaining.some(tab => tab.id === requestedTab.id)
+      ? [...remaining, { id: requestedTab.id }] : remaining;
+    setTabs({ tabs: next, activeId: requestedTab?.id ?? (activeId === previousRequest?.id ? next.at(-1)?.id ?? '' : activeId),
+      previousRequest: requestedTab });
+  }
   function add() {
     const id = String(++serial.current);
-    setTabs(current => ({ tabs: [...current.tabs, { id }], activeId: id }));
+    setTabs(current => ({ ...current, tabs: [...current.tabs, { id }], activeId: id }));
   }
   function close(id: string) {
     setTabs(current => {
       const index = current.tabs.findIndex(tab => tab.id === id);
       const remaining = current.tabs.filter(tab => tab.id !== id);
-      return { tabs: remaining, activeId: id === current.activeId
+      return { ...current, tabs: remaining, activeId: id === current.activeId
         ? remaining[index]?.id ?? remaining[index - 1]?.id ?? '' : current.activeId };
     });
   }
   const entries: WorkspaceTab[] = tabs.map(tab => {
+    if (requestedTab && tab.id === requestedTab.id) return requestedTab;
     const feature = features.find(item => item.id === tab.featureId);
     return feature ? { id: tab.id, title: feature.title, icon: feature.icon, page: feature.page } : {
       id: tab.id, title: '新标签页', icon: <Plus />,

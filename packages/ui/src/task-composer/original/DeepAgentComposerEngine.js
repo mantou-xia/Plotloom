@@ -118,7 +118,7 @@ function mountOriginalDeepAgent(target, initial, variant, css, tokens, dictionar
       return options;
     },
     get permission() {
-      return permission;
+      return options.permission ?? permission;
     },
     subscribe(listener) {
       subscribers.add(listener);
@@ -147,16 +147,12 @@ function mountOriginalDeepAgent(target, initial, variant, css, tokens, dictionar
         return { ...settings };
       },
       async getActivePermissionPreset() {
-        return permission;
+        return options.permission ?? permission;
       },
       async setActivePermissionPreset(value) {
+        await options.onPermissionChange?.(value);
         permission = value;
-        options.onPermissionChange?.(value);
         dispatch("permission-change", { value });
-      },
-      async getPermissionPresetVisibility() {
-        if (options.permissionOptions === false) return { default_enabled: false, auto_review_enabled: false, full_access_enabled: false };
-        return { default_enabled: true, auto_review_enabled: true, full_access_enabled: true };
       },
       async getCommands() {
         return [];
@@ -2670,7 +2666,6 @@ function mountDeepAgentComposer(target, options = {}) {
     var attachmentRemove = (...args) => __deepAgentBridge.api.attachmentRemove(...args);
     var getActivePermissionPreset = (...args) => __deepAgentBridge.api.getActivePermissionPreset(...args);
     var getCommands = (...args) => __deepAgentBridge.api.getCommands(...args);
-    var getPermissionPresetVisibility = (...args) => __deepAgentBridge.api.getPermissionPresetVisibility(...args);
     var getSettings = (...args) => __deepAgentBridge.api.getSettings(...args);
     var listSkills = (...args) => __deepAgentBridge.api.listSkills(...args);
     var searchProjectFiles = (...args) => __deepAgentBridge.api.searchProjectFiles(...args);
@@ -2963,53 +2958,51 @@ function mountDeepAgentComposer(target, options = {}) {
         { id: "auto", label: "composer.autoReview", desc: "composer.autoReviewDesc", icon: import_lucide_react4.ShieldHalf },
         { id: "full", label: "composer.fullAccess", desc: "composer.fullAccessDesc", icon: import_lucide_react4.CircleAlert }
       ];
-      const [visibleOptions, setVisibleOptions] = (0, import_react20.useState)(ALL_APPROVAL_OPTIONS);
-      const [selectedApproval, setSelectedApproval] = (0, import_react20.useState)(ALL_APPROVAL_OPTIONS[0]);
+      const permissionOptions = __deepAgentBridge.options.permissionOptions;
+      const projectPermissions = permissionOptions === "project";
+      const visibleOptions = permissionOptions === false ? [] : projectPermissions ? [ALL_APPROVAL_OPTIONS[0], ALL_APPROVAL_OPTIONS[2]] : ALL_APPROVAL_OPTIONS;
+      const [localApproval, setLocalApproval] = (0, import_react20.useState)("default");
+      const [changingApproval, setChangingApproval] = (0, import_react20.useState)(false);
+      const [approvalCloseTarget, setApprovalCloseTarget] = (0, import_react20.useState)(null);
+      const preset = __deepAgentBridge.options.permission ?? localApproval;
+      const selectedApproval = visibleOptions.find(option => option.id === PRESET_TO_OPTION[preset]) ?? visibleOptions[0];
+      const approvalLabel = option => projectPermissions ? option.id === "full" ? "完全访问权限" : "需要审批" : t2(option.label);
+      const approvalDescription = option => projectPermissions ? option.id === "full"
+        ? "在当前项目内创建、覆盖和编辑文件时免逐次审批。" : "在当前项目内写入文件前需要批准。" : t2(option.desc);
       (0, import_react20.useEffect)(() => {
         let cancelled = false;
         getActivePermissionPreset().then((preset) => {
           if (cancelled) return;
-          const optId = PRESET_TO_OPTION[preset] ?? "default";
-          const opt = ALL_APPROVAL_OPTIONS.find((o) => o.id === optId);
-          if (opt) setSelectedApproval(opt);
+          setLocalApproval(preset);
         }).catch(() => {
         });
         return () => {
           cancelled = true;
         };
       }, []);
-      const chooseApproval = async (opt) => {
+      // 等宿主确认的模式已经渲染到按钮，再让形变菜单测量收起尺寸。
+      (0, import_react20.useLayoutEffect)(() => {
+        if (approvalCloseTarget === null || preset !== approvalCloseTarget) return;
         setIsApprovalDropdownOpen(false);
-        const prev = selectedApproval;
-        setSelectedApproval(opt);
+        setApprovalCloseTarget(null);
+      }, [approvalCloseTarget, preset]);
+      const chooseApproval = async (opt) => {
+        if (busy || changingApproval) return;
+        if (opt.id === selectedApproval?.id) {
+          setIsApprovalDropdownOpen(false);
+          return;
+        }
+        const next = OPTION_TO_PRESET[opt.id] ?? "default";
+        setChangingApproval(true);
         try {
-          await setActivePermissionPreset(OPTION_TO_PRESET[opt.id] ?? "default");
+          await setActivePermissionPreset(next);
+          setLocalApproval(next);
+          setApprovalCloseTarget(next);
         } catch (e) {
-          setSelectedApproval(prev);
           message.error(t2("composer.approvalSwitchFailed"));
           console.error("set_active_permission_preset failed:", e);
-        }
+        } finally { setChangingApproval(false); }
       };
-      (0, import_react20.useEffect)(() => {
-        const updateVisibleOptions = async () => {
-          try {
-            const vis = await getPermissionPresetVisibility();
-            const newOptions = [];
-            if (vis.default_enabled) newOptions.push(ALL_APPROVAL_OPTIONS[0]);
-            if (vis.auto_review_enabled) newOptions.push(ALL_APPROVAL_OPTIONS[1]);
-            if (vis.full_access_enabled) newOptions.push(ALL_APPROVAL_OPTIONS[2]);
-            setVisibleOptions(newOptions);
-            setSelectedApproval((prev) => {
-              if (newOptions.find((o) => o.id === prev.id)) return prev;
-              return newOptions.length > 0 ? newOptions[0] : prev;
-            });
-          } catch {
-          }
-        };
-        updateVisibleOptions();
-        window.addEventListener("approvalMenuChanged", updateVisibleOptions);
-        return () => window.removeEventListener("approvalMenuChanged", updateVisibleOptions);
-      }, []);
       const slashSections = (0, import_react20.useMemo)(() => {
         const systemCommands = slashResults.filter((cmd) => cmd.skillName === void 0);
         const skillsGroup = slashResults.filter((cmd) => cmd.skillName !== void 0);
@@ -3437,7 +3430,7 @@ function mountDeepAgentComposer(target, options = {}) {
       }, [draftKey, onChange]);
       // 服务端接收前保留所有草稿资料；配置中、上传中及重复提交均不得发送半成品。
       const submitWithAttachments = async () => {
-        if (busy || switching || submitting.current || attachments.some(item => item.status !== 'ready')) return;
+        if (busy || switching || changingApproval || submitting.current || attachments.some(item => item.status !== 'ready')) return;
         submitting.current = true;
         try {
         const readyAttachments = attachments.filter((item) => item.status === "ready");
@@ -4136,6 +4129,7 @@ function mountDeepAgentComposer(target, options = {}) {
                         "button",
                         {
                           type: "button",
+                          disabled: busy || changingApproval || __deepAgentBridge.options.disabled,
                           className: cn(
                             "flex h-8 max-w-full min-w-0 flex-shrink items-center whitespace-nowrap rounded-full px-3 text-[11px] font-medium",
                             MOTION.fast,
@@ -4167,7 +4161,7 @@ function mountDeepAgentComposer(target, options = {}) {
                                   )
                                 }
                               ),
-                              /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: "truncate", children: t2(selectedApproval.label) })
+                              /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: "truncate", children: approvalLabel(selectedApproval) })
                             ] }),
                             /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(import_lucide_react4.ChevronDown, { size: 10, className: "ml-1 shrink-0" })
                           ]
@@ -4210,7 +4204,7 @@ function mountDeepAgentComposer(target, options = {}) {
                                     }
                                   ) }),
                                   /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "min-w-0 flex-1", children: [
-                                    /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("div", { className: cn("pr-3.5 text-[12px] font-medium leading-[17px]", selected && !isFull && "text-text-base"), children: t2(opt.label) }),
+                                    /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("div", { className: cn("pr-3.5 text-[12px] font-medium leading-[17px]", selected && !isFull && "text-text-base"), children: approvalLabel(opt) }),
                                     /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
                                       "div",
                                       {
@@ -4218,7 +4212,7 @@ function mountDeepAgentComposer(target, options = {}) {
                                           "mt-0.5 text-[11px] leading-[15px]",
                                           selected && isFull ? "text-[#e25507]/80" : "text-[#8c8c8c]"
                                         ),
-                                        children: t2(opt.desc)
+                                        children: approvalDescription(opt)
                                       }
                                     )
                                   ] }),
@@ -4293,7 +4287,7 @@ function mountDeepAgentComposer(target, options = {}) {
                           submitWithAttachments();
                         }
                       },
-                      disabled: busy ? !onStop || stopping : switching || !hasComposerContent || attachments.some(item => item.status !== 'ready'),
+                      disabled: busy ? !onStop || stopping : switching || changingApproval || !hasComposerContent || attachments.some(item => item.status !== 'ready'),
                       "aria-label": busy ? t2(stopping ? "composer.stopping" : "composer.stop") : t2("composer.send"),
                       className: cn(
                         "composer-send-btn",

@@ -1,0 +1,17 @@
+.plotloom-chat-scroll-to-latest.plotloom-button {
+  position: absolute;
+  inset-block-end: calc(100% + 12px);
+  inset-inline: 0;
+  margin-inline: auto;
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+}
+
+.plotloom-chat-scroll-to-latest.plotloom-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--pl-surface, #fff), 0 0 0 4px var(--pl-focus, #2563eb);
+}
+
+.plotloom-chat-scroll-to-latest.plotloom-button[data-icon-only] svg {
+  width: 24px;
+  height: 24px;
+}

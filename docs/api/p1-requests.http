@@ -1,5 +1,6 @@
 @base = http://127.0.0.1:4317
 @sessionId = 填入创建接口返回的ID
+@questionId = 填入等待事件或会话详情返回的问题ID
 
 ### 模型列表（仅公开信息）
 GET {{base}}/api/models
@@ -17,7 +18,7 @@ Content-Type: application/json
 POST {{base}}/api/sessions
 Content-Type: application/json
 
-{}
+{"projectPath":"D:/projects/example"}
 
 ### 列出会话，空会话也应出现
 GET {{base}}/api/sessions
@@ -29,16 +30,28 @@ GET {{base}}/api/sessions/{{sessionId}}
 POST {{base}}/api/sessions/{{sessionId}}/messages
 Content-Type: application/json
 
-{"text":"请调用 read_fixture 读取 scene，写出核对标记并给出 A、B 两个行动候选，然后等待我选择。"}
+{"text":"请读取项目中的 README.md，根据内容给出 A、B 两个行动候选，然后等待我选择。"}
 
 ### 重启服务后沿用相同 ID 继续，预期使用历史资料
 POST {{base}}/api/sessions/{{sessionId}}/messages
 Content-Type: application/json
 
-{"text":"我选择 A。复述资料核对标记，再继续约 100 字，不重新读取工具。"}
+{"text":"我选择 A。根据刚才的资料继续说明，不再次调用工具。"}
 
 ### 生成中从另一请求调用停止，预期 idle；原 SSE 最终为 aborted
 POST {{base}}/api/sessions/{{sessionId}}/stop
+
+### 发出选择题；保持 SSE 打开，从另一请求提交答案
+POST {{base}}/api/sessions/{{sessionId}}/messages
+Content-Type: application/json
+
+{"text":"请调用 ask_user 询问我想采用「第一人称」还是「第三人称」，等我回答后再写一句示例。"}
+
+### 回答待回答问题；也可发送 {"kind":"custom","text":"书信体"} 或 {"kind":"skip"}
+POST {{base}}/api/sessions/{{sessionId}}/questions/{{questionId}}/answer
+Content-Type: application/json
+
+{"kind":"option","index":1}
 
 ### 参数错误，预期 400 INVALID_REQUEST
 POST {{base}}/api/sessions/{{sessionId}}/messages

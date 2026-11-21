@@ -1,9 +1,9 @@
 import type { SessionListItem } from './index.ts';
 
-export type ToolScope = 'ordinary' | 'project' | 'novel';
+export type ToolScope = 'project' | 'novel';
 /** 公开工具说明；只描述能力和条件，不暴露后端实现。 */
 export interface ToolInfo {
-  name: string; description: string; parameters: string;
+  name: string; provider: string; description: string; parameters: string;
   availableIn: ToolScope[]; condition: string;
 }
 

@@ -12,7 +12,10 @@ async function main() {
   if (!provider || !model || !apiKey) throw new Error('真实验收缺少 PLOTLOOM_PROVIDER / MODEL / API_KEY，未发送请求。');
   const directory = resolve('.plotloom-data', `verify-${Date.now()}`);
   await mkdir(directory, { recursive: true });
-  const env = { ...process.env, PLOTLOOM_DATA_DIR: directory };
+  const projectPath = resolve(directory, 'project');
+  await mkdir(projectPath);
+  await writeFile(resolve(projectPath, 'scene.md'), '核对标记：灯塔-731。');
+  const env = { ...process.env, PLOTLOOM_DATA_DIR: resolve(directory, 'data') };
   let server = await startServer(env, 120000);
   const reports: unknown[] = [];
   const record = (phase: string, sessionId: string, result: AgentEvent[], started: number) => {
@@ -25,10 +28,10 @@ async function main() {
     console.log(JSON.stringify(report));
   };
   try {
-    const session = await server.json('/api/sessions', 'POST', {}, 201);
+    const session = await server.json('/api/sessions', 'POST', { projectPath }, 201);
     const started = performance.now();
     const generated = await collect(await server.request(`/api/sessions/${session.id}/messages`, 'POST', {
-      text: '请调用 read_fixture 读取 scene，写出核对标记，并给出 A 检查台阶、B 修复电源两个简短行动候选，然后等待我选择。',
+      text: '请调用 read 读取 scene.md，写出核对标记，并给出 A 检查台阶、B 修复电源两个简短行动候选，然后等待我选择。',
     }));
     assertFinal(generated, 'completed');
     assert(generated.some((event) => event.type === 'tool_end' && event.outcome === 'completed'));
@@ -49,7 +52,7 @@ async function main() {
     const continuedText = resumed.filter((event) => event.type === 'text_delta').map((event) => event.delta).join('');
     assert.match(continuedText, /灯塔-731/);
     record('resume', session.id, resumed, resumedAt);
-    const stopping = await server.json('/api/sessions', 'POST', {}, 201);
+    const stopping = await server.json('/api/sessions', 'POST', { projectPath }, 201);
     const stoppedAt = performance.now();
     const stopped: AgentEvent[] = [];
     let requestedStop = false;

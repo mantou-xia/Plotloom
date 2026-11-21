@@ -1,11 +1,13 @@
 import { useId, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, CircleCheck, CircleStop, CircleX, Info, LoaderCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleCheck, CircleStop, CircleX, Info, LoaderCircle, MessageCircleQuestionMark, ShieldQuestionMark } from 'lucide-react';
 import { Button } from '../button/button.tsx';
 import type { ProcessStatus } from './types.ts';
 import './process-node.css';
 
 const STATUS = {
   running: { label: '进行中', Icon: LoaderCircle }, completed: { label: '已完成', Icon: CircleCheck },
+  awaiting_approval: { label: '待审批', Icon: ShieldQuestionMark },
+  awaiting_answer: { label: '待回答', Icon: MessageCircleQuestionMark },
   failed: { label: '失败', Icon: CircleX }, stopped: { label: '已停止', Icon: CircleStop },
 };
 

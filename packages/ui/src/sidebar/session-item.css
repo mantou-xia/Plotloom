@@ -5,25 +5,37 @@
   --pl-session-toolbar-bg: var(--pl-primary-subtle, #eff6ff);
   --pl-session-tag-text: color-mix(in srgb, var(--pl-text-muted, #60636b) 88%, var(--pl-primary-text, #1d4ed8));
   --pl-session-status-text: color-mix(in srgb, var(--pl-text-muted, #60636b) 65%, var(--pl-primary-text, #1d4ed8));
-  position: relative; width: 100%; isolation: isolate; container-type: inline-size;
+  --pl-session-tag-gap: 4px;
+  position: relative; width: 100%; isolation: isolate;
 }
 /* 工具栏的留白和只读信息透传给整行按钮，只有功能按钮保留自己的点击区域。 */
-.pl-sidebar-entry.pl-sidebar-session-item > .pl-sidebar-entry__actions { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 1; opacity: 1; pointer-events: none; min-width: 0; max-width: calc(100% - 32px); }
-.pl-session-metadata__tag.pl-sidebar-action-button { pointer-events: auto; }
+.pl-sidebar-entry.pl-sidebar-session-item > .pl-sidebar-entry__actions {
+  position: absolute; inset-inline: 4px; top: 50%; transform: translateY(-50%); z-index: 1;
+  justify-content: flex-end; padding-right: 0; opacity: 1; pointer-events: none; min-width: 0;
+}
+.pl-session-metadata__tag.pl-sidebar-action-button:not(:disabled),
+.pl-session-metadata__slot > .pl-button-disabled-trigger { pointer-events: auto; }
 .pl-sidebar-session-item .pl-sidebar-entry__label { text-overflow: clip; }
 /* 只遮罩文字层，露出真实行背景（包括侧栏渐变），不绘制异色阴影或遮住键盘焦点环。
    4px 抵消标题按钮右内边距与操作区占位之差，左侧 20px 渐隐衔接工具栏。 */
 .pl-sidebar-session-item:has(.pl-session-metadata) > .pl-sidebar-entry__button > .plotloom-button__content {
   mask-image: linear-gradient(to left, transparent max(0px, calc(var(--pl-session-metadata-width, 0px) - 4px)), #000 calc(var(--pl-session-metadata-width, 0px) + 16px));
 }
-.pl-session-metadata { position: relative; display: flex; align-items: center; padding-block: 4px; background: var(--pl-session-toolbar-bg); border-radius: 0 7px 7px 0; }
+.pl-session-metadata { position: relative; display: flex; align-items: center; min-width: 0; padding-block: 4px; background: var(--pl-session-toolbar-bg); border-radius: 0 7px 7px 0; }
 /* 同色渐隐延伸到标题一侧，整体底色遮住标题，避免透明图标间露出文字。 */
 .pl-session-metadata::before {
   content: ''; position: absolute; inset-block: 0; right: 100%; width: 20px;
   background: linear-gradient(to right, transparent, var(--pl-session-toolbar-bg)); pointer-events: none;
 }
-.pl-session-metadata__slot { display: grid; overflow: hidden; grid-template-columns: 16px; transition: grid-template-columns 260ms cubic-bezier(.2,.8,.2,1), margin 260ms cubic-bezier(.2,.8,.2,1); }
-.pl-session-metadata__slot:last-child { grid-template-columns: var(--pl-tag-width, 28px); }
+.pl-session-metadata__slot {
+  --pl-expanded-tag-width: var(--pl-tag-width, 28px);
+  display: grid; flex-shrink: 0; min-width: 0; overflow: hidden; grid-template-columns: 16px;
+  transition: grid-template-columns 260ms cubic-bezier(.2,.8,.2,1), margin 260ms cubic-bezier(.2,.8,.2,1);
+}
+.pl-session-metadata__slot:last-child { grid-template-columns: var(--pl-expanded-tag-width); }
+/* 调宽和展开同时发生时，仅只读信息让出空间。紧凑态的 21px 恰好容纳左内距和图标。 */
+.pl-session-metadata__slot[data-information] { flex-shrink: 1; }
+.pl-session-metadata[data-compact] > [data-information] { --pl-expanded-tag-width: 21px; }
 .pl-session-metadata__tag { box-sizing: border-box; position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: max-content; height: 28px; padding: 0 7px; border: 0; border-radius: 7px; background: transparent; color: var(--pl-session-tag-text); font-size: 11px; line-height: 1; white-space: nowrap; }
 .pl-session-metadata__tag svg { width: 14px; height: 14px; flex-shrink: 0; }
 /* 操作仅通过图标颜色反馈；背景始终透明，保留原点击区域与键盘焦点提示。 */
@@ -32,22 +44,19 @@
 .pl-session-metadata__tag.plotloom-button:not(:disabled):active { color: var(--pl-text, #202124); }
 .pl-session-metadata__tag[data-status='running'], .pl-session-metadata__tag[data-status='unread'], .pl-session-metadata__tag[aria-pressed='true'] { color: var(--pl-session-status-text); }
 .pl-session-metadata__tag[data-status='failed'] { color: #995b60; }
-/* 任务结果图标使用固定语义色，避免随主题变化；文字保持柔和。 */
+/* 会话状态图标使用固定语义色，让待审批和任务结果在各主题下可辨识。 */
+.pl-session-metadata__tag[data-status='awaiting_approval'] svg { color: #a16207; }
 .pl-session-metadata__tag[data-status='unread'] svg { color: #16803d; }
 .pl-session-metadata__tag[data-status='failed'] svg { color: #dc2626; }
 /* 悬停和键盘焦点同样展开；内侧焦点环避免被叠放裁切，动画只影响当前行。 */
-.pl-sidebar-session-item:is(:hover, :focus-within) .pl-session-metadata__slot { grid-template-columns: var(--pl-tag-width, 28px); }
-.pl-sidebar-session-item:is(:hover, :focus-within) .pl-session-metadata__slot + .pl-session-metadata__slot { margin-left: 4px; }
+.pl-sidebar-session-item:is(:hover, :focus-within) .pl-session-metadata__slot { grid-template-columns: var(--pl-expanded-tag-width); }
+.pl-sidebar-session-item:is(:hover, :focus-within) .pl-session-metadata__slot + .pl-session-metadata__slot { margin-left: var(--pl-session-tag-gap); }
 .pl-session-metadata__tag:focus-visible { box-shadow: inset 0 0 0 2px var(--pl-focus, #2563eb); }
 .pl-session-metadata__tag[data-status='running'] svg { animation: pl-session-progress 1.4s linear infinite; }
 @keyframes pl-session-progress { to { transform: rotate(360deg); } }
 @media (hover: none) {
-  .pl-session-metadata__slot { grid-template-columns: var(--pl-tag-width, 28px); }
-  .pl-session-metadata__slot + .pl-session-metadata__slot { margin-left: 4px; }
-}
-/* 分组缩进后空间不足时保留状态图标及完整提示，避免操作被挤出侧栏。 */
-@container (max-width: 280px) {
-  .pl-session-metadata__tag[data-status] > span { display: none; }
+  .pl-session-metadata__slot { grid-template-columns: var(--pl-expanded-tag-width); }
+  .pl-session-metadata__slot + .pl-session-metadata__slot { margin-left: var(--pl-session-tag-gap); }
 }
 @media (prefers-reduced-motion: reduce) {
   .pl-session-metadata__slot { transition: none; }

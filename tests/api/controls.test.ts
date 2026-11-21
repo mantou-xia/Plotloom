@@ -21,7 +21,7 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
   let server = await startServer(env);
   const logs: string[] = [];
   const restart = async (overrides = {}) => { await server.close(); logs.push(server.logs()); server = await startServer({ ...env, ...overrides }); };
-  const create = (body = {}) => server.json('/api/sessions', 'POST', body, 201);
+  const create = (body = {}) => server.json('/api/sessions', 'POST', { projectPath: directory, ...body }, 201);
   const send = async (id: string, text: string) => collect(await server.request(`/api/sessions/${id}/messages`, 'POST', { text }));
   const path = (id: string, suffix = '') => `/api/sessions/${id}${suffix}`;
   const waitFor = async (condition: () => boolean | Promise<boolean>) => {
@@ -64,7 +64,7 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
       const failure = await server.json(path(id, '/config'), 'PUT', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high', autoCompaction: false }, 422);
       assert.equal(failure.error.code, 'THINKING_LEVEL_UNSUPPORTED');
       await server.json('/api/model-config', 'PUT', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high' }, 422);
-      await server.json('/api/sessions', 'POST', { provider: 'p1-test', model: 'plain', thinkingLevel: 'high' }, 422);
+      await server.json('/api/sessions', 'POST', { projectPath: directory, provider: 'p1-test', model: 'plain', thinkingLevel: 'high' }, 422);
       await server.json(path(id, '/name'), 'PUT', { name: '  ' }, 400);
       await server.json(path(id, '/name'), 'PUT', { name: 'x'.repeat(121) }, 400);
       assert.deepEqual(await server.json(path(id, '/config')), before);
@@ -117,7 +117,8 @@ test('P1.1 配置、思考、上下文和工具公开接口', { timeout: 120000 
       const stats = await server.json(path(id, '/stats'));
       assert.equal(stats.userMessages, 1); assert.equal(stats.assistantMessages, 1); assert.equal(stats.usage.totalTokens, 15);
       const tools = await server.json(path(id, '/tools'));
-      assert.deepEqual(tools.tools.map((tool: any) => tool.name), ['read_fixture', 'browser', 'web_fetch']);
+      assert.deepEqual(new Set(tools.tools.map((tool: any) => tool.name)),
+        new Set(['read', 'ls', 'find', 'grep', 'write', 'edit', 'browser', 'web_fetch', 'ask_user', 'setup_agent_profile']));
       assert.equal(tools.tools[0].active, true); assert.equal(tools.tools[0].parameters.type, 'object');
       assert.doesNotMatch(JSON.stringify({ detail, context, stats, tools }), /thinkingSignature|signature|sessionFile|baseUrl|apiKey/);
       await restart(); assert.deepEqual((await server.json(path(id))).messages, detail.messages);

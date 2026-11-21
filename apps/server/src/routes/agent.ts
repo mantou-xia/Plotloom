@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '@plotloom/agent-pi';
-import { THINKING_LEVELS, type CreateSessionRequest, type ModelSettings, type SubmitMessageRequest, type SessionConfigRequest, type SessionOrganization, type RetryMessageRequest } from '@plotloom/contracts';
+import { PROJECT_APPROVAL_MODES, THINKING_LEVELS, type CreateProjectSessionRequest, type ModelSettings, type SubmitMessageRequest, type SessionConfigRequest, type SessionOrganization, type RetryMessageRequest } from '@plotloom/contracts';
 import { streamMessage } from '../streaming/sse.ts';
 import { sourceProperties } from './sources.ts';
-import type { ProviderWrite } from '@plotloom/contracts';
+import type { AgentQuestionAnswer, ProviderWrite, ToolApprovalDecision } from '@plotloom/contracts';
 
 // 编辑和新增共用请求边界，密钥可省略，响应只确认保存结果。
 const providerSchema = { body: { type: 'object', additionalProperties: false, required: ['id', 'api', 'baseUrl', 'models'],
@@ -41,8 +41,8 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
   app.get('/api/models', async () => ({ models: await agent.models() }));
   app.get('/api/model-config', () => agent.modelConfig());
   app.put<{ Body: ModelSettings }>('/api/model-config', { schema: { body: selectionSchema } }, (request) => agent.setModelConfig(request.body));
-  app.post<{ Body: CreateSessionRequest }>('/api/sessions', {
-    schema: { body: { type: 'object', additionalProperties: false, properties: { ...modelProperties, name: nameProperty, projectPath: { type: 'string', minLength: 1, maxLength: 2000 } },
+  app.post<{ Body: CreateProjectSessionRequest }>('/api/sessions', {
+    schema: { body: { type: 'object', additionalProperties: false, required: ['projectPath'], properties: { ...modelProperties, name: nameProperty, projectPath: { type: 'string', minLength: 1, maxLength: 2000 } },
       dependencies: { provider: ['model'], model: ['provider'] } } },
   }, async (request, reply) => {
     return reply.code(201).send(await agent.createSession(request.body));
@@ -58,10 +58,18 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
   app.post<{ Params: { id: string }; Body: { query: string } }>('/api/sessions/:id/project-files', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', maxLength: 200 } } } },
   }, (request) => agent.projectFiles(request.params.id, request.body.query));
+  app.get<{ Params: { id: string } }>('/api/sessions/:id/project-writes', { schema: { params: idSchema } },
+    request => agent.listProjectWrites(request.params.id));
+  app.get<{ Params: { id: string; writeId: string } }>('/api/sessions/:id/project-writes/:writeId', {
+    schema: { params: { type: 'object', required: ['id', 'writeId'], properties: {
+      ...idSchema.properties, writeId: { type: 'string', pattern: '^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$' },
+    } } },
+  }, request => agent.projectFileDiff(request.params.id, request.params.writeId));
   app.get<{ Params: { id: string } }>('/api/sessions/:id/config', { schema: { params: idSchema } }, (request) => agent.getSessionConfig(request.params.id));
   app.put<{ Params: { id: string }; Body: SessionConfigRequest }>('/api/sessions/:id/config', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, minProperties: 1,
-      properties: { ...modelProperties, autoCompaction: { type: 'boolean' } }, dependencies: { provider: ['model'], model: ['provider'] } } },
+      properties: { ...modelProperties, autoCompaction: { type: 'boolean' }, projectApprovalMode: { type: 'string', enum: PROJECT_APPROVAL_MODES } },
+      dependencies: { provider: ['model'], model: ['provider'] } } },
   }, (request) => agent.setSessionConfig(request.params.id, request.body));
   app.put<{ Params: { id: string }; Body: { name: string } }>('/api/sessions/:id/name', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: nameProperty } } },
@@ -92,6 +100,32 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
     const execute = await agent.prepareRetry(request.params.id, request.body.messageId);
     await streamMessage(request, reply, execute);
   });
+  app.post<{ Params: { id: string; approvalId: string }; Body: { decision: ToolApprovalDecision } }>('/api/sessions/:id/tool-approvals/:approvalId', {
+    schema: {
+      params: { type: 'object', required: ['id', 'approvalId'], properties: {
+        ...idSchema.properties, approvalId: { type: 'string', pattern: '^[a-f0-9-]{36}$' },
+      } },
+      body: { type: 'object', additionalProperties: false, required: ['decision'],
+        properties: { decision: { type: 'string', enum: ['approve', 'deny'] } } },
+    },
+  }, (request) => agent.decideToolApproval(request.params.id, request.params.approvalId, request.body.decision));
+
+  app.post<{ Params: { id: string; questionId: string }; Body: AgentQuestionAnswer }>('/api/sessions/:id/questions/:questionId/answer', {
+    schema: {
+      params: { type: 'object', required: ['id', 'questionId'], properties: {
+        ...idSchema.properties, questionId: { type: 'string', pattern: '^[a-f0-9-]{36}$' },
+      } },
+      body: { oneOf: [
+        { type: 'object', additionalProperties: false, required: ['kind', 'index'], properties: {
+          kind: { const: 'option' }, index: { type: 'integer', minimum: 1 },
+        } },
+        { type: 'object', additionalProperties: false, required: ['kind', 'text'], properties: {
+          kind: { const: 'custom' }, text: { type: 'string', minLength: 1, maxLength: 2000, pattern: '\\S' },
+        } },
+        { type: 'object', additionalProperties: false, required: ['kind'], properties: { kind: { const: 'skip' } } },
+      ] },
+    },
+  }, request => agent.answerQuestion(request.params.id, request.params.questionId, request.body));
   app.post<{ Params: { id: string } }>('/api/sessions/:id/stop', { schema: { params: idSchema } }, async (request) => {
     const { id, status } = await agent.stop(request.params.id);
     return { id, status };

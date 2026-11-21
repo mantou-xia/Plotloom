@@ -8,12 +8,12 @@ function chat(id: string, updatedAt: string, extra: Partial<ChatSummary> = {}): 
   return { id, name: id, updatedAt, archived: false, pinned: false, workspaceId: null, status: 'idle', activity: 'idle', provider: 'test', model: 'test', thinkingLevel: 'off', ...extra };
 }
 
-test('项目、小说和最近互斥分组，并保持各组时间倒序及空小说', () => {
+test('最近汇总所有未归档记录并按更新时间倒序，保留各归属和置顶入口', () => {
   const older = '2026-11-18T00:00:00Z';
   const newer = '2026-11-19T00:00:00Z';
-  const chats = [chat('p1', older, { projectPath: 'D:\\projects\\Plotloom' }), chat('r1', older),
+  const chats = [chat('p1', older, { projectPath: 'D:\\projects\\Plotloom' }),
     chat('n1', newer, { workspaceId: 'novel', projectPath: 'D:\\novels\\灯塔' }),
-    chat('p2', newer, { projectPath: 'D:\\projects\\Plotloom' }), chat('r2', newer),
+    chat('p2', newer, { projectPath: 'D:\\projects\\Plotloom' }),
     chat('hidden', newer, { archived: true, pinned: true }), chat('pinned-novel', newer, { pinned: true, workspaceId: 'novel' }),
     chat('linux', older, { projectPath: '/home/projects/story/' })];
   const result = groupSidebarChats(chats, [
@@ -27,8 +27,8 @@ test('项目、小说和最近互斥分组，并保持各组时间倒序及空�
   assert.deepEqual(result.projects.map(group => [group.label, group.chats.map(item => item.id)]), [
     ['自定义项目名', ['p2', 'p1']], ['没有聊天的项目', []],
   ]);
-  assert.deepEqual(result.novels.map(group => [group.label, group.chats.map(item => item.id)]), [['灯塔', ['n1']], ['新小说', []]]);
-  assert.deepEqual(result.recent.map(item => item.id), ['r2', 'r1', 'linux']);
+  assert.deepEqual(result.novels.map(group => [group.label, group.chats.map(item => item.id)]), [['灯塔', ['n1', 'pinned-novel']], ['新小说', []]]);
+  assert.deepEqual(result.recent.map(item => item.id), ['n1', 'p2', 'pinned-novel', 'p1', 'linux']);
   assert.equal(chats[0].id, 'p1', '分组不能原地重排调用方数据');
 });
 

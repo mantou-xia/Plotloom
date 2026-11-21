@@ -1,4 +1,10 @@
 import type { Attachment, DocumentReferenceContent, MessageSources } from './sources.ts';
+/** 单作者的本机 Agent 人设，项目和小说共享同一份设置。 */
+export const AGENT_PROFILE_LIMITS = { name: 40, style: 160, preferences: 1000 } as const;
+export interface AgentPersona { name: string; style: string; preferences: string }
+export interface AgentProfile extends AgentPersona { setup: 'pending' | 'skipped' | 'configured' }
+export type AgentProfileUpdate = { action: 'skip' } | ({ action: 'save' } & AgentPersona);
+
 /** 公开 HTTP / SSE 契约；这里不得导入 SDK 或后端实现类型。 */
 export interface ModelSelection { provider: string; model: string }
 /** 可编辑的本机自定义供应商；密钥只出现在写入请求。 */
@@ -46,27 +52,83 @@ export interface Message {
   /** 最终正文中已校验的本轮网页引用，按首次引用顺序去重。 */
   citations?: WebCitation[];
 }
-export type SessionActivity = 'idle' | 'generating' | 'configuring' | 'compacting';
+export type SessionActivity = 'idle' | 'generating' | 'awaiting_approval' | 'awaiting_answer' | 'configuring' | 'compacting';
 export interface SessionSummary extends ModelSelection { id: string; status: SessionStatus; activity: SessionActivity; name: string; thinkingLevel: ThinkingLevel; projectPath?: string }
 export interface SessionOrganization { pinned: boolean; archived: boolean }
 export interface SessionListItem extends SessionSummary, SessionOrganization { updatedAt: string; archivedAt?: string }
 export interface SessionDetail extends SessionSummary {
   messages: Message[];
+  /** 当前轮尚可决定的项目写入。刷新后从详情重新读取。 */
+  pendingApprovals?: ToolApproval[];
+  /** 当前轮正在等待的选择题；刷新后从详情恢复。 */
+  pendingQuestion?: AgentQuestion;
+  /** 成功写入的已结束轮次；没有记录时省略。 */
+  fileChanges?: TurnFileChanges[];
   /** 可重放的最新用户消息。旧记录缺少请求快照时省略；忙时客户端应禁用操作。 */
   retryMessageId?: string;
 }
+export interface ToolApproval {
+  id: string;
+  turnId: string;
+  callId: string;
+  operation: 'create' | 'overwrite' | 'edit';
+  path: string;
+  preview: string;
+  expiresAt: string;
+}
+export type ToolApprovalDecision = 'approve' | 'deny';
+export interface AgentQuestion {
+  id: string;
+  callId: string;
+  question: string;
+  options: string[];
+}
+export type AgentQuestionAnswer =
+  | { kind: 'option'; index: number }
+  | { kind: 'custom'; text: string }
+  | { kind: 'skip' };
 export interface RetryMessageRequest { messageId: string }
-/** 项目目录仅在创建时指定，固定到会话；省略表示普通聊天，不开放项目工具。 */
-export interface CreateSessionRequest { provider?: string; model?: string; thinkingLevel?: ThinkingLevel; name?: string; projectPath?: string }
+export interface CreateSessionRequest { provider?: string; model?: string; thinkingLevel?: ThinkingLevel; name?: string }
+/** 项目目录随会话创建固定；小说通过工作区入口创建。 */
+export interface CreateProjectSessionRequest extends CreateSessionRequest { projectPath: string }
 export interface ProjectFiles { entries: Array<{ path: string; name: string; isDirectory: boolean }>; truncated: boolean }
+/** 一次成功的 Agent 文件写入。同一路径的多次写入各有独立记录。 */
+export interface ProjectFileChange {
+  id: string;
+  path: string;
+  operation: ToolApproval['operation'];
+  createdAt: string;
+}
+export interface TurnFileChanges {
+  turnId: string;
+  files: Array<{
+    path: string;
+    added: number | null;
+    removed: number | null;
+    writeIds: string[];
+  }>;
+}
+export interface ProjectDiffBlock {
+  kind: 'context' | 'added' | 'removed';
+  beforeStart: number | null;
+  afterStart: number | null;
+  lines: string[];
+}
+export interface ProjectFileDiff extends ProjectFileChange {
+  added: number;
+  removed: number;
+  blocks: ProjectDiffBlock[];
+}
 /** 项目独立于聊天持久化；目录规范化且唯一，现有会话通过 projectPath 关联。 */
 export interface Project { id: string; name: string; path: string; createdAt: string }
 export interface CreateProjectRequest { name: string; path: string }
 /** 系统选择器取消属于正常结果，不创建项目，也不覆盖调用方之前选择的目录。 */
 export interface ProjectFolderSelection { path: string | null }
 /** 仅修改显式传入的会话配置；自动压缩默认启用，关闭不影响手动压缩。 */
-export interface SessionConfigRequest { provider?: string; model?: string; thinkingLevel?: ThinkingLevel; autoCompaction?: boolean }
-export interface SessionConfig extends ModelSelection { id: string; thinkingLevel: ThinkingLevel; autoCompaction: boolean; capabilities: ModelCapabilities }
+export const PROJECT_APPROVAL_MODES = ['required', 'full_access'] as const;
+export type ProjectApprovalMode = typeof PROJECT_APPROVAL_MODES[number];
+export interface SessionConfigRequest { provider?: string; model?: string; thinkingLevel?: ThinkingLevel; autoCompaction?: boolean; projectApprovalMode?: ProjectApprovalMode }
+export interface SessionConfig extends ModelSelection { id: string; thinkingLevel: ThinkingLevel; autoCompaction: boolean; capabilities: ModelCapabilities; projectApprovalMode?: ProjectApprovalMode }
 /** SDK 上下文估算；压缩后尚无新回复时 tokens/percent 可为 null，不表示没有占用。 */
 export interface SessionContext { id: string; status: SessionStatus; activity: SessionActivity; tokens: number | null; contextWindow: number; percent: number | null; autoCompaction: boolean }
 export interface SessionStats { id: string; userMessages: number; assistantMessages: number; toolCalls: number; toolResults: number; totalMessages: number; usage?: Usage }
@@ -82,6 +144,8 @@ export type AgentEvent = { sessionId: string } & (
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'tool_start'; callId: string; name: string }
+  | { type: 'tool_approval_required'; approval: ToolApproval }
+  | { type: 'user_answer_required'; question: AgentQuestion }
   | { type: 'tool_end'; callId: string; name: string; outcome: 'completed' | 'failed' }
   | { type: 'retrying'; attempt: number; maxAttempts: number }
   | { type: 'compacting'; phase: 'start' | 'end' }

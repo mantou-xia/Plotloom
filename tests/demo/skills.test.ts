@@ -17,6 +17,15 @@ test('工具目录与全局开关在试验台可触发并检查新字段', async
         ...(endpoint.method === 'PUT' ? { payload: { enabled: false } } : {}) });
       assert.equal(response.statusCode, endpoint.success);
       assert(checkJson(endpoint, response.statusCode, String(response.headers['content-type']), response.json()).every(check => check.passed), id);
+      if (id === 'tools.list') {
+        assert(endpoint.response.some(field => field.name === 'tools[].provider' && field.required));
+        for (const name of ['browser', 'web_fetch']) {
+          assert.deepEqual(response.json().tools.find((tool: { name: string }) => tool.name === name)?.availableIn, ['project', 'novel']);
+        }
+        const forbidden = await app.inject({ method: endpoint.method, url: endpoint.path, headers: { origin: 'http://other.example' } });
+        assert.equal(forbidden.statusCode, 403);
+        assert.equal(forbidden.json().error.code, 'ORIGIN_FORBIDDEN');
+      }
     }
     const endpoint = API_CATALOG.find(item => item.id === 'skills.enabled')!;
     const path = endpoint.path.replace(':skillId', 'builtin-novel-writing');

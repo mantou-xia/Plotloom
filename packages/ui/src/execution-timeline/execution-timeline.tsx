@@ -1,5 +1,5 @@
 import { useCallback, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { ArrowDown, ChevronsUpDown, ChevronsDownUp, Logs } from 'lucide-react';
+import { ArrowDown, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import { DisclosureTrigger } from '../disclosure/disclosure-trigger.tsx';
 import type { AgentPhase } from '../agent-activity/activity.ts';
 import { Button } from '../button/button.tsx';
@@ -98,13 +98,9 @@ export function ExecutionTimeline({ items, renderMessageLink, streaming = false,
   // 详情展开是主动阅读，不能被 ResizeObserver 当成新进展而拉到列表末尾。
   const pauseFollowing = useCallback(() => { follow.current = false; }, []);
 
-  // 运行时用等高空态承接首条记录，不伪造思考节点；结束后没有记录就不占位。
+  // 等待首条记录时只保留面板高度，记录到达后原位显示，避免挤动下方内容。
   if (!hasContent) return phase === 'working' ? <div className={`pl-execution-timeline__empty ${className}`}
-    style={{ ...style, height }}>
-    <Logs aria-hidden="true" />
-    <span className="pl-execution-timeline__empty-title">暂无过程内容</span>
-    <p>公开的思考与操作记录会显示在这里。</p>
-  </div> : null;
+    aria-hidden="true" style={{ ...style, height }} /> : null;
   return <section className={`pl-execution-timeline ${className}`} aria-label="Agent 执行过程"
     data-phase={phase} data-open={open} data-full={full}
     style={{ ...style, '--pl-process-height': `${height}px` } as CSSProperties}>

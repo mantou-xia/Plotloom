@@ -6,16 +6,19 @@ export interface ScrollBoxProps extends ComponentPropsWithRef<'div'> {
   orientation?: 'vertical' | 'horizontal' | 'both';
   /** auto 悬停或聚焦显示，always 始终显示；hidden 不预留轨道，仍可滚动。 */
   scrollbarVisibility?: 'auto' | 'always' | 'hidden';
+  /** 默认固定轨道尺寸；全宽内容可选择仅在对应方向溢出时占位。 */
+  reserveScrollbarSpace?: boolean;
 }
 
-/** 统一滚动入口：保持原生滚轮、触摸、键盘及 ref 能力，只改变滚动条颜色而不切换布局。 */
-export function ScrollBox({ orientation = 'vertical', scrollbarVisibility = 'auto', className = '', tabIndex = 0, style, ref, ...props }: ScrollBoxProps) {
+/** 统一滚动入口保留原生交互；滑块显隐只改变颜色，轨道占位由调用方选择。 */
+export function ScrollBox({ orientation = 'vertical', scrollbarVisibility = 'auto', reserveScrollbarSpace = true, className = '', tabIndex = 0, style, ref, ...props }: ScrollBoxProps) {
   const elementRef = useRef<HTMLDivElement>(null);
+  const overflow = reserveScrollbarSpace ? 'scroll' : 'auto';
   useImperativeHandle(ref, () => elementRef.current!, []);
   useLayoutEffect(() => {
     const element = elementRef.current!;
     let frame = 0;
-    // 保留原生滚动槽占位，只控制是否着色，避免无溢出时 Windows 仍绘制箭头。
+    // 只对确实可滚动的内容着色，避免空轨道也出现可见滑块。
     const measure = () => {
       frame = 0;
       const scrollable = (orientation !== 'horizontal' && element.scrollHeight > element.clientHeight)
@@ -46,9 +49,9 @@ export function ScrollBox({ orientation = 'vertical', scrollbarVisibility = 'aut
     data-orientation={orientation} data-scrollbar-visibility={scrollbarVisibility}
     style={{
       ...style,
-      // 固定滚动机制，避免通用尺寸样式的 overflow:auto 破坏占位保证。
-      overflowX: orientation === 'vertical' ? 'hidden' : 'scroll',
-      overflowY: orientation === 'horizontal' ? 'hidden' : 'scroll',
-      scrollbarGutter: orientation === 'horizontal' || scrollbarVisibility === 'hidden' ? 'auto' : 'stable',
+      // 始终按组件配置选择滚动方向；按需模式不为空轨道留边。
+      overflowX: orientation === 'vertical' ? 'hidden' : overflow,
+      overflowY: orientation === 'horizontal' ? 'hidden' : overflow,
+      scrollbarGutter: reserveScrollbarSpace && orientation !== 'horizontal' && scrollbarVisibility !== 'hidden' ? 'stable' : 'auto',
     }} />;
 }

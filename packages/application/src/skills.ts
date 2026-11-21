@@ -17,7 +17,7 @@ export interface SkillRepository {
 }
 /** 会话只通过公开形状的端口交互；消息持久化和循环不由技能业务接管。 */
 export interface SkillSessions {
-  create(request: CreateSessionRequest, profile: SessionSkillProfile): Promise<SessionSummary>;
+  create(request: CreateSessionRequest, profile: SessionSkillProfile & { workspaceId: string }): Promise<SessionSummary>;
   list(): Promise<SessionListItem[]>;
   profile(id: string): Promise<SessionSkillProfile>;
   setSkills(id: string, skillIds: string[] | null): Promise<void>;
@@ -32,14 +32,14 @@ export class SkillService {
   private readonly store: SkillRepository;
   private readonly sessions: SkillSessions;
   private readonly checkWorkspace: (id: string) => Promise<unknown>;
-  private readonly tools: (workspaceId?: string | null, project?: boolean) => string[];
-  constructor(store: SkillRepository, sessions: SkillSessions, checkWorkspace: (id: string) => Promise<unknown>, tools: (workspaceId?: string | null, project?: boolean) => string[]) {
+  private readonly tools: (workspaceId?: string | null) => string[];
+  constructor(store: SkillRepository, sessions: SkillSessions, checkWorkspace: (id: string) => Promise<unknown>, tools: (workspaceId?: string | null) => string[]) {
     this.store = store; this.sessions = sessions; this.checkWorkspace = checkWorkspace; this.tools = tools;
   }
 
   private view(skill: StoredSkill, workspaceId?: string | null, projectTools?: string[]): SkillInfo {
     const missingTools = skill.declaredTools.filter(name => !(projectTools ?? this.tools(workspaceId)).includes(name));
-    const scopes: Array<[ToolScope, string[]]> = [['ordinary', this.tools(null)], ['project', this.tools(null, true)], ['novel', this.tools('novel')]];
+    const scopes: Array<[ToolScope, string[]]> = [['project', this.tools(null)], ['novel', this.tools('novel')]];
     const availableIn = scopes.filter(([, tools]) => skill.declaredTools.every(name => tools.includes(name))).map(([scope]) => scope);
     const warnings = [
       ...(!skill.enabled ? ['已全局停用，所有聊天下一轮不再加载。'] : []),
@@ -131,7 +131,7 @@ export class SkillService {
       unavailable: ids.flatMap(id => { const skill = skills.find(v => v.id === id); return !skill ? [{ id, reason: '技能已移除，请调整聊天设置。' }]
         : !skill.enabled ? [{ id, reason: '技能已全局停用。' }] : skill.runnable ? [] : [{ id, reason: `缺少工具：${skill.missingTools.join('、')}` }]; }) };
   }
-  /** 技能声明以当前会话实际工具诊断，项目能力不扩散到普通或小说聊天。 */
+  /** 技能声明以当前会话实际工具诊断，项目能力不扩散到小说聊天。 */
   async sessionSettings(id: string) {
     const [profile, projectTools] = await Promise.all([this.sessions.profile(id), this.sessions.projectTools?.(id)]);
     return this.store.run(async s => this.activation(s, profile, projectTools));

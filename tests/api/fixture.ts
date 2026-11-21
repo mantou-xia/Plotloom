@@ -66,6 +66,21 @@ export async function createModelFixture() {
         response.once('close', () => waiting.delete(prompt));
         return;
       }
+      const setupTool = body.tools?.some((tool: any) => tool.function.name === 'setup_agent_profile');
+      if (setupTool && prompt === '你好，我们先认识一下吧。') {
+        writeChunk(response, { content: '你想怎么称呼我？希望我是什么样的性格，怎么跟你协作？' }, 'stop');
+        finish(response);
+        return;
+      }
+      if (setupTool && prompt === '叫你小舟。语气温和，给建议前先核对正文版本。') {
+        if (last.role === 'tool') writeChunk(response, { content: last.content }, 'stop');
+        else writeChunk(response, { tool_calls: [{ index: 0, id: 'bootstrap-' + requests.length, type: 'function',
+          function: { name: 'setup_agent_profile', arguments: JSON.stringify({
+            action: 'save', name: '小舟', style: '温和', preferences: '给建议前先核对正文版本。',
+          }) } }] }, 'tool_calls');
+        finish(response);
+        return;
+      }
       if (prompt === 'THINK') writeChunk(response, { reasoning_content: '这是模型返回的可见思考文本。' });
       if (prompt.startsWith('WRITE:')) {
         // 按公开工具协议逐步执行测试计划；只替换模型决策，工具/存储/权限走生产实现。
@@ -109,7 +124,7 @@ export async function createModelFixture() {
         }
       } else if (prompt === 'TOOL' || prompt === 'BAD_TOOL') {
         writeChunk(response, { tool_calls: [{ index: 0, id: `read-${requests.length}`, type: 'function', function: {
-          name: 'read_fixture', arguments: JSON.stringify({ document: prompt === 'BAD_TOOL' ? '../secret' : 'scene' }),
+          name: 'read', arguments: JSON.stringify(prompt === 'BAD_TOOL' ? {} : { path: 'scene.md' }),
         } }] }, 'tool_calls');
       } else if (prompt === '我选择 A') {
         assert(body.messages.some((message: any) => message.role === 'assistant' && contentText(message.content).includes('A：检查台阶')));

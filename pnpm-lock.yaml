@@ -128,6 +128,9 @@ importers:
       '@plotloom/contracts':
         specifier: workspace:*
         version: link:../contracts
+      diff:
+        specifier: 8.0.4
+        version: 8.0.4
       linkedom:
         specifier: 0.18.15
         version: 0.18.15

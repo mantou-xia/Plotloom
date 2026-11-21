@@ -14,7 +14,7 @@ async function main() {
   const book = join(directory, 'book'); await mkdir(book);
   const server = await startServer({ ...process.env, PLOTLOOM_DATA_DIR: join(directory, 'data') }, 240000);
   const report: any = { date: new Date().toISOString(), directory, samples: [], passed: false,
-    method: '同模型、同原文、相同用户要求；普通聊天直接粘贴资料，结构化方案调用公开创作接口。机械断言检验流程，质量由逐份阅读另行记录。' };
+    method: '同模型、同原文、相同用户要求；项目聊天直接粘贴资料，结构化方案调用公开创作接口。机械断言检验流程，质量由逐份阅读另行记录。' };
   const saveReport = () => writeFile(join(directory, 'report.json'), JSON.stringify(report, null, 2), 'utf8');
   try {
     report.model = await server.json('/api/model-config');
@@ -48,7 +48,7 @@ async function main() {
       const row: any = { id: sample.id, label: sample.label, expected: sample.expected, criteria: sample.criteria, request: body, materials };
       report.samples.push(row);
       for (const mode of ['baseline', 'structured']) {
-        const chat = await server.json(mode === 'baseline' ? '/api/sessions' : `/api/workspaces/${workspace.id}/sessions`, 'POST', { name: `${sample.id}-${mode}`, thinkingLevel: 'off' }, 201);
+        const chat = await server.json(mode === 'baseline' ? '/api/sessions' : `/api/workspaces/${workspace.id}/sessions`, 'POST', { name: `${sample.id}-${mode}`, thinkingLevel: 'off', ...(mode === 'baseline' ? { projectPath: book } : {}) }, 201);
         const start = performance.now();
         const response = await server.request(`/api/sessions/${chat.id}/${mode === 'baseline' ? 'messages' : 'writing/messages'}`, 'POST', mode === 'baseline'
           ? { text: `任务：${body.task}。${body.instructions}\n以下是正式资料、目标和修改范围。不要调用工具；直接给出所需文本或冲突问题，不声称已保存。\n目标：${JSON.stringify(body.target)}\n资料：${JSON.stringify(materials)}` } : body);

@@ -14,7 +14,7 @@ interface Run {
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
 let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('sessions.create')!;
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
-const assetParameters: Record<string, string> = Object.fromEntries(['workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
+const assetParameters: Record<string, string> = Object.fromEntries(['workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
 function setAssetParameter(name: string, value: string) {
   assetParameters[name] = value; sessionStorage.setItem(`plotloom.demo.${name}`, value);
   const input = byId<HTMLInputElement>(`path-${name}`); if (input) input.value = value;
@@ -221,6 +221,8 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
         run.events.push({ event, elapsedMs: Math.round(performance.now() - run.started) });
         if (event.type === 'text_delta') run.text += event.delta;
         if (event.type === 'thinking_delta') run.thinking += event.delta;
+        if (event.type === 'tool_approval_required' && run.sessionId === sessionId) setAssetParameter('approvalId', event.approval.id);
+        if (event.type === 'user_answer_required' && run.sessionId === sessionId) setAssetParameter('questionId', event.question.id);
         run.elapsed = Math.round(performance.now() - run.started);
         scheduleResult();
       });
@@ -243,7 +245,15 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       if (isObject(run.body) && isObject(run.body.error)) run.error = String(run.body.error.message ?? '接口返回错误。');
       if (response.ok && isObject(run.body)) {
         if (endpoint.id === 'context.compact' && run.body.outcome === 'aborted' && run.phase === 'success') run.phase = 'stopped';
+        if (endpoint.id === 'sessions.get' && targetSession === sessionId) {
+          const pending = run.body.pendingQuestion;
+          setAssetParameter('questionId', isObject(pending) && typeof pending.id === 'string' ? pending.id : '');
+        }
         if (['sessions.create', 'chats.create'].includes(endpoint.id) && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
+        if (endpoint.id === 'sessions.project-writes' && targetSession === sessionId && Array.isArray(run.body.changes)) {
+          const latest: unknown = run.body.changes.at(-1);
+          setAssetParameter('writeId', isObject(latest) && typeof latest.id === 'string' ? latest.id : '');
+        }
         if (endpoint.id === 'attachments.upload' && targetSession === sessionId && typeof run.body.id === 'string') setAssetParameter('attachmentId', run.body.id);
         if (endpoint.id === 'skills.import-folder' && isObject(run.body.skill) && typeof run.body.skill.id === 'string') setAssetParameter('skillId', run.body.skill.id);
         if (['skills.create', 'skills.copy'].includes(endpoint.id) && typeof run.body.id === 'string') setAssetParameter('skillId', run.body.id);
@@ -334,13 +344,20 @@ function eventDescription(event: AgentEvent): string {
   if (event.type === 'accepted') return `消息 ${event.messageId}`;
   if (event.type === 'tool_start' || event.type === 'tool_end') return event.name + ('outcome' in event ? ` · ${event.outcome}` : ' · 执行中');
   if (event.type === 'failed') return event.error.message;
+  if (event.type === 'tool_approval_required') return `等待审批 · ${event.approval.path} · ${event.approval.id}`;
+  if (event.type === 'user_answer_required') return `等待回答 · ${event.question.question} · ${event.question.id}`;
   if (event.type === 'retrying') return `第 ${event.attempt} / ${event.maxAttempts} 次重试`;
   if (event.type === 'compacting') return event.phase === 'start' ? '开始压缩上下文' : '上下文压缩结束';
   return SSE_EVENTS.find((item) => item.name === event.type)?.description ?? event.type;
 }
 
 function setSession(value: string) {
-  if (sessionId !== value) setAssetParameter('attachmentId', '');
+  if (sessionId !== value) {
+    setAssetParameter('attachmentId', '');
+    setAssetParameter('writeId', '');
+    setAssetParameter('approvalId', '');
+    setAssetParameter('questionId', '');
+  }
   sessionId = value;
   sessionStorage.setItem('plotloom.demo.session', value);
   byId<HTMLInputElement>('session-id').value = value;

@@ -1,0 +1,15 @@
+{
+  "name": "plotloom-browser-workspace-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "node --env-file-if-exists=../../.env verify.mjs",
+    "verify:real": "node --env-file-if-exists=../../.env verify.mjs --real"
+  },
+  "dependencies": {
+    "electron": "45.4.1",
+    "marked": "18.2.1",
+    "playwright-core": "1.65.1",
+    "typebox": "1.3.27"
+  }
+}

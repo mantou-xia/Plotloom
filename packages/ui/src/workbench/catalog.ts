@@ -244,6 +244,51 @@ export const componentCatalog: ComponentExample[] = [
     ],
   },
   {
+    id: 'file-change-summary', name: 'FileChangeSummary', category: 'AI 对话组件', exportPath: './file-change-summary',
+    description: '汇总实际写入的文件和增删行数，提供统一的查看变更动作。',
+    interaction: '单文件仅展示标题；多文件默认展示前三项，点击文件行触发 onOpenFile，查看变更触发 onViewChanges。',
+    width: 580, height: 300,
+    states: [
+      { id: 'default', name: '单文件', description: '展示一个文件的变更与统计。' },
+      { id: 'multiple', name: '多个文件', description: '展示摘要及更多文件入口。' },
+    ],
+  },
+  {
+    id: 'file-diff', name: 'FileDiff', category: 'AI 对话组件', exportPath: './file-diff',
+    description: '根据带行号的差异块展示原文、新增、删除和未变更内容。',
+    interaction: '展开或折叠未变更内容，横向滚动查看长行。label 参数提供可访问名称。',
+    width: 560, height: 360,
+    states: [
+      { id: 'default', name: '编辑文件', description: '对比修改前后的行号与文本。' },
+      { id: 'added', name: '新建文件', description: '只展示新增的行。' },
+    ],
+  },
+  {
+    id: 'tool-approval-card', name: 'ToolApprovalCard', category: 'AI 对话组件', exportPath: './tool-approval-card',
+    description: '展示操作、目标路径、变更预览与审批状态。',
+    interaction: '允许一次或拒绝会原位更新状态，尺寸和按钮位置保持稳定。',
+    width: 560, height: 340,
+    states: [
+      { id: 'default', name: '等待审批', description: '可点击允许一次或拒绝。' },
+      { id: 'submitting', name: '正在提交', description: '等待决定写入，防止重复提交。' },
+      { id: 'approved', name: '已允许', description: '本次操作已获授权，执行结果由过程区展示。' },
+      { id: 'denied', name: '已拒绝', description: '保留审批结果。' },
+      { id: 'expired', name: '已过期', description: '过期请求不可操作。' },
+      { id: 'cancelled', name: '已取消', description: '请求随当前任务结束。' },
+    ],
+  },
+  {
+    id: 'question-card', name: 'QuestionCard', category: 'AI 对话组件', exportPath: './question-card',
+    description: 'question 和 options 定义题目，onAnswer 接收单选、自填或跳过，onStop 可提供停止操作。',
+    interaction: 'submitting 和 stopping 禁用作答，保持操作位置。',
+    width: 560, height: 270,
+    states: [
+      { id: 'default', name: '等待回答', description: '选中一项或自填后发送，也可跳过。' },
+      { id: 'submitting', name: '正在提交', description: '等待服务端确认答案。' },
+      { id: 'stopping', name: '正在停止', description: '等待当前任务停止。' },
+    ],
+  },
+  {
     id: 'execution-timeline', name: 'ExecutionTimeline', category: 'AI 对话组件', exportPath: './execution-timeline',
     description: '按发生顺序组合思考、说明、工具、步骤、重试和上下文整理等全部可见过程信息。',
     interaction: '统一定高滚动、展开全部和底部跟随；上翻或查看详情暂停跟随，最终回答自动折叠一次。',
@@ -629,12 +674,13 @@ export const componentCatalog: ComponentExample[] = [
   },
   {
     id: 'scroll-box', name: 'ScrollBox', category: '基础组件', exportPath: './scroll-box',
-    description: '统一滚动盒子：滚动条始终保留占位，显隐不挤压内容。', interaction: '增减内容检查溢出前后的布局；悬停、Tab 聚焦、滚轮和方向键检查真实滚动，右侧可调整方向与显示方式。', width: 640, height: 520,
+    description: '统一滚动盒子，默认保留轨道占位，支持仅在溢出时留出空间。', interaction: '增减内容检查溢出前后的布局；悬停、Tab 聚焦、滚轮和方向键检查真实滚动，右侧可调整方向与显示方式。', width: 640, height: 520,
     states: [
       { id: 'vertical', name: '纵向滚动', description: '默认纵向，悬停或聚焦显示滑块。' },
       { id: 'horizontal', name: '横向滚动', description: '横向轨道始终占位，内容增减不改变可用高度。' },
       { id: 'both', name: '双向滚动', description: '两个方向均保留滚动空间。' },
       { id: 'short', name: '短内容', description: '内容未溢出，点击增加内容观察布局不跳动。' },
+      { id: 'overflow-only', name: '按需占位', description: 'reserveScrollbarSpace 为 false，点击增加内容直至溢出，观察原生滚动条。' },
       { id: 'empty', name: '空内容', description: '没有内容时仍保留滚动占位。' },
     ],
   },

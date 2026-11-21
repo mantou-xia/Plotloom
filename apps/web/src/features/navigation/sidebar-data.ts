@@ -4,7 +4,7 @@ import type { Project } from '@plotloom/contracts';
 
 export interface ChatGroup { id: string; label: string; chats: ChatSummary[]; projectPath?: string }
 
-/** 项目列表决定分组和名称，因此空项目也可见；未登记目录的历史聊天仍保留在最近中。 */
+/** 最近按更新时间汇总所有未归档会话，置顶、项目和小说是对同一批记录的独立入口。 */
 export function groupSidebarChats(chats: ChatSummary[], workspaces: Workspace[], registeredProjects: Project[]) {
   const projects = new Map<string, ChatGroup>(registeredProjects.map(project => [project.path,
     { id: project.id, label: project.name, projectPath: project.path, chats: [] }]));
@@ -15,12 +15,13 @@ export function groupSidebarChats(chats: ChatSummary[], workspaces: Workspace[],
   const sorted = [...chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   for (const chat of sorted) {
     if (chat.archived) continue;
-    if (chat.pinned) { pinned.push(chat); continue; }
+    recent.push(chat);
+    if (chat.pinned) pinned.push(chat);
     if (chat.workspaceId !== null) {
       novels.get(chat.workspaceId)?.chats.push(chat);
     } else if (chat.projectPath && projects.has(chat.projectPath)) {
       projects.get(chat.projectPath)!.chats.push(chat);
-    } else recent.push(chat);
+    }
   }
   return { pinned, projects: [...projects.values()], novels: [...novels.values()], recent };
 }

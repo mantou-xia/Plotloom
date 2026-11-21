@@ -111,7 +111,8 @@ async (page) => {
 
     await select('empty');
     const empty = frame.locator('.pl-execution-timeline__empty');
-    assert(await panel.count() === 0 && await empty.isVisible(), '无公开文本展示空态，不制造思考节点');
+    assert(await panel.count() === 0 && await empty.isVisible() && await empty.evaluate(el => !el.hasChildNodes()),
+      '首条记录前只保留留白');
     const emptyHeight = (await empty.boundingBox()).height;
     const emptyAnchor = (await frame.locator('[data-process-after]').boundingBox()).y;
     await append(); await panel.waitFor();

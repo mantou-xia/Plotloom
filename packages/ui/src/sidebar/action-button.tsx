@@ -5,7 +5,8 @@ export interface SidebarActionButtonProps extends Omit<ButtonProps, 'children' |
   label: string;
   icon: ReactNode;
 }
-/** 新增和更多等操作统一复用 Button 的透明反馈、禁用及键盘语义。 */
-export function SidebarActionButton({ label, icon, size = 'sm', className = '', ...props }: SidebarActionButtonProps) {
-  return <Button {...props} className={`pl-sidebar-action-button ${className}`} variant="ghost" size={size} iconOnly aria-label={label} title={label}>{icon}</Button>;
+/** 图标按钮共用可访问名称和提示，名称随置顶状态等动态文案更新。 */
+export function SidebarActionButton({ label, icon, size = 'sm', className = '', tooltip = true, ...props }: SidebarActionButtonProps) {
+  return <Button {...props} className={`pl-sidebar-action-button ${className}`} variant="ghost" size={size} iconOnly
+    aria-label={label} tooltip={tooltip}>{icon}</Button>;
 }

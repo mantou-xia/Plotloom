@@ -12,7 +12,7 @@ export interface FieldDoc {
 }
 export interface EndpointDoc {
   id: string;
-  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'attachments' | 'projects';
+  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'attachments' | 'projects' | 'agent-profile';
   name: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
@@ -29,13 +29,29 @@ const field = (name: string, type: string, required: boolean, description: strin
 const provider = field('provider', 'string', true, '供应商标识，必须与模型列表中的 provider 一致。', 'krill-ai-codex');
 const model = field('model', 'string', true, '模型标识，必须属于指定供应商。', 'gpt-5.6-sol');
 const id = field('id', 'string', true, '会话唯一标识。创建后自动填入测试台，也可从历史列表选择。', '019…');
+const approvalFields = (prefix: string) => [
+  field(prefix + 'id', 'string', true, '本次待审批请求的唯一 ID。', '018cc233-92bc-7e51-abe9-63a0e8b3a30b'),
+  field(prefix + 'turnId', 'string', true, '申请所属轮次。', 'turn-1'),
+  field(prefix + 'callId', 'string', true, '关联的工具调用 ID。', 'write-1'),
+  field(prefix + 'operation', 'create | overwrite | edit', true, '创建、覆盖或编辑项目文件。', 'create'),
+  field(prefix + 'path', 'string', true, '项目相对路径。', 'draft.md'),
+  field(prefix + 'preview', 'string', true, '原内容和新内容的有限预览，过长时显式注明省略。', '写入后…'),
+  field(prefix + 'expiresAt', 'string', true, '决定可提交的截止时间（ISO 8601）。', '2026-11-20T00:00:00.000Z'),
+];
+const questionId = '018cc233-92bc-7e51-abe9-63a0e8b3a30b';
+const questionFields = (prefix: string) => [
+  field(prefix + 'id', 'string', true, '本题唯一 ID，用于提交答案。', questionId),
+  field(prefix + 'callId', 'string', true, '关联工具调用的 ID。', 'ask-user-1'),
+  field(prefix + 'question', 'string', true, 'Agent 提出的问题。', '采用哪个叙事视角？'),
+  field(prefix + 'options', 'array', true, '有序单选列表。提交序号从 1 开始。', '["第一人称","第三人称"]'),
+];
 const status = field('status', 'idle | running', true, 'idle 可写入；running 正在生成、改配置或压缩，此时写入返回 409。', 'idle');
 const thinking = field('thinkingLevel', 'off | minimal | low | medium | high | xhigh | max', true, '实际生效的思考档位；可选值以模型 thinkingLevels 为准，不保证有可见思考。', 'low');
 const optionalThinking = { ...thinking, required: false };
 const autoCompaction = field('autoCompaction', 'boolean', true, '当前会话是否启用 Pi 自动压缩，默认 true；关闭不影响手动压缩，重启和资源重建后保留。', 'true');
 const name = field('name', 'string', true, '会话名称，去除首尾空白后保存；请求为 1–120 字符且不能全空白。', '灯塔创作');
-const projectPath = field('projectPath', 'string', false, '可选的本机现存项目绝对目录。创建时规范化并固定，重启保留；项目工具直接执行，没有沙箱或审批。省略不开放项目工具。', 'D:/projects/example');
-const activity = field('activity', 'idle | generating | configuring | compacting', true, '当前正在执行的操作。', 'idle');
+const projectPath = field('projectPath', 'string', false, '本机现存项目绝对目录。项目会话创建时规范化并固定，小说会话省略。项目文件变更需要审批。', 'D:/projects/example');
+const activity = field('activity', 'idle | generating | awaiting_approval | awaiting_answer | configuring | compacting', true, '会话活动。awaiting_approval 待审批，awaiting_answer 待回答；两者均保持 running，可处理或停止。', 'idle');
 const capabilities = [
   field('reasoning', 'boolean', true, '模型定义是否支持思考能力；不代表上游必然公开思考文本。', 'true'),
   field('thinkingLevels', 'array', true, 'SDK 对该模型允许的档位。', '["off","low","high"]'),
@@ -55,10 +71,12 @@ const modelConfig = [
 const summary = [id, provider, model, status, activity, name, thinking, projectPath];
 const configExample = { provider: 'krill-ai-codex', model: 'gpt-5.6-sol', configured: true, thinkingLevel: 'off' };
 const sessionExample = { id: '019-example-session', provider: 'krill-ai-codex', model: 'gpt-5.6-sol', status: 'idle', activity: 'idle', name: '灯塔创作', thinkingLevel: 'off' };
-const sessionConfig = [id, provider, model, thinking, autoCompaction, field('capabilities', 'object', true, '当前模型能力。', '{}'), ...capabilities.map((item) => ({ ...item, name: `capabilities.${item.name}` }))];
+const projectApprovalMode = field('projectApprovalMode', 'required | full_access', false, '仅项目会话。required 为默认逐次审批；full_access 免项目文件写入审批，项目文件范围仍适用。', 'required');
+const sessionConfig = [id, provider, model, thinking, autoCompaction, projectApprovalMode, field('capabilities', 'object', true, '当前模型能力。', '{}'), ...capabilities.map((item) => ({ ...item, name: `capabilities.${item.name}` }))];
 const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', autoCompaction: true, capabilities: capabilityExample };
 
 export const API_MODULES = [
+  { id: 'agent-profile', name: 'Agent 人设', description: '首用引导和全局协作偏好', number: '14' },
   { id: 'projects', name: '项目', description: '系统选择文件夹、登记项目及切换已有项目', number: '13' },
   { id: 'attachments', name: '聊天附件', description: '上传、读取及移除当前会话资料', number: '12' },
   { id: 'writing', name: '内容创作', description: '大纲留档、上下文、创作与来源', number: '11' },
@@ -79,7 +97,37 @@ const providerFields = [
   field('enabled','boolean',false,'是否允许模型调用，缺省开启。','true'), field('endpoints','array',false,'额外端点，每个对象含唯一 api 和 baseUrl。','[]'),
   field('modelApis','object',false,'模型 ID 到端点协议的映射，缺省使用主端点。','{}'),
 ];
+const projectWriteExample = { id: '2ac5774e-45da-474e-b34d-e8c7c960605a', path: 'README.md', operation: 'edit', createdAt: '2026-11-21T08:00:00.000Z' };
+const projectWriteFields = [
+  field('id', 'string', true, '单次 Agent 写入记录 ID。', projectWriteExample.id),
+  field('path', 'string', true, '项目内相对路径，统一使用 /。', projectWriteExample.path),
+  field('operation', 'create | overwrite | edit', true, '新建、覆盖或局部编辑。', 'edit'),
+  field('createdAt', 'string', true, '写入记录时间，ISO 8601。', projectWriteExample.createdAt),
+];
+
+const agentPersonaFields = [
+  field('name', 'string', true, 'Agent 的称呼。最多 40 字符，留空沿用默认。', '小舟'),
+  field('style', 'string', true, '沟通风格。最多 160 字符，留空沿用默认。', '简洁直率'),
+  field('preferences', 'string', true, '协作偏好。最多 1000 字符，留空沿用默认。', '先列出分歧，再给出选项。'),
+];
+const agentProfileResponse = [
+  field('setup', 'pending | skipped | configured', true, '首用状态，分别表示待引导、已跳过和已保存。', 'pending'),
+  ...agentPersonaFields,
+];
+const agentPersonaExample = { name: '小舟', style: '简洁直率', preferences: '先列出分歧，再给出选项。' };
+
 export const API_CATALOG: readonly EndpointDoc[] = [
+  { id: 'agent-profile.get', module: 'agent-profile', name: '读取全局人设', method: 'GET', path: '/api/agent-profile', success: 200,
+    description: '读取所有项目会话与小说会话共用的 Agent 人设及首用状态。',
+    note: '全新本机数据目录返回 pending 和空字段。异源浏览器请求返回 403 ORIGIN_FORBIDDEN。',
+    request: [], response: agentProfileResponse, examples: [], responseExample: { setup: 'pending', name: '', style: '', preferences: '' } },
+  { id: 'agent-profile.update', module: 'agent-profile', name: '保存人设或跳过引导', method: 'PUT', path: '/api/agent-profile', success: 200,
+    description: '保存全局人设，或结束首用引导。配置写入本机，下一轮新请求开始时读取。',
+    note: 'save 全量提交三项字段，skip 仅提交 action 且只结束未完成引导。无效操作、缺字段、多余字段或超长文本返回 400 INVALID_REQUEST。异源请求返回 403 ORIGIN_FORBIDDEN。',
+    request: [field('action', 'save | skip', true, '保存人设或跳过首用引导。', 'save'),
+      ...agentPersonaFields.map(item => ({ ...item, required: false, description: 'save 时必填。' + item.description }))],
+    response: agentProfileResponse, examples: [{ name: '保存全局人设', body: { action: 'save', ...agentPersonaExample } },
+      { name: '跳过首用引导', body: { action: 'skip' } }], responseExample: { setup: 'configured', ...agentPersonaExample } },
   { id: 'providers.credential', module: 'models', name: '复制供应商凭据', method: 'POST', path: '/api/providers/:providerId/credential', success: 200,
     description: '为明确的复制动作读取有效 API Key。', note: '仅用隔离测试凭据验收。响应禁用缓存。400 请求需为空 JSON 对象；403 异站；404 供应商不存在；422 缺凭据。',
     request: [field('providerId','string',true,'供应商标识。','example')], examples: [{ name: '复制测试供应商凭据', body: {} }],
@@ -186,17 +234,17 @@ export const API_CATALOG: readonly EndpointDoc[] = [
     examples: [{ name: '选择模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }], responseExample: configExample,
   },
   {
-    id: 'sessions.create', module: 'sessions', name: '创建会话', method: 'POST', path: '/api/sessions', success: 201,
-    description: '创建一个独立的 Agent 会话，用来开始对话、调用工具与保存生成结果。',
-    note: '空会话立即保存。未指定名称时显示“新聊天”，首轮按原始提示词前 16 个字符命名。provider/model 必须同时提供。projectPath 必须是已存在且可访问的绝对目录，否则 422 PROJECT_PATH_INVALID；不自动创建目录。项目聊天启用 Pi 原生 read/grep/find/ls/edit/write 及平台终端（Windows powershell，其他平台 bash）。目录固定，切换需新建聊天。',
-    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, projectPath], response: summary,
-    examples: [{ name: '使用默认模型', body: {} }, { name: '项目聊天', body: { name: '项目任务', projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
-    responseExample: sessionExample,
+    id: 'sessions.create', module: 'sessions', name: '创建项目会话', method: 'POST', path: '/api/sessions', success: 201,
+    description: '创建绑定本机目录的项目会话。小说会话使用 /api/workspaces/:workspaceId/sessions。',
+    note: '空会话立即保存。未指定名称时显示“新聊天”，首轮按原始提示词前 16 个字符命名。provider/model 必须同时提供。缺少 projectPath 返回 400 INVALID_REQUEST；目录必须是已存在且可访问的绝对目录，否则返回 422 PROJECT_PATH_INVALID。可用项目工具和条件见 GET /api/tools。目录固定，切换需新建聊天。',
+    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, { ...projectPath, required: true }], response: summary.map(value => value.name === 'projectPath' ? { ...value, required: true } : value),
+    examples: [{ name: '使用默认模型', body: { projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { projectPath: 'D:/projects/example', provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
+    responseExample: { ...sessionExample, projectPath: 'D:/projects/example' },
   },
   {
     id: 'sessions.project-files', module: 'sessions', name: '搜索项目文件', method: 'POST', path: '/api/sessions/:id/project-files', success: 200,
     description: '按相对路径关键词搜索当前项目，为聊天 @ 引用提供文件和目录候选。',
-    note: 'query 可为空，大小写不敏感，返回最多 40 项、扫描最多 5000 项；跳过依赖/构建/版本目录及符号链接。truncated 表示达到限额，可细化关键词。没有项目 409 PROJECT_NOT_SELECTED；未知会话 404 SESSION_NOT_FOUND；项目不可用 422 PROJECT_PATH_INVALID；请求非法 400 INVALID_REQUEST。返回相对路径，不读取内容；引用由 Agent 工具实际读取，不是版本快照。',
+    note: 'query 可为空，大小写不敏感，返回最多 40 项、扫描最多 5000 项；跳过依赖目录、构建目录、隐藏与敏感名称、链接及应用数据。truncated 表示达到限额。没有项目 409 PROJECT_NOT_SELECTED；未知会话 404 SESSION_NOT_FOUND；项目不可用 422 PROJECT_PATH_INVALID；禁止访问 403 PROJECT_FILES_UNAVAILABLE；非法请求 400 INVALID_REQUEST。返回相对路径和名称，内容由 Agent 工具实际读取。',
     request: [id, field('query', 'string', true, '路径关键词，最多 200 字符，空字符串列出候选。', 'README')],
     response: [field('entries', 'array', true, '匹配的文件和目录。', '[]'), field('entries[].path', 'string', true, '项目相对路径。', 'README.md'),
       field('entries[].name', 'string', true, '文件或目录名。', 'README.md'), field('entries[].isDirectory', 'boolean', true, '是否目录。', 'false'),
@@ -205,9 +253,36 @@ export const API_CATALOG: readonly EndpointDoc[] = [
     responseExample: { entries: [{ path: 'README.md', name: 'README.md', isDirectory: false }], truncated: false },
   },
   {
+    id: 'sessions.project-writes', module: 'sessions', name: '列出 Agent 文件写入', method: 'GET', path: '/api/sessions/:id/project-writes', success: 200,
+    description: '查询当前项目会话成功写入的文件记录，按写入顺序排列。',
+    note: '同一文件连续写入时生成独立记录。待审批、拒绝、取消及未执行的写入不出现。旧会话从开始记录起可查询；无记录返回空数组。未知会话返回 404 SESSION_NOT_FOUND，小说会话返回 409 PROJECT_NOT_SELECTED，参数非法返回 400 INVALID_REQUEST。',
+    request: [id], examples: [],
+    response: [field('changes', 'array', true, '成功写入记录的摘要列表。', '[]'),
+      ...projectWriteFields.map(value => ({ ...value, name: 'changes[].' + value.name }))],
+    responseExample: { changes: [projectWriteExample] },
+  },
+  {
+    id: 'sessions.project-write-diff', module: 'sessions', name: '读取单次文件对比', method: 'GET', path: '/api/sessions/:id/project-writes/:writeId', success: 200,
+    description: '对比当前会话一条写入记录的修改前后内容，不读取文件当前版本。',
+    note: '未知会话返回 404 SESSION_NOT_FOUND，未知或其他会话的记录返回 404 PROJECT_WRITE_NOT_FOUND，小说会话返回 409 PROJECT_NOT_SELECTED，非法参数返回 400 INVALID_REQUEST，计算超时返回 422 PROJECT_DIFF_TOO_COMPLEX。',
+    request: [id, field('writeId', 'string', true, '从当前会话的文件写入列表获取。', projectWriteExample.id)], examples: [],
+    response: [...projectWriteFields,
+      field('added', 'number', true, '新增行总数。', '1'), field('removed', 'number', true, '删除行总数。', '1'),
+      field('blocks', 'array', true, '按文件内容顺序排列的差异块。', '[]'),
+      field('blocks[].kind', 'context | added | removed', true, '未变更、新增或删除。', 'added'),
+      field('blocks[].beforeStart', 'number | null', true, '修改前的起始行号，从 1 开始；新增块为 null。', 'null'),
+      field('blocks[].afterStart', 'number | null', true, '修改后的起始行号，从 1 开始；删除块为 null。', '1'),
+      field('blocks[].lines', 'array', true, '该块每行文本，包含原始行尾换行符。', '["新内容\\n"]'),
+      field('blocks[].lines[]', 'string', true, '单行原文。', '新内容')],
+    responseExample: { ...projectWriteExample, added: 1, removed: 1, blocks: [
+      { kind: 'removed', beforeStart: 1, afterStart: null, lines: ['旧内容\n'] },
+      { kind: 'added', beforeStart: null, afterStart: 1, lines: ['新内容\n'] },
+    ] },
+  },
+  {
     id: 'sessions.list', module: 'sessions', name: '获取会话列表', method: 'GET', path: '/api/sessions', success: 200,
     description: '列出本机已保存的会话，查看所属模型、更新时间和当前运行状态。',
-    note: '服务重启后，已保存的会话仍会出现在列表中。选择一个会话可直接继续检查。',
+    note: '项目和小说会话重启后保留，包括已归档会话。升级时会清理没有项目或小说归属的旧会话及其专属数据。',
     request: [], examples: [],
     response: [field('sessions', 'array', true, '已保存的会话集合，空列表为 []。', '[]'),
       ...summary.map((item) => ({ ...item, name: `sessions[].${item.name}` })),
@@ -219,9 +294,21 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   {
     id: 'sessions.get', module: 'sessions', name: '读取会话详情', method: 'GET', path: '/api/sessions/:id', success: 200,
     description: '打开已保存的会话，读取历史消息；生成中可查看当前文本快照。',
-    note: '断流或刷新后用此接口核对结果。stream: 前缀代表临时快照，完成后以保存的消息 ID 为准；同一 turnId 组织一轮用户请求及其全部过程。phase=answer 只在 SDK 确认不再调用工具后出现，不能用首个文本增量猜测。retryMessageId 是可重试的最新用户消息；旧记录没有请求快照时省略。未知会话返回 404 SESSION_NOT_FOUND。',
+    note: '断流或刷新后用此接口核对结果。stream: 前缀代表临时快照，完成后以保存的消息 ID 为准；同一 turnId 组织一轮用户请求及其全部过程。phase=answer 只在 SDK 确认不再调用工具后出现，不能用首个文本增量猜测。retryMessageId 是可重试的最新用户消息；旧记录没有请求快照时省略。包含已结束且有实际写入的轮次文件摘要；行级计算超时的文件统计为 null。未知会话返回 404 SESSION_NOT_FOUND。',
     request: [id], examples: [],
     response: [...summary,
+      field('pendingApprovals', 'array', false, '当前会话待审批请求。刷新后从这里恢复审批入口。', '[]'),
+      ...approvalFields('pendingApprovals[].').map(item => ({ ...item, required: false })),
+      field('pendingQuestion', 'object', false, '当前待回答问题。刷新后从这里恢复。', '{"id":"question-id","callId":"ask-user-1","question":"采用哪个叙事视角？","options":["第一人称","第三人称"]}'),
+      ...questionFields('pendingQuestion.').map(item => ({ ...item, required: false })),
+      field('fileChanges', 'array', false, '包含成功写入的已结束轮次；生成中及无记录时省略对应轮次。', '[]'),
+      field('fileChanges[].turnId', 'string', false, '与同轮消息一致的轮次 ID。', 'turn-1'),
+      field('fileChanges[].files', 'array', false, '按首次写入顺序排列，一个文件仅出现一次。', '[]'),
+      field('fileChanges[].files[].path', 'string', false, '项目相对路径。', 'README.md'),
+      field('fileChanges[].files[].added', 'number | null', false, '连续写入合并后的新增行数，超时返回 null。', '8'),
+      field('fileChanges[].files[].removed', 'number | null', false, '连续写入合并后的删除行数，超时返回 null。', '2'),
+      field('fileChanges[].files[].writeIds', 'array', false, '该文件本轮实际写入 ID，按写入顺序排列。', '[]'),
+      field('fileChanges[].files[].writeIds[]', 'string', false, '可查单次文件差异的写入记录标识。', projectWriteExample.id),
       field('retryMessageId', 'string', false, '可重放最新一轮的用户消息 ID；生成中禁用，调用 retry 时提交此值。', 'e2ab17'),
       field('messages', 'array', true, '用户、助手及工具消息，按对话顺序排列。', '[]'),
       field('messages[].id', 'string', true, '已保存消息 ID 重启后稳定；临时快照 ID 以 stream: 开头。', 'e2ab17'),
@@ -251,23 +338,25 @@ export const API_CATALOG: readonly EndpointDoc[] = [
       field('messages[].references', 'array', false, '本轮文档引用和实际内容快照，原稿后续变化不改变历史。', '[]'),
       ...REFERENCE_FIELDS.map(item => ({ ...item, name: `messages[].references[].${item.name}`, required: false })),
       field('messages[].references[].content', 'string', false, '实际传入模型的指定版本全文或选区原文。', '林舟')],
-    responseExample: { ...sessionExample, messages: [{ id: 'tool-1', role: 'tool', turnId: 'turn-1', content: [{ type: 'tool', name: 'web_fetch',
+    responseExample: { ...sessionExample, fileChanges: [{ turnId: 'turn-1', files: [{ path: 'README.md', added: 8, removed: 2,
+      writeIds: [projectWriteExample.id] }] }], messages: [{ id: 'tool-1', role: 'tool', turnId: 'turn-1', content: [{ type: 'tool', name: 'web_fetch',
       callId: 'call-1', status: 'completed', source: { id: 'source-id', title: 'Example Domain', url: 'https://example.com/' } }] },
     { id: 'e2ab17', role: 'assistant', turnId: 'turn-1', phase: 'answer', content: [{ type: 'text', text: '该页面用于示例。[来源](#plotloom-source-source-id)' }],
       citations: [{ id: 'source-id', title: 'Example Domain', url: 'https://example.com/' }], outcome: 'completed' }] },
   },
   {
     id: 'sessions.get-config', module: 'sessions', name: '读取会话配置', method: 'GET', path: '/api/sessions/:id/config', success: 200,
-    description: '读取会话自己的模型、思考档位、自动压缩开关及模型能力。', note: '不会修改全局默认值；没有凭据仍可读取已注册模型的信息。autoCompaction 与上下文查询一致。',
+    description: '读取会话的模型、思考档位、自动压缩、模型能力和项目审批模式。', note: '审批模式仅在项目会话返回；历史项目会话默认为 required。autoCompaction 与上下文查询一致。',
     request: [id], response: sessionConfig, examples: [], responseExample: sessionConfigExample,
   },
   {
     id: 'sessions.set-config', module: 'sessions', name: '修改会话配置', method: 'PUT', path: '/api/sessions/:id/config', success: 200,
-    description: '修改当前会话的模型、思考强度或自动压缩开关，保留历史并持久保存。',
-    note: '至少传一个配置项，未传项保持不变；provider/model 必须成对。autoCompaction 仅接受布尔值，单独修改不要求模型凭据，也不立即触发压缩。非法参数返回 400 INVALID_REQUEST；会话不存在返回 404 SESSION_NOT_FOUND；忙时返回 409 SESSION_BUSY，请等待或停止后重试。模型/档位错误返回 422，混合请求不会先修改开关。关闭仅禁用自动压缩，手动压缩仍可用。',
-    request: [id, { ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...autoCompaction, required: false }], response: sessionConfig,
+    description: '修改并保存当前会话的模型、思考强度、自动压缩或项目审批模式。',
+    note: '至少传一个配置项，provider/model 必须成对。autoCompaction 和 projectApprovalMode 可独立修改。小说会话提交审批模式返回 409 PROJECT_NOT_SELECTED。非法参数返回 400 INVALID_REQUEST；会话不存在返回 404 SESSION_NOT_FOUND；忙碌或待审批时返回 409 SESSION_BUSY。模型或档位错误返回 422。关闭自动压缩仍可手动压缩。',
+    request: [id, { ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...autoCompaction, required: false }, projectApprovalMode], response: sessionConfig,
     examples: [{ name: '调整思考档位', body: { thinkingLevel: 'low' } }, { name: '切换模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } },
-      { name: '关闭自动压缩', body: { autoCompaction: false } }, { name: '开启自动压缩', body: { autoCompaction: true } }], responseExample: sessionConfigExample,
+      { name: '关闭自动压缩', body: { autoCompaction: false } }, { name: '开启自动压缩', body: { autoCompaction: true } },
+      { name: '项目写入需要审批', body: { projectApprovalMode: 'required' } }, { name: '项目写入免逐次审批', body: { projectApprovalMode: 'full_access' } }], responseExample: sessionConfigExample,
   },
   {
     id: 'sessions.rename', module: 'sessions', name: '修改会话名称', method: 'PUT', path: '/api/sessions/:id/name', success: 200,
@@ -276,11 +365,11 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   },
   {
     id: 'sessions.tools', module: 'sessions', name: '读取会话工具', method: 'GET', path: '/api/sessions/:id/tools', success: 200,
-    description: '查询注册工具、参数结构与当前启用情况。', note: '仅查询，不提供动态启停；parameters 是公开 JSON Schema。项目会话包含原生文件工具及平台终端，普通无项目会话不因此获得这些能力。项目工具直接执行，cwd 不是访问沙箱。',
+    description: '查询注册工具、参数结构与当前启用情况。', note: 'parameters 是公开 JSON Schema；供查询使用。普通、项目和小说会话均提供 browser、web_fetch。项目文件工具限制在所选项目内，写入变更需要审批。未知会话返回 404 SESSION_NOT_FOUND。',
     request: [id], examples: [], response: [id, field('tools', 'array', true, '会话注册工具。', '[]'),
-      field('tools[].name', 'string', true, '调用工具的标识。', 'read_fixture'), field('tools[].description', 'string', true, '工具职责和使用说明。', '读取测试资料'),
+      field('tools[].name', 'string', true, '调用工具的标识。', 'read'), field('tools[].description', 'string', true, '工具职责和使用说明。', '读取项目文本文件'),
       field('tools[].parameters', 'object', true, '工具参数 JSON Schema。', '{"type":"object"}'), field('tools[].active', 'boolean', true, '当前是否启用。', 'true')],
-    responseExample: { id: sessionExample.id, tools: [{ name: 'read_fixture', description: '读取测试资料', parameters: { type: 'object' }, active: true }] },
+    responseExample: { id: sessionExample.id, tools: [{ name: 'read', description: '读取项目文本文件', parameters: { type: 'object' }, active: true }] },
   },
   {
     id: 'context.get', module: 'context', name: '读取上下文占用', method: 'GET', path: '/api/sessions/:id/context', success: 200,
@@ -316,35 +405,65 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   {
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
     description: '向指定会话提交一条消息，并实时接收文本、工具调用和最终状态。后端每轮按本机时区提供当前日期，内部日期上下文追加于历史末尾，不改写系统提示和旧消息，也不展示为用户正文。',
-    note: '同一会话一次只处理一条请求。小说聊天自动获得当前书籍读取、搜索、审校与候选工具，生成记录可从 writing 查询；普通聊天没有小说工具。新章节及精确选区请用内容创作接口。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
+    note: '同一会话一次只处理一条请求。全局人设待设置时，Agent 可在对话中引导，通过 user_answer_required 请求确认保存或结束引导；确认前不会写入。小说聊天自动获得当前书籍读取、搜索、审校与候选工具，生成记录可从 writing 查询；项目聊天使用项目工具。新章节及精确选区请用内容创作接口。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
     request: [id, field('text', 'string', false, '最多 100000 字符；文字、附件或文档引用至少有一项有效内容，纯附件/引用可省略。请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]'), ...SOURCE_REQUEST_FIELDS],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
     examples: [
       { name: '核对当前日期', body: { text: '今天是几号、星期几？请说明使用的时区。' } },
-      { name: '读取资料与候选', body: { text: '请调用 read_fixture 读取 scene，写出核对标记并给出 A、B 两个行动候选，然后等待我选择。' } },
+      { name: '读取资料与候选', body: { text: '请读取项目中的 README.md，根据内容给出 A、B 两个行动候选，然后等待我选择。' } },
       { name: '继续上一轮', body: { text: '我选择 A。复述核对标记，再继续约 100 字，不重新调用工具。' } },
       { name: '测试长文本与停止', body: { text: '请直接写一段约 2000 字的灯塔暴雨描写，不调用工具。' } },
       { name: '显式使用已启用技能', body: { text: '请按所选技能处理这段对白。', skillIds: ['替换为已启用技能ID'] } },
       { name: '发送当前聊天附件', body: { text: '请根据附件整理线索。', attachmentIds: ['替换为附件ID'] } },
       { name: '访问浏览器并引用网页', body: { text: '使用 browser 打开 https://example.com，读取页面标题与正文，简要总结并在结论旁引用网页来源。' } },
       { name: '写项目文件', body: { text: '在当前项目创建 plotloom-check.md，写入「Plotloom 文件写入验证」，然后读取核对内容。' } },
+      { name: '让 Agent 提问', body: { text: '请调用 ask_user 询问我想采用「第一人称」还是「第三人称」，等我回答后再写一句示例。' } },
+      { name: '首次对话设定 Agent 人设', body: { text: '你好！我想叫你小舟。请用简洁的语气跟我协作，先给结论。' } },
       { name: '引用工作区文档', body: { text: '请核对这份资料。', references: [{ workspaceId: '替换为工作区ID', path: '角色/林舟.md', version: 'a'.repeat(64) }] } },
     ],
     responseExample: { event: 'text_delta', data: { sessionId: '019-example-session', delta: '灯塔-731。' } },
   },
   {
+    id: 'generation.answer-question', module: 'generation', name: '回答 Agent 提问', method: 'POST',
+    path: '/api/sessions/:id/questions/:questionId/answer', success: 200,
+    description: '提交选择、自填答案或跳过。首用人设确认卡选择第一项后，原工具负责保存或结束引导。答案仅接收一次，原生成流继续运行并最终发送 completed、aborted 或 failed。',
+    note: '从 user_answer_required 事件或会话详情 pendingQuestion 取得题目 ID。400 INVALID_REQUEST 参数错误，404 SESSION_NOT_FOUND 会话未知，409 QUESTION_UNAVAILABLE 问题已回答、已取消或不属于当前会话，422 INVALID_QUESTION_OPTION 选项不存在。',
+    request: [id, field('questionId', 'string', true, '待回答问题 ID。', questionId),
+      field('kind', 'option | custom | skip', true, '选项、自填或跳过。', 'option'),
+      field('index', 'number', false, '仅 option 必填，当前题目从 1 开始的整数序号。', '1'),
+      field('text', 'string', false, '仅 custom 必填，非空，最多 2000 字符。', '结合书信体叙述')],
+    response: [field('id', 'string', true, '已回答的问题 ID。', questionId),
+      field('kind', 'option | custom | skip', true, '已接收的回答方式。', 'option')],
+    examples: [{ name: '选择第一项', body: { kind: 'option', index: 1 } },
+      { name: '自行回答', body: { kind: 'custom', text: '结合书信体叙述' } }, { name: '跳过', body: { kind: 'skip' } }],
+    responseExample: { id: questionId, kind: 'option' },
+  },
+  {
     id: 'generation.retry', module: 'generation', name: '重试最新一轮', method: 'POST', path: '/api/sessions/:id/retry', success: 200, stream: true,
-    description: '保留历史，重新执行最新用户请求，包括原文字、附件、文档引用和显式技能；日期上下文取本次执行时的本机日期和时区，不沿用原请求日期。',
-    note: '先读取会话的 retryMessageId 再提交。该操作会重新调用模型与工具，包括再次写文件或操作浏览器；不是撤销。使用当前会话模型和当前启用技能。400 INVALID_REQUEST 参数非法；404 SESSION_NOT_FOUND；409 SESSION_BUSY 正在运行，409 RETRY_UNAVAILABLE 目标不是最新请求或缺少请求快照；来源/模型校验失败沿用发送消息的 422/404/403。接受后 SSE 与发送消息一致，唯一结束事件 completed/failed/aborted；断开不停止。',
+    description: '保留历史并重新执行最新用户请求。通用消息重放文字、附件、文档引用和显式技能。结构化创作重放任务、目标与选区、大纲、参考资料版本和字符预算，并沿用已保存的模型、思考档位和压缩设置。日期上下文取本次执行时的本机日期和时区，不沿用原请求日期。',
+    note: '先读取会话的 retryMessageId 再提交。重新调用模型与工具，项目写入重新请求批准。通用消息和无配置快照的旧创作轮次使用当前模型与启用技能。400 INVALID_REQUEST 参数非法；404 SESSION_NOT_FOUND；409 SESSION_BUSY 正在运行，409 RETRY_UNAVAILABLE 目标过期、缺少原请求或创作技能版本/配置不可重现，409 REVISION_CONFLICT 创作目标或资料的版本已变化；来源、技能与模型错误沿用原发送接口。SSE 与发送消息一致，唯一结束事件 completed/failed/aborted；断开不停止。',
     request: [id, field('messageId', 'string', true, '会话详情 retryMessageId，必须仍是最新用户消息。', '替换为 retryMessageId')],
     response: [field('sessionId', 'string', true, '每个 SSE 事件均包含会话 ID。', '019…')],
-    examples: [{ name: '重放最新请求', body: { messageId: '替换为 retryMessageId' } }],
+    examples: [{ name: '重放最新请求', body: { messageId: '替换为 retryMessageId' } },
+      { name: '重放最近一次结构化创作', body: { messageId: '替换为创作会话的 retryMessageId' } }],
     responseExample: { event: 'accepted', data: { sessionId: '019-example-session', messageId: 'new-user-message' } },
+  },
+  {
+    id: 'generation.tool-approval', module: 'generation', name: '决定工具审批', method: 'POST',
+    path: '/api/sessions/:id/tool-approvals/:approvalId', success: 200,
+    description: '批准一次文件变更或拒绝。响应代表决定已接收，工具结果见原消息流或会话详情。',
+    note: '使用 tool_approval_required 或会话详情中的待审批 ID。非法参数 400，未知会话 404，已决定、取消、过期或会话不符返回 409 TOOL_APPROVAL_UNAVAILABLE。',
+    request: [id, field('approvalId', 'string', true, '待审批请求路径参数。', '018cc233-92bc-7e51-abe9-63a0e8b3a30b'),
+      field('decision', 'approve | deny', true, '允许一次或拒绝。', 'approve')],
+    response: [field('id', 'string', true, '已决定的审批 ID。', '018cc233-92bc-7e51-abe9-63a0e8b3a30b'),
+      field('decision', 'approve | deny', true, '已接受的决定。', 'approve')],
+    examples: [{ name: '允许一次', body: { decision: 'approve' } }, { name: '拒绝', body: { decision: 'deny' } }],
+    responseExample: { id: '018cc233-92bc-7e51-abe9-63a0e8b3a30b', decision: 'approve' },
   },
   {
     id: 'generation.stop', module: 'generation', name: '停止生成', method: 'POST', path: '/api/sessions/:id/stop', success: 200,
     description: '主动停止指定会话的当前生成，等待结果保存后返回空闲状态。',
-    note: '空闲会话重复停止仍返回 idle。也会取消手动压缩；消息流收到 aborted，压缩请求返回 outcome: aborted。',
+    note: '空闲会话重复停止仍返回 idle。取消待回答问题、待审批请求或手动压缩；消息流收到 aborted，压缩请求返回 outcome: aborted。',
     request: [id], response: [id, status], examples: [], responseExample: { id: '019-example-session', status: 'idle' },
   },
 ];
@@ -353,8 +472,10 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
   { name: 'accepted', description: '消息已接受并保存。', fields: [field('messageId', 'string', true, '已保存用户消息 ID，可在会话详情中找到。', 'e2ab17')] },
   { name: 'text_delta', description: '追加一段模型原文；网页引用标记可能跨增量，最终校验结果见会话详情的 citations。', fields: [field('delta', 'string', true, '本次增量，需要顺序追加。', '灯塔')] },
   { name: 'thinking_delta', description: '追加模型实际返回的可见思考文本，与正文分开展示。', fields: [field('delta', 'string', true, '只含文本；没有该事件不代表未进行推理。', '先整理线索')] },
-  { name: 'tool_start', description: '工具开始执行。', fields: [field('callId', 'string', true, '工具调用 ID。', 'read-1'), field('name', 'string', true, '工具名称。', 'read_fixture')] },
-  { name: 'tool_end', description: '工具执行结束，完整结果由会话查询读取。', fields: [field('callId', 'string', true, '关联开始事件。', 'read-1'), field('name', 'string', true, '工具名称。', 'read_fixture'), field('outcome', 'completed | failed', true, '工具执行结果。', 'completed')] },
+  { name: 'tool_start', description: 'SDK 开始处理工具调用；写入可能进入待审批。', fields: [field('callId', 'string', true, '工具调用 ID。', 'read-1'), field('name', 'string', true, '工具名称。', 'read')] },
+  { name: 'tool_approval_required', description: '项目文件变更等待一次性审批；停止会取消等待。', fields: approvalFields('approval.') },
+  { name: 'user_answer_required', description: 'Agent 等待用户回答，消息流保持开启；提交答案、跳过或停止可结束等待。', fields: questionFields('question.') },
+  { name: 'tool_end', description: '工具执行结束，完整结果由会话查询读取。', fields: [field('callId', 'string', true, '关联开始事件。', 'read-1'), field('name', 'string', true, '工具名称。', 'read'), field('outcome', 'completed | failed', true, '工具执行结果。', 'completed')] },
   { name: 'retrying', description: '有限重试进行中，还不是最终失败。', fields: [field('attempt', 'number', true, '当前重试次数。', '1'), field('maxAttempts', 'number', true, '最大重试次数。', '2')] },
   { name: 'compacting', description: '自动压缩上下文，结束后继续等待最终事件。', fields: [field('phase', 'start | end', true, '压缩开始或结束。', 'start')] },
   { name: 'completed', description: '整轮请求最终完成。', fields: [field('usage', 'object', false, 'SDK 提供的整轮用量；缺失不代表无消耗。', '{}'),
@@ -364,8 +485,10 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
 ];
 
 export const API_ERRORS = [
+  { status: '422', code: 'INVALID_QUESTION_OPTION', description: '选项序号超出当前题目范围。' },
+  { status: '409', code: 'QUESTION_UNAVAILABLE', description: '问题已处理、已取消或不属于当前会话。' },
   { status: '404', code: 'ATTACHMENT_NOT_FOUND / REFERENCE_NOT_FOUND', description: '附件不属于当前会话或指定文档版本不存在；重新查询附件或文档历史。' },
-  { status: '403', code: 'REFERENCE_FORBIDDEN', description: '小说聊天不能引用其他工作区资料；普通聊天可显式引用已登记工作区。' },
+  { status: '403', code: 'REFERENCE_FORBIDDEN', description: '小说聊天不能引用其他工作区资料；项目聊天可显式引用已登记工作区。' },
   { status: '409', code: 'ATTACHMENT_IN_USE', description: '已发送附件必须保留以供历史读取，不能删除；可在下一轮不选用。' },
   { status: '422', code: 'ATTACHMENT_TYPE_UNSUPPORTED / ATTACHMENT_TOO_LARGE / ATTACHMENT_IMAGE_INVALID', description: '文件类型、大小或图片内容无效；检查允许类型及限额后重新上传。' },
   { status: '422', code: 'MODEL_IMAGE_UNSUPPORTED / MESSAGE_SOURCES_TOO_LARGE / MESSAGE_SOURCES_UNAVAILABLE', description: '模型不支持图片、引用超预算或宿主未配置资料能力；请求在 SSE 开始前拒绝，不写用户消息。' },

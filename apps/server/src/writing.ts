@@ -1,6 +1,7 @@
 import type { BusinessTool, RequestResources } from '@plotloom/agent-pi';
-import { WritingService, writingPrompt } from '@plotloom/application/writing';
-import type { WritingRequest } from '@plotloom/contracts/writing';
+import { WritingService, WRITING_ENTRY, writingPrompt } from '@plotloom/application/writing';
+import type { SubmitMessageRequest } from '@plotloom/contracts';
+import type { WritingRecord, WritingRequest } from '@plotloom/contracts/writing';
 
 export const objectSchema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: 'object', properties, required, additionalProperties: false });
 export const pathSchema = { type: 'string', minLength: 1, maxLength: 500 };
@@ -15,6 +16,23 @@ export const writingSchema = objectSchema({
   maxOutputChars: { type: 'integer', minimum: 200, maximum: 20000 },
   skillIds: { type: 'array', maxItems: 50, uniqueItems: true, items: { type: 'string', pattern: '^[a-zA-Z0-9-]{1,80}$' } },
 }, ['task', 'instructions']);
+
+/** 旧版本在轮次开始前保存初始上下文。只恢复明确来自创作接口的参数，普通讨论仍由消息入口装配。 */
+export function recoverWritingInput(request: SubmitMessageRequest, entries: ReadonlyMap<string, unknown>): WritingRequest | undefined {
+  const saved = entries.get(WRITING_ENTRY) as WritingRecord | undefined;
+  if (!saved || saved.outcome !== 'running' || saved.context.instructions !== request.text) return;
+  const { task, target, sources, instructions, maxOutputChars } = saved.context;
+  const materials = sources.flatMap(({ path, version, selection, role }) =>
+    role === 'target' || version === null ? [] : [{ path, version, role, ...(selection ? { selection } : {}) }]);
+  // 普通讨论可从通用消息记录完整恢复。带独立素材、目标或预算的讨论来自创作接口。
+  if (task === 'discuss' && !target && maxOutputChars === 8000 &&
+    (request.references?.length || materials.length === 0)) return;
+  const outline = task === 'chapter' ? materials.shift() : undefined;
+  return { task, instructions, maxOutputChars, skillIds: request.skillIds,
+    ...(target ? { target: task === 'continue' ? { path: target.path, baseVersion: target.baseVersion } : target } : {}),
+    ...(outline ? { outline: { path: outline.path, version: outline.version } } : {}),
+    references: materials };
+}
 
 /** 工具薄适配：工作区由聊天归属绑定，不接受模型提供根目录、版本或采纳权限。 */
 export async function writingResources(service: WritingService, sessionId: string, input: WritingRequest): Promise<RequestResources> {

@@ -35,7 +35,6 @@ function AtomInteraction({ component, controls: c, style, onAction }: Omit<Param
     pinDisabledReason={c.sidebarActions ? c.sessionPinDisabledReason : undefined}
     archiveDisabledReason={c.sidebarActions ? c.sessionArchiveDisabledReason : undefined}
     onPinnedChange={c.sidebarActions ? (next) => { setPinned(next); onAction(`onPinnedChange(${next})`); } : undefined}
-    onRename={c.sidebarActions ? () => onAction('onRename（仅示例回调）') : undefined}
     onArchive={c.sidebarActions ? () => onAction('onArchive（仅示例回调）') : undefined} />;
   if (component === 'sidebar-settings-item') return <SidebarSettingsItem {...item} icon={c.sidebarIcon ? <Settings /> : undefined} />;
   // 分类与分组预览也展示完整会话操作，避免只有独立会话预览具备元数据。

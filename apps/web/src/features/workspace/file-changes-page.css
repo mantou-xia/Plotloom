@@ -1,0 +1,28 @@
+.plotloom-file-changes { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+.plotloom-file-changes__header {
+  display: grid; grid-template-columns: minmax(0, 1fr) 7em auto; align-items: center; gap: 8px;
+  min-height: 46px; padding-inline: 14px 8px; flex-shrink: 0; border-bottom: 1px solid var(--pl-border);
+}
+.plotloom-file-changes__header h2 { font-size: 14px; font-weight: 600; margin: 0; }
+.plotloom-file-changes__header > span { text-align: end; }
+.plotloom-file-changes__content { flex: 1; min-height: 0; }
+.plotloom-file-changes__content ul { list-style: none; padding: 0; margin: 0; }
+.plotloom-file-changes__item { border-bottom: 1px solid var(--pl-border); }
+.plotloom-file-changes .plotloom-file-changes__toggle {
+  display: flex; justify-content: flex-start; width: 100%; height: 38px; border-radius: 0; padding-inline: 14px 12px;
+}
+.plotloom-file-changes__file { min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px; text-align: start; }
+.plotloom-file-changes__file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plotloom-file-changes__file > svg,
+.plotloom-file-changes__file > .plotloom-file-changes__meta { flex-shrink: 0; }
+.plotloom-file-changes__meta { color: var(--pl-text-muted); font-size: 11px; font-weight: 400; }
+.plotloom-file-changes__counts { display: flex; justify-content: flex-end; gap: 6px; min-width: 8ch; font: 12px ui-monospace, Consolas, monospace; }
+.plotloom-file-changes__counts > :first-child { color: #16613a; }
+.plotloom-file-changes__counts > :last-child { color: #9d292b; }
+/* 短差异按行数撑开；超过视口上限的内容由差异区自行滚动。 */
+.plotloom-file-changes__panel > .pl-file-diff { max-height: min(42vh, 320px); }
+.plotloom-file-changes__detail {
+  display: flex; align-items: center; gap: 6px; min-height: 44px; box-sizing: border-box; padding: 6px 14px;
+  font-size: 13px; color: var(--pl-text-muted); background: var(--pl-surface-muted); margin: 0;
+}
+.plotloom-file-changes__empty { padding: 24px 16px; margin: 0; color: var(--pl-text-muted); font-size: 14px; }

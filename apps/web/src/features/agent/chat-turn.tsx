@@ -5,12 +5,15 @@ import { AgentActivityHeader } from '@plotloom/ui/agent-activity-header';
 import { ExecutionTimeline } from '@plotloom/ui/execution-timeline';
 import { MarkdownRenderer } from '@plotloom/ui/markdown';
 import { MessageActions } from '@plotloom/ui/message-actions';
+import { FileChangeSummary } from '@plotloom/ui/file-change-summary';
+import type { OpenTurnChanges } from '../workspace/chat-workspace';
 import { MessageStatus } from '@plotloom/ui/message-status';
 import { CitationMarker } from '@plotloom/ui/citation-marker';
 import { SourceReference } from '@plotloom/ui/source-reference';
 import { AttachmentPreview } from './attachment-preview';
 import type { ChatTurn as Turn } from './chat-turns';
 import { notifyRequestError } from '../../utils/feedback';
+import type { OpenCitations } from '../workspace/citation-sources-page';
 
 /** 过程说明可能包含未完成的回答增量；先隐藏保留标记，等待最终校验。 */
 function hidePendingCitation(href: string) {
@@ -18,17 +21,25 @@ function hidePendingCitation(href: string) {
 }
 
 /** 单轮业务组合：来源、重试目标来自公开契约，通用组件不感知会话或后端。 */
-export function ChatTurn({ turn, onRetry, busy }: { turn: Turn; onRetry?: () => Promise<void>; busy: boolean }) {
+export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChanges }: {
+  turn: Turn; onRetry?: () => Promise<void>; busy: boolean; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
+}) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
   const citations = turn.citations;
+  const fileChanges = turn.fileChanges;
   /** 仅渲染后端校验的正文标记；无效标记省略，普通 Markdown 链接照常渲染。 */
   const renderCitation = useCallback((href: string) => {
     if (!href.startsWith(CITATION_LINK_PREFIX)) return undefined;
     const source = citations.get(href.slice(CITATION_LINK_PREFIX.length));
-    return source ? <CitationMarker index={source.index} sourceTitle={source.title} active={selectedCitation === source.id}
-      onActivate={() => setSelectedCitation(source.id)} /> : null;
-  }, [citations, selectedCitation]);
+    return source ? <CitationMarker index={source.index} sourceTitle={source.title}
+      onActivate={() => onOpenCitations(citations, source.id)} /> : null;
+  }, [citations, onOpenCitations]);
+  /** 文件行和整体入口共用当前轮次范围，只改变初始展开的写入记录。 */
+  function viewChanges(path?: string) {
+    if (!fileChanges) return;
+    onOpenTurnChanges(turn.id, fileChanges.flatMap(file => file.writeIds),
+      fileChanges.find(file => file.path === path)?.writeIds);
+  }
   const working = turn.phase === 'working';
   const userText = turn.user?.content.filter(block => block.type === 'text').map(block => block.text).join('\n') ?? '';
   const attachments = turn.user?.attachments ?? [];
@@ -48,13 +59,15 @@ export function ChatTurn({ turn, onRetry, busy }: { turn: Turn; onRetry?: () => 
           height={192} renderMessageLink={hidePendingCitation} />
       </AgentActivityHeader>
       {turn.answer ? <MarkdownRenderer content={turn.answer} renderLink={renderCitation} /> : null}
-      {citations.size ? <SourceReference sources={[...citations.values()]} selectedId={selectedCitation} onSelectedChange={setSelectedCitation}
-        overviewLabel={`引用来源 · ${citations.size}`} /> : null}
-      {/* 回答结束后才显示工具条，保留尺寸以避免状态切换产生额外位移。 */}
+      {fileChanges?.length ? <div className="plotloom-chat__file-summary">
+        <FileChangeSummary files={fileChanges} onViewChanges={viewChanges} onOpenFile={viewChanges} />
+      </div> : null}
+      {/* 回复正文与变更摘要后才显示操作，状态行只在需要恢复操作的终态出现。 */}
       <MessageActions text={turn.answer} onRegenerate={turn.phase === 'completed' ? onRetry : undefined} regenerateDisabled={busy}
         style={{ visibility: turn.phase === 'completed' ? undefined : 'hidden' }}
         onError={(_action, error) => notifyRequestError(error, 'chat-actions')} />
-      <MessageStatus status={status} onRetry={onRetry} retryDisabled={busy} onRetryError={error => notifyRequestError(error, 'chat-retry')} />
+      {status ? <MessageStatus status={status} onRetry={onRetry} retryDisabled={busy}
+        onRetryError={error => notifyRequestError(error, 'chat-retry')} /> : null}
     </div>
   </section>;
 }

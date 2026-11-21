@@ -1,13 +1,13 @@
-import type { Message, SessionDetail } from '@plotloom/contracts';
+import type { Message, SessionDetail, TurnFileChanges } from '@plotloom/contracts';
 import type { ExecutionEntry } from '@plotloom/ui/execution-timeline';
 import type { AgentActivity, AgentPhase } from '@plotloom/ui/agent-activity-header';
 import type { FileSource, WebSource } from '@plotloom/ui/source-reference';
 
 export interface ChatTurn {
   id: string; user?: Message; process: ExecutionEntry[]; answer: string;
-  fileReferences: FileSource[]; citations: Map<string, WebSource>; phase: AgentPhase; activity: AgentActivity;
+  fileChanges?: TurnFileChanges['files']; fileReferences: FileSource[]; citations: Map<string, WebSource>; phase: AgentPhase; activity: AgentActivity;
 }
-const activities: Record<string, AgentActivity> = { browser: 'browsing', read: 'reading', read_fixture: 'reading', read_skill: 'reading', write: 'writing', edit: 'editing', grep: 'searching', find: 'searching', ls: 'reading', bash: 'executing', powershell: 'executing' };
+const activities: Record<string, AgentActivity> = { browser: 'browsing', read: 'reading', read_skill: 'reading', write: 'writing', edit: 'editing', grep: 'searching', find: 'searching', ls: 'reading', bash: 'executing', powershell: 'executing' };
 
 /** 工具结果回填原调用位置，其余过程保留发生顺序；不把首个正文猜作最终回答。 */
 export function chatTurns(session: SessionDetail): ChatTurn[] {
@@ -50,10 +50,27 @@ export function chatTurns(session: SessionDetail): ChatTurn[] {
       }
     }
   }
+  const fileChanges = new Map(session.fileChanges?.map(summary => [summary.turnId, summary.files]));
+  const { activity, pendingQuestion } = session;
   for (const [index, item] of turns.entries()) {
-    const running = index === turns.length - 1 && session.status === 'running' && session.activity === 'generating';
+    const running = index === turns.length - 1 && session.status === 'running'
+      && (activity === 'generating' || activity === 'awaiting_approval' || activity === 'awaiting_answer');
     const outcome = item.user?.outcome;
     item.phase = running ? 'working' : outcome === 'failed' ? 'failed' : outcome === 'aborted' ? 'stopped' : 'completed';
+    if (!running) item.fileChanges = fileChanges.get(item.id);
+    if (running && activity === 'awaiting_approval') {
+      item.activity = 'awaiting_approval';
+      // 仅标记本轮待批调用；同批其他仍执行中的工具保留实际状态。
+      const waiting = new Set(session.pendingApprovals?.filter(approval => approval.turnId === item.id).map(approval => approval.callId));
+      for (const entry of item.process) {
+        if (entry.type === 'tool' && waiting.has(entry.id)) entry.status = 'awaiting_approval';
+      }
+    }
+    if (running && activity === 'awaiting_answer') {
+      item.activity = activity;
+      const call = item.process.find(entry => entry.id === pendingQuestion?.callId);
+      if (call?.type === 'tool') call.status = activity;
+    }
   }
   return turns;
 }

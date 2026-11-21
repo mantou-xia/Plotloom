@@ -1,0 +1,34 @@
+.plotloom-novel-muted { color: var(--pl-text-muted); }
+.plotloom-novel-library, .plotloom-novel-files ul { list-style: none; padding: 0; margin: 0; }
+.plotloom-novel-library li { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-block: 16px; border-bottom: 1px solid var(--pl-border); }
+.plotloom-novel-library h2, .plotloom-novel-library p { margin: 0; overflow-wrap: anywhere; }
+.plotloom-novel-library h2, .plotloom-novel-columns h2 { font-size: 16px; font-weight: 600; }
+.plotloom-novel-library p { color: var(--pl-text-muted); font-size: 13px; margin-top: 4px; }
+.plotloom-novel-columns { display: grid; grid-template-columns: minmax(165px, 245px) minmax(0, 1fr); gap: clamp(16px, 4%, 44px); }
+.plotloom-novel-files { min-width: 0; }
+.plotloom-novel-files li { display: grid; justify-items: start; gap: 2px; margin-bottom: 4px; }
+.plotloom-novel-files li .pl-button { max-width: 100%; height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
+.plotloom-novel-files button[aria-current] { background: var(--pl-surface-muted); }
+.plotloom-novel-files li > span { font-size: 12px; padding-inline: 10px; }
+.plotloom-novel-editor, .plotloom-novel-fields, .plotloom-novel-writing { display: grid; min-width: 0; gap: 12px; }
+.plotloom-novel-editor > h2, .plotloom-novel-fields h3, .plotloom-novel-fields p, .plotloom-novel-actions h3 { margin: 0; overflow-wrap: anywhere; }
+.plotloom-novel-editor, .plotloom-novel-fields { align-content: start; }
+.plotloom-novel-fields label { display: grid; gap: 6px; }
+.plotloom-novel-fields > button { justify-self: start; }
+.plotloom-novel-actions, .plotloom-novel-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plotloom-novel-actions > h3 { font-size: 15px; margin-right: auto; }
+.plotloom-novel-actions > .pl-form-select { width: 145px; }
+.plotloom-novel-status { min-height: 34px; justify-content: space-between; color: var(--pl-text-muted); font-size: 13px; }
+.plotloom-novel-text textarea { min-height: 330px; line-height: 1.75; }
+.plotloom-novel-writing { margin-top: 12px; padding-top: 20px; border-top: 1px solid var(--pl-border); }
+.plotloom-novel-writing-options { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.plotloom-novel-writing-status { min-height: 1.5em; margin: 0; color: var(--pl-text-muted); font-size: 13px; line-height: 1.5; }
+.plotloom-novel-review { width: 800px; height: min(720px, calc(100dvh - 48px)); }
+.plotloom-novel-preview { min-height: 5em; margin: 0; padding: 12px; background: var(--pl-surface-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.plotloom-novel-change { display: grid; gap: 8px; padding-block: 12px; border-bottom: 1px solid var(--pl-border); }
+.plotloom-novel-change span[role='status'] { width: 4em; font-size: 13px; }
+@media (max-width: 900px) {
+  .plotloom-novel-columns { grid-template-columns: minmax(125px, 155px) minmax(0, 1fr); gap: 16px; }
+  .plotloom-novel-writing-options { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 650px) { .plotloom-novel-columns { grid-template-columns: minmax(0, 1fr); } }

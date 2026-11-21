@@ -16,7 +16,7 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 72);
+  assert.equal(routes.length, 78);
   assert(registered.includes('PUT /api/sessions/:id/organization'));
   assert(registered.includes('DELETE /api/sessions/:id'));
   for (const id of ['sessions.list', 'chats.list', 'chats.workspace-list']) {
@@ -25,14 +25,23 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.equal(routes.filter(route => route.includes('/api/providers')).length, 7);
   assert.equal(routes.filter(route => route.endsWith('/api/providers')).length, 3);
   assert.equal(routes.filter(route => route.endsWith('/retry')).length, 1);
+  assert.equal(routes.filter(route => route.endsWith('/tool-approvals/:approvalId')).length, 1);
+  assert.equal(routes.filter(route => route.endsWith('/questions/:questionId/answer')).length, 1);
   assert.equal(routes.filter(route => route.includes('/api/projects')).length, 3);
   assert.equal(routes.filter(route => route.includes('/project-directories')).length, 0);
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
+  assert.equal(routes.filter(route => route.includes('/project-writes')).length, 2);
   assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
   assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 22);
   assert.equal(routes.filter((route) => route.includes('/writing')).length, 3);
   assert.equal(routes.filter((route) => route.includes('/api/skills')).length, 9);
   assert.equal(routes.filter(route => route === 'GET /api/tools').length, 1);
+  assert.deepEqual(routes.filter(route => route.endsWith('/api/agent-profile')), ['GET /api/agent-profile', 'PUT /api/agent-profile']);
+  const profile = API_CATALOG.find(item => item.id === 'agent-profile.update');
+  assert.deepEqual(profile?.examples.map(example => example.body.action), ['save', 'skip']);
+  const send = API_CATALOG.find(item => item.id === 'generation.send');
+  assert(send?.examples.some(example => example.name.includes('首次对话')));
+  assert.match(send?.note ?? '', /user_answer_required/);
   assert.deepEqual(registered, routes);
   assert.equal(new Set(API_CATALOG.map((item) => item.id)).size, API_CATALOG.length);
   const directory = await mkdtemp(join(tmpdir(), 'plotloom-catalog-'));
@@ -64,7 +73,7 @@ test('SSE 中文字节跨块、CRLF、心跳、失败和断流结果可区分', 
   assert(checkStream(events.slice(0, 2), 'test').some((check) => !check.passed && check.name === '唯一结束事件'));
   assert(checkStream([events[0], { type: 'aborted', sessionId: 'test' }], 'test').every((check) => check.passed));
   assert(checkStream([events[0], { type: 'completed', sessionId: 'other' }], 'test').some((check) => !check.passed));
-  assert.deepEqual(SSE_EVENTS.map((event) => event.name).sort(), ['accepted', 'text_delta', 'thinking_delta', 'tool_start', 'tool_end', 'retrying', 'compacting', 'completed', 'aborted', 'failed'].sort());
+  assert.deepEqual(SSE_EVENTS.map((event) => event.name).sort(), ['accepted', 'text_delta', 'thinking_delta', 'tool_start', 'tool_approval_required', 'user_answer_required', 'tool_end', 'retrying', 'compacting', 'completed', 'aborted', 'failed'].sort());
 });
 
 test('响应检查逐项验证数组字段，允许空列表及可选用量', () => {

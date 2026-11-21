@@ -1,7 +1,7 @@
 import type { SkillInfo, ToolInfo, ToolScope } from '@plotloom/contracts/skills';
 import { Dialog } from '@plotloom/ui/dialog';
 
-const scopeNames: Record<ToolScope, string> = { ordinary: '普通聊天', project: '项目聊天', novel: '小说聊天' };
+const scopeNames: Record<ToolScope, string> = { project: '项目聊天', novel: '小说聊天' };
 
 /** 业务弹窗只使用公开目录；声明依赖与环境能力分开展示，避免误导为技能授予权限。 */
 export function SkillDetails({ skill, tools, onClose }: {
@@ -10,7 +10,7 @@ export function SkillDetails({ skill, tools, onClose }: {
   const declared = skill.declaredTools.map(name => tools.find(tool => tool.name === name) ?? {
     name, description: '当前后端未注册该工具。', parameters: '未提供', availableIn: [], condition: '缺少此工具时技能不会加载。',
   });
-  function toolRows(items: ToolInfo[]) {
+  function toolRows(items: Array<Omit<ToolInfo, 'provider'>>) {
     return <ul className="plotloom-skill-details__tools">{items.map(tool => <li key={tool.name}>
       <h4><code>{tool.name}</code><span>{tool.availableIn.length ? tool.availableIn.map(scope => scopeNames[scope]).join(' · ') : '未注册'}</span></h4>
       <p>{tool.description}</p><p className="plotloom-skill-details__muted">参数：{tool.parameters}</p>

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Plotloom · 浏览器工作区验证</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'">
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px/1.7 system-ui;color:#303030;background:#fff}aside{position:absolute;inset:0 auto 0 0;width:320px;padding:28px;background:#f6f6f7}h1{font-size:22px;margin:0 0 16px}p{color:#616166}.controls{position:absolute;left:320px;right:0;top:0;height:112px;padding:10px 16px;background:#fff;border-bottom:1px solid #ddd}.row{display:flex;align-items:center;gap:8px;height:42px}button,input{font:inherit;border:0;background:#f2f2f3;padding:6px 12px;border-radius:6px}button{cursor:pointer;white-space:nowrap}button[aria-pressed=true]{background:#303030;color:white}button:focus-visible,input:focus-visible{outline:0;box-shadow:0 0 0 2px #777}input{min-width:0;flex:1}#status{height:112px;overflow:auto;font-size:13px;white-space:pre-wrap}#mode{font-weight:600}#hint{height:48px;font-size:12px}button:disabled{opacity:.4}
+</style></head><body>
+<aside><h1>浏览器工作区</h1><p>技术验证 · 同一可见会话</p><p>文件只读预览。浏览器支持用户和 Agent 接管。</p><p id="mode">用户操作中</p><button id="takeover">用户接管</button><div id="status" role="status">等待验证进程连接</div><p id="hint">只使用本地合成测试账号。此窗口是验证壳，不是产品页面。</p></aside>
+<header class="controls"><div class="row"><button data-tab="browser" aria-pressed="true">浏览器</button><button data-tab="markdown" aria-pressed="false">Markdown</button><button data-tab="image" aria-pressed="false">图片</button></div>
+<form id="navigation" class="row"><button type="button" id="back">后退</button><button type="button" id="forward">前进</button><button type="button" id="reload">刷新</button><input id="address" aria-label="网页地址"><button type="submit">打开</button></form></header>
+<script src="./shell.js"></script></body></html>

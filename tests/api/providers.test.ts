@@ -31,7 +31,7 @@ test('单密钥多端点：检测、目录预览、停用与删除重启', async
     assert.deepEqual((await probe('discover', 'anthropic-messages')).json(), { models: ['remote'] });
     assert.deepEqual(headers, ['Bearer single-secret', 'single-secret']);
     assert.equal((await save({ enabled: false })).statusCode, 200);
-    assert.equal((await app.inject({ method: 'POST', url: '/api/sessions', payload: { provider: 'sample', model: 'remote' } })).statusCode, 422);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/sessions', payload: { projectPath: dir, provider: 'sample', model: 'remote' } })).statusCode, 422);
     assert.equal((await save({ enabled: true, baseUrl: origin + '/fail' })).statusCode, 200);
     assert.equal((await probe('check')).statusCode, 502);
     assert.equal((await save({ models: [], modelApis: {} })).statusCode, 200);
@@ -80,7 +80,7 @@ test('供应商可新增、更新和恢复，公开响应隐藏密钥，保留�
     const models = (await app.inject('/api/models')).json().models;
     assert(models.some((m: { provider: string; contextWindow: number }) => m.provider === 'existing' && m.contextWindow === 80000));
     assert.deepEqual((await app.inject('/api/model-config')).json(), { provider: body.id, model: 'two', thinkingLevel: 'off', configured: true });
-    const chat = await app.inject({ method: 'POST', url: '/api/sessions', payload: {} });
+    const chat = await app.inject({ method: 'POST', url: '/api/sessions', payload: { projectPath: dataDir } });
     assert.equal(chat.statusCode, 201, chat.body);
     assert.equal(chat.json().model, 'two');
     const address = await app.listen({ host: '127.0.0.1', port: 0 });

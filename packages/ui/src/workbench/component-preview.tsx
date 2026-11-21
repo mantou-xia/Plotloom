@@ -19,6 +19,10 @@ import { MessageActionsExample } from './message-actions-example.tsx';
 import { MessageStatusExample } from './message-status-example.tsx';
 import { DialogExample } from './dialog-example.tsx';
 import { SettingsExample } from './settings-example.tsx';
+import { FileChangeSummary } from '../file-change-summary/file-change-summary.tsx';
+import { FileDiff, type FileDiffBlock } from '../file-diff/file-diff.tsx';
+import { ToolApprovalExample } from './tool-approval-example.tsx';
+import { QuestionCard } from '../question-card/question-card.tsx';
 import { Disclosure } from '../disclosure/disclosure.tsx';
 import { Drawer } from '../drawer/drawer.tsx';
 import { Notice } from '../notice/notice.tsx';
@@ -49,6 +53,18 @@ const SplitPaneExample = lazy(() => import('./split-pane-example.tsx').then(modu
 const ReaderFrameExample = lazy(() => import('./page-frame-example.tsx').then(module => ({ default: module.ReaderFrameExample })));
 const BrowserFrameExample = lazy(() => import('./page-frame-example.tsx').then(module => ({ default: module.BrowserFrameExample })));
 
+const exampleChangedFiles = [
+  { path: 'docs/chapter.md', added: 12, removed: 4 }, { path: 'src/index.ts', added: 8, removed: 2 },
+  { path: 'packages/ui/src/file-change-summary/file-change-summary.css', added: 5, removed: 0 },
+  { path: 'packages/ui/src/file-change-summary/file-change-summary.tsx', added: 9, removed: 3 },
+];
+
+const exampleDiff: FileDiffBlock[] = [
+  { kind: 'context', beforeStart: 1, afterStart: 1, lines: Array.from({ length: 9 }, (_, index) => `章节资料 ${index + 1}\n`) },
+  { kind: 'removed', beforeStart: 10, afterStart: null, lines: ['旧稿：港口一片寂静。\n'] },
+  { kind: 'added', beforeStart: null, afterStart: 10, lines: ['新稿：渡轮鸣笛，灯塔亮了起来。\n', '巡夜人停在码头尽头。\n'] },
+];
+
 export interface ComponentPreviewProps {
   component: string;
   state: string;
@@ -64,7 +80,7 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   const [clicks, setClicks] = useState(0);
   const [disclosureDialogOpen, setDisclosureDialogOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [scrollItems, setScrollItems] = useState(state === 'empty' ? 0 : state === 'short' ? 1 : 24);
+  const [scrollItems, setScrollItems] = useState(state === 'empty' ? 0 : state === 'short' || state === 'overflow-only' ? 1 : 24);
   const [pickerColor, setPickerColor] = useState<string | null>(state === 'black' ? '#000000' : state === 'white' ? '#ffffff' : null);
   const style = componentSizeStyle(controls);
   const click = () => { setClicks((count) => count + 1); onAction('onClick'); };
@@ -100,6 +116,14 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   if (component === 'attachment-card') target = <AttachmentExample key={state} state={state} style={style} onAction={onAction} />;
   if (component === 'user-message-bubble') target = <UserMessageExample controls={controls} style={style} onAction={onAction} />;
   if (component === 'skill-item') target = <SkillItemExample key={state} state={state} style={style} />;
+  if (component === 'file-change-summary') target = <div style={style}><FileChangeSummary key={state}
+    files={state === 'multiple' ? exampleChangedFiles : exampleChangedFiles.slice(0, 1)} onViewChanges={() => onAction('查看变更')} onOpenFile={path => onAction(`打开 ${path}`)} /></div>;
+  if (component === 'file-diff') target = <div style={style}><FileDiff key={state}
+    blocks={state === 'added' ? [exampleDiff[2]] : exampleDiff} label="场景文件对比" /></div>;
+  if (component === 'tool-approval-card') target = <ToolApprovalExample key={state} state={state} style={style} onAction={onAction} />;
+  if (component === 'question-card') target = <QuestionCard key={state} style={style} question="这篇故事想采用哪个叙事视角？"
+    options={['第一人称', '第三人称限制视角', '第三人称全知视角']} submitting={state === 'submitting'} stopping={state === 'stopping'}
+    onStop={() => onAction('停止任务')} onAnswer={reply => onAction(JSON.stringify(reply))} />;
   if (['thinking-content', 'execution-timeline', 'tool-call-item'].includes(component)) target = <Suspense fallback={<p role="status">正在加载过程组件…</p>}><AgentProcessExample key={`${component}-${state}`} component={component} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (component === 'agent-activity-header') target = <Suspense fallback={<p role="status">正在加载过程展示区…</p>}><AgentActivityExample key={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (component === 'primary-tabs') target = <PrimaryTabsExample key={state} state={state} style={style} onAction={onAction} />;
@@ -130,7 +154,8 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
       <Button variant="ghost" onClick={() => setScrollItems((count) => Math.max(0, count - 8))}>减少内容</Button>
       <span role="status">{scrollItems} 个内容块</span>
     </div>
-    <ScrollBox style={style} orientation={controls.orientation} scrollbarVisibility={controls.scrollbarVisibility} aria-label="滚动内容示例" role="region">
+    <ScrollBox style={style} orientation={controls.orientation} scrollbarVisibility={controls.scrollbarVisibility}
+      reserveScrollbarSpace={state !== 'overflow-only'} aria-label="滚动内容示例" role="region">
       <div className={`pl-example-scroll-content pl-example-scroll-content--${controls.orientation}`}>
         {Array.from({ length: scrollItems }, (_, index) => <div className="pl-example-block" key={index}>内容块 {index + 1}</div>)}
       </div>

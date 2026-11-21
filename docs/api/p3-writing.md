@@ -82,6 +82,12 @@ WritingContext 返回 `workspaceId/task/instructions/target/sources/maxOutputCha
 - 断开 SSE 只取消订阅。调用 `/sessions/:id/stop` 才停止生成；返回 idle 时已收尾，已完成候选仍可查询。
 - 重启后历史、来源与候选可读取；未结束的运行显示 aborted，由用户决定是否重新发起，不自动续跑。
 
+### 重试最近一次创作
+
+从会话详情读取 `retryMessageId`，向 `POST /api/sessions/:id/retry` 提交 `{ "messageId": "<retryMessageId>" }`。服务保留旧轮次，按原任务、目标版本与选区、大纲、参考版本与片段、创作要求、字符预算和显式技能重新执行，生成独立的创作记录和候选。新记录使用原模型、思考档位和自动压缩设置，仅在重试期间应用。旧记录从首次执行保存的上下文重建创作参数，已有执行设置无法还原时使用会话当前设置。
+
+正式目标或指定资料发生变化时，重试在调用模型前返回 `409 REVISION_CONFLICT`。已保存的有效技能版本或启用状态发生变化时，返回 `409 RETRY_UNAVAILABLE` 或原发送接口的 `422 SKILL_UNAVAILABLE`。重试占用同一个会话锁，可通过原停止接口结束，旧候选仍可查询。随模型工具调用才发现的资料在新一轮重新读取，日期也使用执行当天。
+
 ## 错误与最短联调流程
 
 | 状态 / 错误 | 处理 |

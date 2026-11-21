@@ -6,6 +6,7 @@ interface AppRoute {
   page: Exclude<AppPage, 'settings'>;
   sessionId: string | null;
   projectPath: string;
+  workspaceId: string | null;
   settings: SettingsCategory | null;
 }
 
@@ -18,6 +19,7 @@ function readRoute(): AppRoute {
     page: page === 'skills' || page === 'novels' ? page : 'chat',
     sessionId: params.get('chat') || null,
     projectPath: params.get('project') ?? '',
+    workspaceId: params.get('workspace') || null,
     settings: section === null ? null : Object.hasOwn(settingsCategories, section) ? section as SettingsCategory : 'appearance',
   };
 }
@@ -37,6 +39,7 @@ export function useAppRoute() {
     const params = new URLSearchParams();
     if (next.page !== 'chat') params.set('page', next.page);
     if (next.sessionId) params.set('chat', next.sessionId);
+    else if (next.workspaceId) params.set('workspace', next.workspaceId);
     else if (next.projectPath) params.set('project', next.projectPath);
     if (next.settings) params.set('settings', next.settings);
     const hash = params.size ? `#${params}` : '';
@@ -52,8 +55,8 @@ export function useAppRoute() {
     else updateRoute({ settings: null }, 'replace');
   }
 
-  function clearSession(id: string, projectPath: string) {
-    if (readRoute().sessionId === id) updateRoute({ sessionId: null, projectPath }, 'replace');
+  function clearSession(id: string, projectPath: string, workspaceId: string | null) {
+    if (readRoute().sessionId === id) updateRoute({ sessionId: null, projectPath, workspaceId }, 'replace');
   }
 
   return { route, updateRoute, closeSettings, clearSession };

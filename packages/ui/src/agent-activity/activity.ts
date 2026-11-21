@@ -1,4 +1,4 @@
-export type AgentActivity = 'thinking' | 'reading' | 'writing' | 'editing' | 'searching' | 'browsing' | 'executing' | 'processing';
+export type AgentActivity = 'thinking' | 'reading' | 'writing' | 'editing' | 'searching' | 'browsing' | 'executing' | 'processing' | 'awaiting_approval' | 'awaiting_answer';
 export type ParticleShape = 'cube' | 'book' | 'pencil' | 'magnifier' | 'folder' | 'robot' | 'bricks' | 'gift' | 'sphere';
 export type AgentPhase = 'working' | 'answering' | 'completed' | 'failed' | 'stopped';
 
@@ -12,4 +12,6 @@ export const AGENT_ACTIVITIES: Record<AgentActivity, { label: string; shape: Par
   browsing: { label: '浏览中', shape: 'folder' },
   executing: { label: '执行中', shape: 'robot' },
   processing: { label: '处理中', shape: 'sphere' },
+  awaiting_approval: { label: '待审批', shape: 'pencil' },
+  awaiting_answer: { label: '等待用户回答', shape: 'sphere' },
 };

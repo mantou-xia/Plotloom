@@ -15,7 +15,7 @@ async page => {
   };
   const assert = (value, label) => { if (!value) throw new Error(label); checks.push(label); };
   const open = async name => {
-    const response = await page.request.post(`${origin}/api/sessions`, { data: { name } });
+    const response = await page.request.post(`${origin}/api/sessions`, { data: { name, projectPath: (await (await page.request.get(`${origin}/api/projects`)).json()).projects[0].path } });
     id = (await response.json()).id;
     if (!id) throw new Error('创建测试聊天失败');
     await page.goto(`${origin}/#chat=${id}`);

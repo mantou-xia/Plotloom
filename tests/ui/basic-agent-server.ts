@@ -7,12 +7,14 @@ import { createModelFixture, TEST_KEY } from '../api/fixture.ts';
 /** 固定隔离端口配合 UI 验收；只替换模型协议，文件与浏览器均实际执行。 */
 const directory = await mkdtemp(join(tmpdir(), 'plotloom-product-'));
 const project = join(directory, 'project'); await mkdir(project);
+await writeFile(join(project, 'scene.md'), '核对标记：灯塔-731。');
 const fixture = await createModelFixture();
 const modelsPath = join(directory, 'models.json');
 await writeFile(modelsPath, JSON.stringify({ providers: { 'p1-test': { api: 'openai-completions', baseUrl: fixture.baseUrl,
   models: [{ id: 'fixture', name: '验收模型', reasoning: true, input: ['text','image'], contextWindow: 128000, maxTokens: 4096,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
-const app = await buildServer({ dataDir: directory, modelsPath, defaultModel: { provider: 'p1-test', model: 'fixture' }, apiKey: TEST_KEY });
+const app = await buildServer({ dataDir: join(directory, 'data'), modelsPath, defaultModel: { provider: 'p1-test', model: 'fixture' }, apiKey: TEST_KEY });
+await app.inject({ method: 'POST', url: '/api/projects', payload: { name: '验收项目', path: project } });
 await app.listen({ host: '127.0.0.1', port: 4432 });
 let submitted = '';
 const site = createServer((req, res) => {

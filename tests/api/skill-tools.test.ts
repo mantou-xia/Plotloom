@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ToolInfo } from '../../packages/contracts/src/skills.ts';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,7 +21,11 @@ test('核心工具目录、全局技能准入与网页抓取', { timeout: 90000 
   const json = (...args: Parameters<typeof server.json>) => server.json(...args);
   const send = async (id: string, text: string) => collect(await server.request(`/api/sessions/${id}/messages`, 'POST', { text }));
   const skill = await json('/api/skills', 'POST', { content: '---\nname: fetch-research\ndescription: 网页研究\nallowed-tools: web_fetch\n---\n快照正文唯一标记。' }, 201);
-  const chat = await json('/api/sessions', 'POST', {}, 201);
+  const book = join(dir, 'book'); await mkdir(book);
+  const workspace = await json('/api/workspaces', 'POST', { title: '技能验收小说', root: book }, 201);
+  const chat = await json(`/api/workspaces/${workspace.id}/sessions`, 'POST', {}, 201);
+  // 此处只测试网页技能开关，关闭小说自带技能以单独观察 read_skill 的注册。
+  await json('/api/skills/builtin-novel-writing/enabled', 'PUT', { enabled: false });
   const enabledPath = `/api/skills/${skill.id}/enabled`;
   const settings = `/api/sessions/${chat.id}/skills`;
   const site = createServer((req, res) => {
@@ -37,21 +42,29 @@ test('核心工具目录、全局技能准入与网页抓取', { timeout: 90000 
   const url = `http://127.0.0.1:${(site.address() as { port: number }).port}`;
   const fetchCommand = (target: string) => 'WRITE:' + JSON.stringify({ steps: [{ name: 'web_fetch', args: { url: target } }], finalText: '抓取结束' });
   try {
-    await t.test('目录用途和条件完整，声明按实际聊天工具诊断', async () => {
-      const directory = (await json('/api/tools')).tools;
-      assert.equal(new Set(directory.map((tool: any) => tool.name)).size, directory.length);
-      for (const tool of directory) assert(tool.description && tool.parameters && tool.condition && tool.availableIn.length);
-      assert.deepEqual(directory.find((tool: any) => tool.name === 'write').availableIn, ['project']);
-      assert.deepEqual(directory.find((tool: any) => tool.name === 'web_fetch').availableIn, ['ordinary', 'project', 'novel']);
-      assert(!directory.some((tool: any) => tool.name === 'web_search'));
+    await t.test('目录提供方、用途和条件完整，声明按实际聊天工具诊断', async () => {
+      const directory: ToolInfo[] = (await json('/api/tools')).tools;
+      assert.equal(new Set(directory.map(tool => tool.name)).size, directory.length);
+      for (const tool of directory) assert(tool.provider && tool.description && tool.parameters && tool.condition && tool.availableIn.length);
+      const byName = new Map(directory.map(tool => [tool.name, tool]));
+      assert.equal(byName.get('browser')?.provider, 'Plotloom 浏览器（Playwright）');
+      assert.equal(byName.get('web_fetch')?.provider, 'Plotloom 网页抓取');
+      assert.equal(byName.get('write')?.provider, 'Plotloom 项目文件工具');
+      assert.equal(byName.get('read_skill')?.provider, 'Plotloom 技能系统');
+      assert.equal(byName.get('propose_change')?.provider, 'Plotloom 小说工作区');
+      assert(!byName.has('read_fixture'));
+      assert.deepEqual(byName.get('write')?.availableIn, ['project']);
+      for (const name of ['browser', 'web_fetch']) assert.deepEqual(byName.get(name)?.availableIn, ['project', 'novel']);
+      assert(!byName.has('web_search'));
       assert((await json(settings)).effectiveSkillIds.includes(skill.id));
       const projectSkill = await json('/api/skills', 'POST', { content: '---\nname: project-reader\ndescription: 读取项目\nallowed-tools: read\n---\n按需读取项目文件。' }, 201);
       assert.deepEqual(projectSkill.availableIn, ['project']);
       assert(!(await json(settings)).effectiveSkillIds.includes(projectSkill.id));
       const projectChat = await json('/api/sessions', 'POST', { projectPath: project }, 201);
       assert((await json(`/api/sessions/${projectChat.id}/skills`)).effectiveSkillIds.includes(projectSkill.id));
+      assert((await json(`/api/sessions/${projectChat.id}/skills`)).effectiveSkillIds.includes(skill.id));
       const active = (await json(`/api/sessions/${projectChat.id}/tools`)).tools.filter((tool: any) => tool.active);
-      assert(active.every((tool: any) => directory.some((entry: any) => entry.name === tool.name)));
+      assert(active.every((tool: any) => byName.has(tool.name)));
     });
     await t.test('全局关闭保留当前快照，下一轮和显式覆盖不能绕过；重启持久化', async () => {
       const prompt = 'WAIT_SKILL:' + JSON.stringify({ skillId: skill.id, path: 'SKILL.md' });

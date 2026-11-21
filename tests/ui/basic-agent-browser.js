@@ -23,7 +23,7 @@ async page => {
     await waitDetail(value => value.messages.filter(m => m.role === 'user').length > previous);
   };
   const results = [];
-  const created = await (await page.request.post(`${origin}/api/sessions`, { data: { name: '新聊天' } })).json();
+  const created = await (await page.request.post(`${origin}/api/sessions`, { data: { name: '新聊天', projectPath: (await (await page.request.get(`${origin}/api/projects`)).json()).projects[0].path } })).json();
   await page.goto(`${origin}/#chat=${created.id}`); await page.reload();
   const collapseWorkspace = page.getByRole('button', { name: '收起工作区', exact: true });
   if (await collapseWorkspace.isVisible()) await collapseWorkspace.click();
@@ -73,7 +73,25 @@ async page => {
   const top = await page.getByLabel('聊天记录', { exact: true }).evaluate(element => element.scrollTop);
   await page.waitForTimeout(800);
   assert(Math.abs((await page.getByLabel('聊天记录', { exact: true }).evaluate(element => element.scrollTop)) - top) < 2, '生成中向上阅读不被抢走');
-  await page.getByRole('button', { name: '回到最新消息', exact: true }).click();
+  const messages = page.getByLabel('聊天记录', { exact: true });
+  const latest = page.getByRole('button', { name: '回到最新消息', exact: true });
+  const ball = await latest.boundingBox();
+  const slot = await page.locator('.plotloom-chat__composer-slot').boundingBox();
+  assert(ball.width === 48 && ball.height === 48, '返回最新使用圆形悬浮球尺寸');
+  assert(Math.abs(ball.x + ball.width / 2 - slot.x - slot.width / 2) < 1
+    && Math.abs(slot.y - ball.y - ball.height - 12) < 1, '悬浮球在输入区上方居中');
+  const [remainingOnFirstScroll] = await Promise.all([
+    messages.evaluate(element => new Promise(resolve => {
+      element.addEventListener('scroll', () => resolve(element.scrollHeight - element.clientHeight - element.scrollTop), { once: true });
+    })),
+    latest.click(),
+  ]);
+  assert(remainingOnFirstScroll > 48, '点击后先经过中间位置，再滚到底部');
+  await latest.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => {
+    const element = document.querySelector('.plotloom-chat__messages');
+    return element && element.scrollHeight - element.clientHeight - element.scrollTop <= 1;
+  });
   const composerBefore = await page.locator('.plotloom-chat__bottom').boundingBox();
   await page.getByRole('button', { name: '停止', exact: true }).click(); await idle();
   assert((await detail()).messages.findLast(m => m.role === 'user').outcome === 'aborted', '停止落盘');
@@ -98,26 +116,51 @@ async page => {
   results.push('附件卡片和真实内容弹窗');
 
   const site = 'http://127.0.0.1:4435/';
+  const secondSite = `${site}second`;
   const navigate = { name: 'browser', args: { action: 'navigate', url: site } };
   await send('WRITE:' + JSON.stringify({ steps: [
     navigate,
     { name: 'browser', args: { action: 'fill', selector: 'input[name=value]', text: '产品页面真实提交' } },
-    { name: 'browser', args: { action: 'click', selector: 'button' } }
-  ], finalText: `浏览器操作已完成。[来源](#plotloom-source-{{source:0}}) [表单链接](${site}) [未知来源](#plotloom-source-unknown)` })); await idle();
+    { name: 'browser', args: { action: 'click', selector: 'button' } },
+    { name: 'browser', args: { action: 'navigate', url: secondSite } }
+  ], finalText: `浏览器操作已完成。[来源](#plotloom-source-{{source:0}}) [来源](#plotloom-source-{{source:3}}) [表单链接](${site}) [未知来源](#plotloom-source-unknown)` })); await idle();
   const browserDetail = await detail();
   assert(browserDetail.messages.some(m => m.role === 'tool' && m.content.some(b => b.text?.includes('产品页面真实提交'))), '真实浏览器填写点击');
   const browserTurn = page.locator('.plotloom-chat__turn').last();
   const siteTitle = 'Plotloom 浏览器验收';
   const marker = browserTurn.getByRole('button', { name: `查看来源 1：${siteTitle}`, exact: true });
+  const secondMarker = browserTurn.getByRole('button', { name: `查看来源 2：${siteTitle}`, exact: true });
   await marker.click();
-  const citationDetail = page.getByRole('dialog', { name: '来源详情', exact: true });
-  assert(await citationDetail.getByRole('link', { name: '打开网页' }).getAttribute('href') === site, '正文引用打开实际访问过的网页');
-  await citationDetail.getByRole('button', { name: '关闭弹窗' }).click();
-  await browserTurn.getByRole('button', { name: '引用来源 · 1', exact: true }).click();
-  const citationList = page.getByRole('dialog', { name: '引用来源', exact: true });
-  await citationList.getByRole('button', { name: `查看来源 1：${siteTitle}`, exact: true }).click();
-  assert(await citationList.getByRole('link', { name: '打开网页' }).getAttribute('href') === site, '来源列表与正文标记打开同一网页');
-  await citationList.getByRole('button', { name: '关闭弹窗' }).click();
+  const workspace = page.getByRole('dialog', { name: '内容工作区', exact: true });
+  const citationTab = workspace.getByRole('tab', { name: '引用来源', exact: true });
+  const citationList = workspace.getByRole('region', { name: '本轮引用来源', exact: true });
+  await citationList.waitFor();
+  assert(await citationTab.getAttribute('aria-selected') === 'true', '正文引用选中右侧工作区标签');
+  assert(await page.getByRole('dialog', { name: '来源详情', exact: true }).count() === 0, '正文引用不打开详情弹窗');
+  assert(await browserTurn.getByRole('button', { name: /引用来源/ }).count() === 0, '回答下方没有引用来源按钮');
+  const rows = citationList.getByRole('listitem');
+  assert(await rows.count() === 2 && await rows.first().getAttribute('aria-current') === 'true', '列出本轮编号并选中第一条');
+  await secondMarker.click();
+  assert(await citationTab.count() === 1 && await rows.last().getAttribute('aria-current') === 'true', '切换正文引用复用同一标签并选中第二条');
+  for (const [index, url] of [site, secondSite].entries()) {
+    const link = rows.nth(index).getByRole('link', { name: new RegExp(`${index + 1} ${siteTitle} 127\\.0\\.0\\.1`) });
+    assert(await link.getAttribute('href') === url, '引用编号对应实际访问的网站');
+    const [opened] = await Promise.all([
+      // Chromium 的 Shift＋左键可创建独立浏览器窗口，从浏览器上下文捕获页面。
+      page.context().waitForEvent('page', { timeout: 8000 }),
+      link.click({ modifiers: index === 1 ? ['Shift'] : [] }),
+    ]);
+    await opened.waitForURL(url, { timeout: 8000 });
+    await opened.close();
+  }
+  await workspace.getByRole('button', { name: '关闭标签：引用来源', exact: true }).click();
+  assert(await citationTab.count() === 0, '引用标签可以关闭');
+  await marker.click();
+  await citationList.waitFor();
+  assert(await rows.first().getAttribute('aria-current') === 'true', '再次点击可重开并定位到第一条');
+  await page.screenshot({ path: 'output/playwright/basic-agent-citation-sources.png', animations: 'disabled' });
+  await collapseWorkspace.click();
+  await workspace.waitFor({ state: 'hidden' });
   assert(!(await browserTurn.getByText('未知来源', { exact: true }).isVisible()), '未知来源不产生标记');
   assert(await browserTurn.getByRole('link', { name: '表单链接', exact: true }).getAttribute('href') === site, '回答中的链接仍可访问');
   assert(!(await browserTurn.getByText('本轮资料', { exact: true }).isVisible()), '回答末尾没有单独的资料清单');
@@ -132,6 +175,13 @@ async page => {
   await page.reload();
   if (await collapseWorkspace.isVisible()) await collapseWorkspace.click();
   await marker.waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await secondMarker.click();
+  await citationList.waitFor();
+  assert(await rows.last().getAttribute('aria-current') === 'true', '窄屏刷新后仍可通过引用定位来源');
+  await collapseWorkspace.click();
+  await workspace.waitFor({ state: 'hidden' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   results.push('浏览器访问记录、正文引用、来源入口、刷新恢复');
   await send('WRITE:' + JSON.stringify({ steps: [navigate], waitBefore: 1 }));
   const runningDetail = await waitDetail(value => value.status === 'running' && value.messages.at(-1)?.streaming);

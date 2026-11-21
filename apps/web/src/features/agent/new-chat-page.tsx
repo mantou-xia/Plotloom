@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type { ModelConfig, ModelInfo, ProjectFiles, SessionSummary, ThinkingLevel } from '@plotloom/contracts';
+import type { ModelConfig, ModelInfo, ProjectApprovalMode, ProjectFiles, SessionSummary, ThinkingLevel } from '@plotloom/contracts';
 import type { Attachment } from '@plotloom/contracts/sources';
 import { ATTACHMENT_TYPES, SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import { AsciiOcean } from '@plotloom/ui/ascii-ocean';
@@ -40,9 +40,10 @@ function useNewChatModels(modelRevision: number) {
 }
 
 /** 页面、背景与编辑器持续挂载；草稿版本只更新数据，不再重建任何可见控件。 */
-export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, onStarted, renderProjectControl }: {
+export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, workspaceId, workspaceTitle, onStarted, renderProjectControl }: {
   modelRevision?: number;
   draftRevision: number; projectPath: string;
+  workspaceId: string | null; workspaceTitle?: string;
   onStarted: (session: SessionSummary) => void; renderProjectControl: (disabled: boolean) => ReactNode;
 }) {
   const modelState = useNewChatModels(modelRevision);
@@ -52,44 +53,50 @@ export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, onS
   return <section ref={attachmentDropTarget} className="plotloom-work-start" aria-label="工作初始页">
     <AsciiOcean className="plotloom-work-start__ocean" />
     <div className="plotloom-work-start__welcome">
-      <p className="plotloom-work-start__eyebrow">{root ? '当前项目' : '从一个想法开始'}</p>
+      <p className="plotloom-work-start__eyebrow">{workspaceId ? '小说对话' : '项目对话'}</p>
       <div className="plotloom-work-start__heading" role="heading" aria-level={1}>
-        {root ? <>你想在 {renderProjectControl(pending)} 中完成什么？</> : '有什么想法，开始聊聊吧。'}
+        {workspaceId ? (workspaceTitle ? <>继续创作《{workspaceTitle}》</> : '小说对话') : root ? <>你想在 {renderProjectControl(pending)} 中完成什么？</> : renderProjectControl(pending)}
       </div>
-      <p>从这里开始一段新的对话。</p>
+      <p>{workspaceId || root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
     </div>
-    <NewChatDraft draftRevision={draftRevision} projectPath={projectPath} attachmentDropTarget={attachmentDropTarget}
+    <NewChatDraft draftRevision={draftRevision} projectPath={projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
       modelState={modelState} pending={pending} setPending={setPending} onStarted={onStarted} />
   </section>;
 }
 
 /** 草稿拥有会话、附件及发送生命周期；切换项目后旧异步结果不能操作新草稿。 */
-function NewChatDraft({ draftRevision, projectPath, modelState, pending, setPending, onStarted, attachmentDropTarget }: {
-  draftRevision: number; projectPath: string; modelState: ReturnType<typeof useNewChatModels>;
+function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pending, setPending, onStarted, attachmentDropTarget }: {
+  draftRevision: number; projectPath: string; workspaceId?: string; modelState: ReturnType<typeof useNewChatModels>;
   attachmentDropTarget: RefObject<HTMLElement | null>;
   pending: boolean; setPending: (pending: boolean) => void; onStarted: (session: SessionSummary) => void;
 }) {
   const { models, selected, setSelected, thinking, setThinking, failed, loaded, setReload } = modelState;
+  const root = projectPath.trim();
+  const draftKey = workspaceId ? 'new-novel:' + workspaceId : 'new:' + root;
+  const [approval, setApproval] = useState<{ draftRevision: number; draftKey: string; mode: ProjectApprovalMode } | null>(null);
+  const projectApprovalMode = approval?.draftRevision === draftRevision && approval.draftKey === draftKey ? approval.mode : 'required';
   // 每一版草稿有独立的异步作用域；旧请求持有旧作用域，不能覆盖新会话或清空新输入。
   const scope = useMemo(() => ({
     draft: { current: null as Promise<SessionSummary> | null }, sending: { current: false },
     mounted: { current: false }, stream: { current: null as AbortController | null },
-  }), [draftRevision]);
+  }), [draftRevision, draftKey]);
   const { draft, sending, mounted, stream } = scope;
   // 切换时仅释放旧订阅与忙碌状态，编辑器 DOM 不卸载；已接收的生成仍留在服务端。
   useLayoutEffect(() => { mounted.current = true; return () => {
     mounted.current = false; stream.current?.abort(); setPending(false);
   }; }, [scope, setPending]);
   const chosen = models.find(model => modelKey(model.provider, model.id) === selected);
-  const root = projectPath.trim();
+  const canStart = Boolean(root || workspaceId);
 
   /** 并发附件共用创建请求；目录绑定后固定，发送失败重试复用同一会话。 */
   function ensureSession(): Promise<SessionSummary> {
+    if (!canStart) return Promise.reject(new Error('请先选择项目或小说。'));
     if (!chosen?.configured) return Promise.reject(new Error('请先选择已配置的模型。'));
     if (!draft.current) {
-      draft.current = requestJson<SessionSummary>('/api/sessions', 'POST', {
+      const path = workspaceId ? `/api/workspaces/${encodeURIComponent(workspaceId)}/sessions` : '/api/sessions';
+      draft.current = requestJson<SessionSummary>(path, 'POST', {
         provider: chosen.provider, model: chosen.id, thinkingLevel: thinking,
-        ...(root ? { projectPath: root } : {}),
+        ...(workspaceId ? {} : { projectPath: root }),
       }).catch(cause => { draft.current = null; throw cause; });
     }
     return draft.current;
@@ -98,7 +105,7 @@ function NewChatDraft({ draftRevision, projectPath, modelState, pending, setPend
   /** accepted 后才切入聊天记录；失败保留编辑器和附件，后续聊天页读取服务端运行快照。 */
   async function send(message: ComposerMessage): Promise<boolean> {
     const body = composerRequest(message);
-    if (sending.current || (!body.text && !body.attachmentIds?.length)) return false;
+    if (!canStart || sending.current || (!body.text && !body.attachmentIds?.length)) return false;
     sending.current = true; setPending(true);
     const acceptance = Promise.withResolvers<boolean>();
     void (async () => {
@@ -106,7 +113,9 @@ function NewChatDraft({ draftRevision, projectPath, modelState, pending, setPend
         const session = await ensureSession();
         if (!mounted.current) return;
         const path = '/api/sessions/' + encodeURIComponent(session.id);
-        await requestJson(path + '/config', 'PUT', { provider: chosen!.provider, model: chosen!.id, thinkingLevel: thinking });
+        // 附件可能已提前创建会话，发送前以当前草稿权限保存配置。
+        await requestJson(path + '/config', 'PUT', { provider: chosen!.provider, model: chosen!.id, thinkingLevel: thinking,
+          ...(workspaceId ? {} : { projectApprovalMode }) });
         if (!mounted.current) return;
         const abort = new AbortController();
         stream.current = abort;
@@ -128,7 +137,7 @@ function NewChatDraft({ draftRevision, projectPath, modelState, pending, setPend
         {failed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新加载模型</Button>
           : !loaded ? null : !chosen ? '暂无已配置凭据的模型，请先配置本机模型。' : pending ? '正在开始对话…' : null}
       </div>
-      <TaskComposer options={{ height: 0, draftKey: draftRevision, ...chatDraft('new:' + root), disabled: !chosen || failed, busy: pending,
+      <TaskComposer options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !chosen || failed, busy: pending,
         models: models.filter(model => model.configured).map(model => modelKey(model.provider, model.id)),
         modelLabels: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.name + ' · ' + model.provider])),
         modelNames: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.id])),
@@ -136,7 +145,10 @@ function NewChatDraft({ draftRevision, projectPath, modelState, pending, setPend
         thinkingOptions: (chosen?.thinkingLevels ?? ['off']).map(value => ({ value, label: thinkingLabels[value] })),
         onModelChange: key => { const model = models.find(item => modelKey(item.provider, item.id) === key); setSelected(key); if (!model?.thinkingLevels.includes(thinking)) setThinking('off'); },
         onValueChange: value => setThinking(value as ThinkingLevel),
-        permissionOptions: false, advancedMentions: false, projectPath: root || undefined, skills: [],
+        permissionOptions: root && !workspaceId ? 'project' : false,
+        permission: projectApprovalMode === 'full_access' ? 'full_access' : 'default',
+        onPermissionChange: value => setApproval({ draftRevision, draftKey, mode: value === 'full_access' ? 'full_access' : 'required' }),
+        advancedMentions: false, projectPath: root || undefined, skills: [],
         onSearchFiles: root ? async query => { const session = await ensureSession(); return requestJson<ProjectFiles>('/api/sessions/' + encodeURIComponent(session.id) + '/project-files', 'POST', { query }); } : undefined,
         maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown', attachmentDropTarget,
         onAttachmentUpload: async input => {

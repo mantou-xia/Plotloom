@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -19,12 +19,14 @@ test('日期遵循指定时区的日界线，日内内容稳定且没有精确�
 /** 捕获真实 SDK 发出的模型协议，验证日期变化不会改写已经发送的历史前缀；不伪造缓存命中数。 */
 test('日期上下文 HTTP：前缀稳定、跨天、重试、恢复及压缩', { timeout: 60000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'plotloom-date-'));
+  const projectPath = join(directory, 'project'); await mkdir(projectPath);
+  await writeFile(join(projectPath, 'scene.md'), '核对标记：灯塔-731。');
   const fixture = await createModelFixture();
   const modelsPath = join(directory, 'models.json');
   await writeFile(modelsPath, JSON.stringify({ providers: { test: { api: 'openai-completions', baseUrl: fixture.baseUrl,
     models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 2048,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
-  const options = { dataDir: directory, modelsPath, defaultModel: { provider: 'test', model: 'fixture' }, apiKey: TEST_KEY };
+  const options = { dataDir: join(directory, 'data'), modelsPath, defaultModel: { provider: 'test', model: 'fixture' }, apiKey: TEST_KEY };
   let app = await buildServer(options);
   let address = await app.listen({ host: '127.0.0.1', port: 0 });
   const request = (path: string, method = 'GET', body?: unknown) => fetch(address + path, { method,
@@ -50,7 +52,7 @@ test('日期上下文 HTTP：前缀稳定、跨天、重试、恢复及压缩', 
   try {
     // 只模拟 Date，真实网络、定时器、SDK、JSONL 和接口均继续运行。
     t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 20, 23, 59, 0) });
-    const { id } = await json('/api/sessions', 'POST', {});
+    const { id } = await json('/api/sessions', 'POST', { projectPath });
     const path = `/api/sessions/${id}`;
     const send = async (text: string) => { assertFinal(await collect(await request(`${path}/messages`, 'POST', { text })), 'completed'); };
     await send('今天是几号？'); checkPrefix();

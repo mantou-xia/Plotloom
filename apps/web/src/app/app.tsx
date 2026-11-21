@@ -1,10 +1,9 @@
 import { GlobalLayout } from '@plotloom/ui/layouts/global-layout';
-import { PageLayout } from '@plotloom/ui/layouts/page-layout';
 import { Dialog } from '@plotloom/ui/dialog';
 import { Button } from '@plotloom/ui/button';
-import { Input } from '@plotloom/ui/input';
 import { ThemeRoot } from '@plotloom/ui/theme-root';
 import type { Project, SessionSummary, SessionOrganization } from '@plotloom/contracts';
+import type { Workspace } from '@plotloom/contracts/workspaces';
 import type { ChatSummary } from '@plotloom/contracts/skills';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SettingsPage, SettingsSidebar } from '../features/settings/settings-page';
@@ -17,6 +16,7 @@ import { ChatPage } from '../features/agent/chat-page';
 import { ChatWorkspace } from '../features/workspace/chat-workspace';
 import { NewChatPage } from '../features/agent/new-chat-page';
 import { SkillsPage } from '../features/skills/skills-page';
+import { NovelsPage } from '../features/novels/novels-page';
 import { AppSidebar, type AppPage } from '../features/navigation/app-sidebar';
 import { CreateProjectDialog } from '../features/navigation/create-project-dialog';
 import { ProjectSwitcher } from '../features/navigation/project-switcher';
@@ -26,7 +26,7 @@ import './app.css';
 /** 品牌、页面导航和保存反馈属于应用；布局、按钮及选色能力来自通用组件库。 */
 export function App() {
   const { route, updateRoute, closeSettings, clearSession } = useAppRoute();
-  const { page, sessionId, settings: settingsSection } = route;
+  const { page, sessionId, workspaceId, settings: settingsSection } = route;
   const settingsOpen = settingsSection !== null;
   const [modelRevision, setModelRevision] = useState(0);
   const [skillRevision, setSkillRevision] = useState(0);
@@ -36,7 +36,8 @@ export function App() {
     if (next === 'settings') {
       settingsTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       updateRoute({ settings: 'appearance' }, 'open-settings');
-    } else updateRoute({ page: next });
+    } else if (next === 'novels') updateRoute({ page: next, sessionId: null, workspaceId: null });
+    else updateRoute({ page: next });
   }
   useEffect(() => {
     if (settingsOpen || !settingsTrigger.current) return;
@@ -50,11 +51,12 @@ export function App() {
   const [startRevision, setStartRevision] = useState(0);
   // 默认专注聊天；每次新建时收起工作区，已有标签保留，用户仍可主动展开。
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceState, setWorkspaceState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectState, setProjectState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [projectDialog, setProjectDialog] = useState<'create' | 'switch' | 'create-from-switch' | null>(null);
-  const [chatDialog, setChatDialog] = useState<{ chat: ChatSummary; action: 'rename' | 'delete' } | null>(null);
-  const [name, setName] = useState('');
+  const [chatToDelete, setChatToDelete] = useState<ChatSummary | null>(null);
   const [saving, setSaving] = useState(false);
   const listRequest = useRef(0);
   const theme = useThemePreference();
@@ -81,6 +83,15 @@ export function App() {
     } catch (cause) { setProjectState('error'); notifyRequestError(cause, 'project-list-error'); }
   }, []);
   useEffect(() => { void refreshProjects(); }, [refreshProjects]);
+  // 起始页与侧栏共用小说列表，刷新深链接时可恢复草稿的小说归属。
+  const refreshWorkspaces = useCallback(async () => {
+    try {
+      const result = await requestJson<{ workspaces: Workspace[] }>('/api/workspaces');
+      setWorkspaces(result.workspaces);
+      setWorkspaceState('ready');
+    } catch (cause) { setWorkspaceState('error'); notifyRequestError(cause, 'sidebar-workspaces'); }
+  }, []);
+  useEffect(() => { void refreshWorkspaces(); }, [refreshWorkspaces]);
   // 离开聊天页后仍刷新三个分类的运行状态，避免条目永久停留在生成中。
   useEffect(() => {
     if (!chats.some(chat => chat.status === 'running')) return;
@@ -93,10 +104,12 @@ export function App() {
     void refreshChats();
   }
   /** 目录只绑定新会话；递增草稿版本重置编辑器，页面与模型状态继续复用。 */
-  function startChat(path?: string) {
-    // 在当前新聊天页主动重开才清空；从其他页面返回时恢复对应项目的文字。
-    if (page === 'chat' && !sessionId && (path ?? projectPath) === projectPath) chatDraft('new:' + projectPath.trim()).onDraftChange('');
-    updateRoute({ page: 'chat', sessionId: null, projectPath: path ?? projectPath });
+  function startChat(path = projectPath, novelId: string | null = null) {
+    // 主动重开当前草稿才清空。每个项目目录和小说各自保存输入。
+    if (page === 'chat' && !sessionId && novelId === workspaceId && path === projectPath) {
+      chatDraft(novelId ? 'new-novel:' + novelId : 'new:' + path.trim()).onDraftChange('');
+    }
+    updateRoute({ page: 'chat', sessionId: null, projectPath: path, workspaceId: novelId });
     setStartRevision(value => value + 1);
     setWorkspaceOpen(false);
   }
@@ -104,26 +117,49 @@ export function App() {
   async function organize(chat: ChatSummary, changes: Partial<SessionOrganization>) {
     try {
       await requestJson('/api/sessions/' + encodeURIComponent(chat.id) + '/organization', 'PUT', changes);
-      if (changes.archived) clearSession(chat.id, chat.projectPath ?? '');
+      if (changes.archived) clearSession(chat.id, chat.projectPath ?? '', chat.workspaceId);
       await refreshChats();
     } catch (error) { notifyRequestError(error, 'chat-organization'); }
   }
 
-  /** 删除和改名都等待接口确认，失败时保留弹窗供重试。 */
-  async function saveChatDialog() {
-    if (!chatDialog || saving) return;
+  /** 等待接口确认永久删除，失败时保留弹窗供重试。 */
+  async function deleteChat() {
+    if (!chatToDelete || saving) return;
     setSaving(true);
     try {
-      const path = '/api/sessions/' + encodeURIComponent(chatDialog.chat.id);
-      if (chatDialog.action === 'rename') await requestJson(path + '/name', 'PUT', { name: name.trim() });
-      else {
-        await requestJson(path, 'DELETE');
-        clearSession(chatDialog.chat.id, chatDialog.chat.projectPath ?? '');
-      }
-      setChatDialog(null);
+      await requestJson('/api/sessions/' + encodeURIComponent(chatToDelete.id), 'DELETE');
+      clearSession(chatToDelete.id, chatToDelete.projectPath ?? '', chatToDelete.workspaceId);
+      setChatToDelete(null);
       await refreshChats();
     } catch (error) { notifyRequestError(error, 'chat-management'); }
     finally { setSaving(false); }
+  }
+  /** 逐条复用公开接口，避免大批量请求占满连接；最后只刷新一次，失败项可单独重试。 */
+  async function applyArchiveBatch(targets: ChatSummary[], action: 'restore' | 'delete') {
+    const failed: string[] = [];
+    let reason = '';
+    for (const chat of targets) {
+      const path = '/api/sessions/' + encodeURIComponent(chat.id);
+      try {
+        if (action === 'restore') await requestJson(path + '/organization', 'PUT', { archived: false });
+        else {
+          await requestJson(path, 'DELETE');
+          clearSession(chat.id, chat.projectPath ?? '', chat.workspaceId);
+        }
+      } catch (error) {
+        failed.push(chat.id);
+        reason = error instanceof Error ? error.message : '请重试';
+      }
+    }
+    await refreshChats();
+    if (failed.length) notifyRequestError(new Error(`已完成 ${targets.length - failed.length} 项，${failed.length} 项失败。${reason}`), 'archive-batch');
+    return failed;
+  }
+  /** 标题保存后按会话 ID 同步侧栏名称，切换对话不会串名。 */
+  async function renameChat(id: string, name: string) {
+    const saved = await requestJson<SessionSummary>('/api/sessions/' + encodeURIComponent(id) + '/name', 'PUT', { name });
+    setChats(current => current.map(chat => chat.id === id ? { ...chat, name: saved.name } : chat));
+    return saved.name;
   }
   const projectName = projects.find(project => project.path === projectPath)?.name
     ?? (projectPath.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || projectPath);
@@ -134,19 +170,25 @@ export function App() {
       <GlobalLayout sidebar={<>
         <div hidden={settingsOpen} style={{ height: '100%' }}>
         <AppSidebar page={page} sessionId={sessionId} chats={chats} listState={listState}
-        onOrganize={organize} onRename={chat => { setName(chat.name); setChatDialog({ chat, action: 'rename' }); }}
+        onOrganize={organize}
         projects={projects} projectState={projectState} currentProjectPath={projectPath}
         onPageChange={navigate} onRefresh={async () => { await Promise.all([refreshChats(), refreshProjects()]); }} onChooseProject={() => setProjectDialog('create')}
         onOpenChat={chat => updateRoute({ page: 'chat', sessionId: chat.id })}
-        onNewChat={startChat} />
+        onNewChat={path => path === undefined && (activeChat?.workspaceId ?? workspaceId)
+          ? startChat('', activeChat?.workspaceId ?? workspaceId) : startChat(path)} workspaces={workspaces} workspaceState={workspaceState}
+        onRefreshWorkspaces={refreshWorkspaces} onNewNovelChat={id => startChat('', id)} />
         </div>
         {settingsSection ? <SettingsSidebar onBack={closeSettings} section={settingsSection}
           onSelect={settings => updateRoute({ settings }, 'replace')} /> : null}
       </>}>
         <div className="plotloom-app-content" data-hidden={settingsOpen} inert={settingsOpen} aria-hidden={settingsOpen || undefined}>
-          {page === 'chat' ? <ChatWorkspace open={workspaceOpen} onOpenChange={setWorkspaceOpen}>{sessionId ? <ChatPage title={activeChat?.name} key={sessionId} sessionId={sessionId} settingsRevision={modelRevision + skillRevision} onSessionsChange={refreshChats} /> :
+          {page === 'chat' ? <ChatWorkspace open={workspaceOpen} onOpenChange={setWorkspaceOpen} sessionId={sessionId}
+            projectSession={Boolean(activeChat?.projectPath)} updatedAt={activeChat?.updatedAt}>{(openCitations, openTurnChanges) => sessionId ?
+            <ChatPage title={activeChat?.name} key={sessionId} sessionId={sessionId} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
+              onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges} /> :
             <NewChatPage modelRevision={modelRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
-              renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName}
+              workspaceId={workspaceId} workspaceTitle={workspaces.find(workspace => workspace.id === workspaceId)?.title}
+              renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName || '选择项目'}
                 state={projectState} disabled={disabled} open={projectDialog === 'switch'}
                 onOpenChange={open => setProjectDialog(open ? 'switch' : null)} onRetry={() => void refreshProjects()}
                 onCreate={() => setProjectDialog('create-from-switch')} onSelect={project => {
@@ -155,22 +197,21 @@ export function App() {
                   setProjectDialog(null);
                 }} />} />}</ChatWorkspace> : null}
           {page === 'skills' ? <SkillsPage skillRevision={skillRevision} /> : null}
-          {page === 'novels' ? <PageLayout title="小说管理" style={{ height: '100%' }}><p>小说管理暂未开放，已有小说会话可从侧边栏打开。</p></PageLayout> : null}
+          {page === 'novels' ? <NovelsPage workspaces={workspaces} state={workspaceState} workspaceId={workspaceId}
+            onOpen={id => updateRoute({ sessionId: null, workspaceId: id })} onRefresh={refreshWorkspaces}
+            onRegistered={workspace => setWorkspaces(current => [...current, workspace])}
+            onSessionsChange={refreshChats} onOpenChat={id => updateRoute({ page: 'chat', sessionId: id })} /> : null}
         </div>
         {settingsSection ? <SettingsPage section={settingsSection} color={theme.color} onColorChange={theme.setColor}
-          archived={chats.filter(chat => chat.archived)} archiveStatus={listState}
-          onRestore={chat => void organize(chat, { archived: false })} onDelete={chat => setChatDialog({ chat, action: 'delete' })}
+          archived={chats.filter(chat => chat.archived)} archiveStatus={listState} projects={projects} onBatch={applyArchiveBatch}
+          onRestore={chat => void organize(chat, { archived: false })} onDelete={setChatToDelete}
           onModelsChange={() => setModelRevision(v => v + 1)} onSkillsChange={() => setSkillRevision(v => v + 1)} /> : null}
       </GlobalLayout>
-      {chatDialog && <Dialog open title={chatDialog.action === 'rename' ? '重命名对话' : '永久删除对话'}
-        onOpenChange={open => { if (!open && !saving) setChatDialog(null); }}
-        footer={<><Button variant="ghost" disabled={saving} onClick={() => setChatDialog(null)}>取消</Button>
-          <Button loading={saving} disabled={saving || (chatDialog.action === 'rename' && !name.trim())}
-            onClick={() => void saveChatDialog()}>{chatDialog.action === 'rename' ? '保存' : '确认永久删除'}</Button></>}>
-        {chatDialog.action === 'rename' ? <Input autoFocus aria-label="对话名称" maxLength={120} value={name}
-          onChange={event => setName(event.target.value)} onKeyDown={event => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing && name.trim()) void saveChatDialog();
-          }} /> : <p>永久删除“{chatDialog.chat.name}”及其附件？删除后无法恢复。</p>}
+      {chatToDelete && <Dialog open title="永久删除对话"
+        onOpenChange={open => { if (!open && !saving) setChatToDelete(null); }}
+        footer={<><Button variant="ghost" disabled={saving} onClick={() => setChatToDelete(null)}>取消</Button>
+          <Button loading={saving} onClick={() => void deleteChat()}>确认永久删除</Button></>}>
+        <p>永久删除“{chatToDelete.name}”及其附件？删除后无法恢复。</p>
       </Dialog>}
       {projectDialog === 'create' || projectDialog === 'create-from-switch' ? <CreateProjectDialog
         onCancel={() => setProjectDialog(projectDialog === 'create-from-switch' ? 'switch' : null)}

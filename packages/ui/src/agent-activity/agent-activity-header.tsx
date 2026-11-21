@@ -28,13 +28,14 @@ export function AgentActivityHeader({ activity = 'thinking', phase = 'working', 
   elapsedSeconds, children,
   reducedMotion = false, className = '', style }: AgentActivityHeaderProps) {
   const working = phase === 'working';
+  const animating = working && activity !== 'awaiting_approval' && activity !== 'awaiting_answer';
   const finished = phase === 'answering' || phase === 'completed';
   const preset = AGENT_ACTIVITIES[activity];
   const title = working ? label ?? preset.label : phase === 'failed' ? '执行失败' : '已停止';
-  return <section className={`pl-agent-activity ${className}`} data-phase={phase} data-finished={finished} data-reduced-motion={reducedMotion}
+  return <section className={`pl-agent-activity ${className}`} data-phase={phase} data-finished={finished} data-reduced-motion={reducedMotion || !animating}
     aria-label="Agent 活动与内容" style={{ ...style, '--pl-agent-height': `${visualHeight}px` } as CSSProperties}>
     <div className="pl-agent-activity__body">
-      {!finished ? <div className="pl-agent-activity__visual"><ActivityParticles shape={shape ?? preset.shape} active={working} reducedMotion={reducedMotion} /></div> : null}
+      {!finished ? <div className="pl-agent-activity__visual"><ActivityParticles shape={shape ?? preset.shape} active={animating} reducedMotion={reducedMotion} /></div> : null}
       <div className="pl-agent-activity__right">
         {!finished ? <header className="pl-agent-activity__header" style={working && hideWorkingStatus ? { visibility: 'hidden' } : undefined}>
           <span className="pl-agent-activity__thinking-icon" aria-hidden="true">{Array.from({ length: 9 }, (_, i) =>

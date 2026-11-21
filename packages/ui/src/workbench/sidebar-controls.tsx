@@ -43,7 +43,7 @@ export function SidebarControls({ component, controls, onChange }: {
       <label>置顶禁用原因（留空启用）<input value={controls.sessionPinDisabledReason} onChange={event => onChange({ sessionPinDisabledReason: event.target.value })} /></label>
       <label>归档禁用原因（留空启用）<input value={controls.sessionArchiveDisabledReason} onChange={event => onChange({ sessionArchiveDisabledReason: event.target.value })} /></label>
       <label>任务状态<select value={controls.sessionStatus} onChange={(event) => onChange({ sessionStatus: event.target.value as PreviewControls['sessionStatus'] })}>
-        <option value="none">无状态</option><option value="running">正在进行</option><option value="unread">已完成未查看</option><option value="failed">失败</option>
+        <option value="none">无状态</option><option value="running">正在进行</option><option value="awaiting_approval">待审批</option><option value="awaiting_answer">等待用户回答</option><option value="unread">已完成未查看</option><option value="failed">失败</option>
       </select></label>
     </> : null}
     {flags.map(({ key, label }) => <label key={key} className="pl-workbench__check"><input type="checkbox" checked={controls[key]} onChange={(event) => onChange({ [key]: event.target.checked })} />{label}</label>)}

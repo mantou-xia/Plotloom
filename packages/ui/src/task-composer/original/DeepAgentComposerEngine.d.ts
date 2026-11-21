@@ -18,7 +18,8 @@ export type DeepAgentComposerOptions = MotionOptions & {
   modelNames?: Record<string, string>;
   onModelChange?: (model: string) => void | Promise<void>;
   busy?: boolean; stopping?: boolean; onStop?: () => void;
-  permissionOptions?: boolean; onPermissionChange?: (permission: string) => void;
+  permissionOptions?: boolean | 'project';
+  permission?: string; onPermissionChange?: (permission: string) => void | Promise<void>;
   advancedMentions?: boolean; projectPath?: string; skills?: ComposerSkill[];
   onSearchFiles?: (query: string) => Promise<{ entries: Array<{ path: string; name: string; isDirectory: boolean }>; truncated: boolean }>;
   attachmentAccept?: string; maxAttachments?: number;

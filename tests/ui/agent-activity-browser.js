@@ -7,6 +7,8 @@ async (page) => {
   const frame = page.frameLocator('iframe');
   const root = frame.locator('.pl-agent-activity');
   const canvas = frame.locator('.pl-agent-activity__canvas');
+  const label = root.locator('.pl-agent-activity__label');
+  const labelAnimation = () => label.evaluate(el => getComputedStyle(el).animationName);
   const select = async state => {
     const old = await root.elementHandle();
     const previous = await page.locator('#example-state').inputValue();
@@ -38,6 +40,7 @@ async (page) => {
     assert(await root.getByRole('button', { name: '收起执行过程', exact: true }).count() === 0, '思考期间不存在收起按钮');
     const icon = root.locator('.pl-agent-activity__thinking-icon i');
     assert(await icon.count() === 9 && await icon.first().evaluate(el => getComputedStyle(el).animationName) === 'pl-thinking-pulse', '九宫格思考动画运行');
+    assert(await labelAnimation() === 'pl-agent-label-shine', '运行中的状态文字播放扫光');
     await root.locator('.pl-agent-activity__header').click();
     assert(await canvas.isVisible(), '点击状态头部不会收起');
     await page.getByRole('textbox', { name: '工具名称', exact: true }).fill('grep');
@@ -109,6 +112,7 @@ async (page) => {
       assert((await box(root)).height === 360, `${state} 不增加额外摘要行或改变高度`);
       const data = await pixels(); await page.waitForTimeout(300);
       assert(data === await pixels(), `${state} 停止动画`);
+      assert(await labelAnimation() === 'none', `${state} 停止文字扫光`);
     }
     await select('reading');
     await page.getByRole('checkbox', { name: '减少动态效果', exact: true }).check();
@@ -116,6 +120,7 @@ async (page) => {
     const reduced = await pixels(); await page.waitForTimeout(300);
     assert(reduced === await pixels(), '显式减少动态效果保持静态');
     assert(await icon.first().evaluate(el => getComputedStyle(el).animationName) === 'none', '减少动态效果停止思考图标动画');
+    assert(await labelAnimation() === 'none', '组件减少动态效果关闭文字扫光');
     // 静态模式隔离自动动画，以像素变化证明实际拖动而非时间变化。
     const canvasBox = await box(canvas);
     await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
@@ -135,6 +140,7 @@ async (page) => {
     const systemReduced = await pixels(); await page.waitForTimeout(300);
     assert(systemReduced === await pixels(), '系统减少动态效果保持静态');
     assert(await icon.first().evaluate(el => getComputedStyle(el).animationName) === 'none', '系统减少动态效果停止图标动画');
+    assert(await labelAnimation() === 'none', '系统减少动态效果关闭文字扫光');
     await page.getByRole('checkbox', { name: '显示调用方耗时', exact: true }).uncheck();
     await page.waitForTimeout(100);
     assert(await root.locator('.pl-agent-activity__time').count() === 0, '未提供耗时不显示假计时');

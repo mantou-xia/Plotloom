@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { startServer, collect, events, assertFinal } from './client.ts';
 import { createModelFixture, TEST_KEY } from './fixture.ts';
+import { TURN_START } from '../../packages/agent-pi/src/messages.ts';
 
 const review = { name: 'review_writing', args: { status: 'clear', issues: [] } };
 const proposal = (path: string, content: string) => ({ name: 'propose_change', args: { path, content, reason: '按本轮要求创作。' } });
@@ -16,7 +17,8 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
   const book = join(dir, 'book'); const other = join(dir, 'other'); await mkdir(book); await mkdir(other);
   const models = join(dir, 'models.json');
   await writeFile(models, JSON.stringify({ providers: { test: { api: 'openai-completions', baseUrl: fixture.baseUrl,
-    models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
+    models: ['fixture', 'alternate'].map(id => ({ id, name: id, reasoning: true, input: ['text'], contextWindow: 128000,
+      maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })) } } }));
   const env = { PLOTLOOM_DATA_DIR: join(dir, 'data'), PLOTLOOM_MODELS_PATH: models, PLOTLOOM_PROVIDER: 'test', PLOTLOOM_MODEL: 'fixture', PLOTLOOM_API_KEY: TEST_KEY };
   let server = await startServer(env);
   const json = (...args: Parameters<typeof server.json>) => server.json(...args);
@@ -24,7 +26,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
   const ws2 = await json('/api/workspaces', 'POST', { title: '另一部', root: other }, 201);
   const chat = await json(`/api/workspaces/${ws.id}/sessions`, 'POST', {}, 201);
   const chat2 = await json(`/api/workspaces/${ws2.id}/sessions`, 'POST', {}, 201);
-  const normal = await json('/api/sessions', 'POST', {}, 201);
+  const normal = await json('/api/sessions', 'POST', { projectPath: dir }, 201);
   const prefix = `/api/workspaces/${ws.id}`; const writing = `/api/sessions/${chat.id}/writing`;
   const read = (path: string) => json(`${prefix}/document/read`, 'POST', { path });
   const save = (path: string, content: string, baseVersion: string | null = null) => json(`${prefix}/document`, 'PUT', { path, content, baseVersion });
@@ -124,7 +126,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       const conflict = await json(`${prefix}/proposals/${p.id}/changes/${p.changes[0].id}`, 'POST', { action: 'accept' }, 409); assert.equal(conflict.error.code, 'REFERENCE_CONFLICT');
       assert.equal((await read(p.path)).version, null);
     });
-    await t.test('小说普通消息可读资料，跨书/越界不可用，普通聊天不获得小说工具', async () => {
+    await t.test('小说普通消息可读资料，跨书/越界不可用，项目聊天不获得小说工具', async () => {
       const instructions = plan([{ name: 'read_document', args: { path: character.path } }, { name: 'read_document', args: { path: '../other/秘密.md' } }]);
       const ev = await collect(await server.request(`/api/sessions/${chat.id}/messages`, 'POST', { text: instructions }));
       assert(ev.some(e => e.type === 'tool_end' && e.outcome === 'failed')); assert.equal((await results())[0].context.sources[0].content, character.content);
@@ -149,6 +151,105 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert.equal((await json(`/api/sessions/${chat.id}`)).activity, 'generating');
       await json(`${writing}/messages`, 'POST', { task: 'discuss', instructions: '并发消息' }, 409);
       await restart(true); const recovered = await results(); assert.equal(recovered[0].outcome, 'aborted'); assert.equal(recovered[1].id, saved.id); assert.equal(recovered[1].proposals.length, 1);
+    });
+    await t.test('结构化重试跨重启保留选区、大纲、参考片段、预算和模型配置', async () => {
+      const session = '/api/sessions/' + chat.id;
+      await json(session + '/config', 'PUT', { thinkingLevel: 'low' });
+      const doc = await save('章节/重试.md', '前文😀\r\n重复句。\r\n中段\r\n重复句。\r\n结尾\r\n');
+      const start = doc.content.lastIndexOf('重复句。');
+      const input = {
+        task: 'rewrite', instructions: plan([review, proposal(doc.path, '改过的后句。')]),
+        target: { path: doc.path, baseVersion: doc.version, selection: { start, end: start + 4, text: '重复句。' } },
+        outline: { path: outline.path, version: outline.version },
+        references: [{ path: character.path, version: character.version, role: 'character', selection: { start: 0, end: 5, text: '# 林舟\n' } }],
+        maxOutputChars: 300, skillIds: ['builtin-novel-writing'],
+      };
+      const before = (await send(input)).result;
+      const modelRequest = fixture.requests.at(-1);
+      const oldId = (await json(session)).retryMessageId;
+      await json(session + '/config', 'PUT', { provider: 'test', model: 'alternate', thinkingLevel: 'medium', autoCompaction: false });
+      await restart();
+      const replay = await collect(await server.request(session + '/retry', 'POST', { messageId: oldId }));
+      assertFinal(replay, 'completed');
+      const [after, previous] = await results();
+      assert.deepEqual(after.context, before.context);
+      assert.equal(previous.id, before.id);
+      assert.notEqual(after.id, before.id);
+      assert.notEqual(after.proposals[0].id, before.proposals[0].id);
+      assert.equal(after.proposals[0].content, doc.content.slice(0, start) + '改过的后句。' + doc.content.slice(start + 4));
+      assert.equal((await read(doc.path)).content, doc.content);
+      const retriedRequest = fixture.requests.at(-1);
+      assert.equal(retriedRequest.model, 'fixture');
+      assert.equal(modelRequest.reasoning_effort, 'low');
+      assert.equal(retriedRequest.reasoning_effort, modelRequest.reasoning_effort);
+      assert.equal((await json(session + '/config')).model, 'alternate');
+      assert.equal((await json(session + '/config')).thinkingLevel, 'medium');
+      assert.equal((await json(session + '/config')).autoCompaction, false);
+      assert.equal((await json(session + '/retry', 'POST', { messageId: oldId }, 409)).error.code, 'RETRY_UNAVAILABLE');
+
+      const newId = (await json(session)).retryMessageId;
+      const count = fixture.requests.length;
+      await writeFile(join(book, character.path), character.content + ' 外部改动。');
+      assert.equal((await json(session + '/retry', 'POST', { messageId: newId }, 409)).error.code, 'REVISION_CONFLICT');
+      await writeFile(join(book, character.path), character.content);
+      await writeFile(join(book, doc.path), doc.content + '外部改稿。');
+      assert.equal((await json(session + '/retry', 'POST', { messageId: newId }, 409)).error.code, 'REVISION_CONFLICT');
+      assert.equal(fixture.requests.length, count, '旧版本在调用模型前拒绝');
+      await writeFile(join(book, doc.path), doc.content);
+      await json('/api/skills/builtin-novel-writing/enabled', 'PUT', { enabled: false });
+      assert.equal((await json(session + '/retry', 'POST', { messageId: newId }, 422)).error.code, 'SKILL_UNAVAILABLE');
+      await json('/api/skills/builtin-novel-writing/enabled', 'PUT', { enabled: true });
+      const normal = await collect(await server.request(session + '/messages', 'POST', { text: '检查当前配置' }));
+      assertFinal(normal, 'completed');
+      assert.equal(fixture.requests.at(-1).model, 'alternate');
+    });
+    await t.test('旧结构化轮次可恢复为原任务，重试期间仍可停止', async () => {
+      const session = '/api/sessions/' + chat.id;
+      const doc = await save('章节/旧续写.md', '原文\n');
+      const body = { task: 'continue', instructions: plan([review, proposal(doc.path, '续文\n')], { waitBefore: 0 }),
+        target: { path: doc.path, baseVersion: doc.version }, maxOutputChars: 450 };
+      async function stopRun(path: string, body: unknown) {
+        const received = [];
+        for await (const event of events(await server.request(path, 'POST', body))) {
+          received.push(event);
+          if (event.type === 'text_delta') await json(session + '/stop', 'POST');
+        }
+        assertFinal(received, 'aborted');
+        return (await results())[0];
+      }
+      const before = await stopRun(writing + '/messages', body);
+      const { retryMessageId } = await json(session);
+      await server.close();
+      const sessions = join(env.PLOTLOOM_DATA_DIR, 'sessions');
+      const file = (await readdir(sessions)).find(name => name.endsWith(chat.id + '.jsonl'));
+      assert(file);
+      const log = join(sessions, file);
+      const entries = (await readFile(log, 'utf8')).trimEnd().split('\n').map(line => JSON.parse(line));
+      const lastTurn = entries.findLast(entry => entry.customType === TURN_START);
+      assert(lastTurn.data.businessInput);
+      // 模拟旧版轮次，仅保留当时已写入的通用参数和独立创作上下文。
+      delete lastTurn.data.businessInput;
+      delete lastTurn.data.execution;
+      await writeFile(log, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n');
+      server = await startServer(env);
+      const after = await stopRun(session + '/retry', { messageId: retryMessageId });
+      assert.deepEqual(after.context, before.context);
+      assert.notEqual(after.id, before.id);
+      assert.equal((await read(doc.path)).content, doc.content);
+
+      await json(session + '/config', 'PUT', { model: 'fixture', provider: 'test', thinkingLevel: 'high' });
+      const replayId = (await json(session)).retryMessageId;
+      const interrupted = events(await server.request(session + '/retry', 'POST', { messageId: replayId }));
+      for await (const event of interrupted) {
+        if (event.type === 'text_delta') break;
+      }
+      assert.equal(fixture.requests.at(-1).model, 'alternate');
+      assert.equal(fixture.requests.at(-1).reasoning_effort, 'medium');
+      assert.equal((await json(session + '/config')).thinkingLevel, 'high');
+      await restart(true);
+      assert.equal((await json(session + '/config')).model, 'fixture');
+      assert.equal((await json(session + '/config')).thinkingLevel, 'high');
+      assert.equal((await results())[0].outcome, 'aborted');
     });
     assert.deepEqual(fixture.errors, []);
   } finally {

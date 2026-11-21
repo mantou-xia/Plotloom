@@ -3,6 +3,48 @@ async (page) => {
   const passed = [];
   const assert = (value, label) => { if (!value) throw new Error(label); passed.push(label); };
   await page.goto('http://127.0.0.1:4433');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const settingsNav = page.getByRole('navigation', { name: '设置导航' });
+  const toolsButton = settingsNav.getByRole('button', { name: '工具', exact: true });
+  const appearance = settingsNav.getByRole('button', { name: '外观', exact: true });
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/tools', async route => {
+    await pending;
+    await route.fulfill({ status: 500, json: { error: { message: '验收模拟失败' } } });
+  });
+  await toolsButton.click();
+  const toolsPanel = page.getByRole('region', { name: 'ToolCall 工具清单' });
+  const toolStatus = toolsPanel.getByRole('status');
+  await toolStatus.getByText('正在加载工具…').waitFor();
+  const statusBox = await toolStatus.boundingBox();
+  release();
+  await toolStatus.getByText('工具清单加载失败').waitFor();
+  assert(JSON.stringify(await toolStatus.boundingBox()) === JSON.stringify(statusBox), '工具目录失败提示保持原位置');
+  await page.unroute('**/api/tools');
+  await appearance.click();
+  await toolsButton.click();
+  await appearance.click();
+  await toolsButton.click();
+  const browserTool = toolsPanel.getByRole('group', { name: 'browser', exact: true });
+  const writeTool = toolsPanel.getByRole('group', { name: 'write', exact: true });
+  await browserTool.waitFor();
+  assert(await browserTool.getByText('Plotloom 浏览器（Playwright）', { exact: true }).isVisible(), '工具目录显示实际提供方');
+  for (const name of ['browser', 'web_fetch']) {
+    const tool = toolsPanel.getByRole('group', { name, exact: true });
+    assert(await tool.getByText('项目聊天、小说聊天', { exact: true }).isVisible(), `${name} 显示适用于全部会话`);
+  }
+  assert(await writeTool.getByText('项目聊天', { exact: true }).isVisible(), '文件写入工具显示项目会话范围');
+  assert(await writeTool.getByText(/每次变更都需批准/).isVisible(), '文件写入工具显示批准限制');
+  assert(JSON.stringify(await toolStatus.boundingBox()) === JSON.stringify(statusBox), '成功加载后状态位置稳定');
+  await page.reload();
+  await browserTool.waitFor();
+  assert(new URL(page.url()).hash === '#settings=tools', '工具设置支持直接访问及刷新');
+  await page.screenshot({ path: 'output/playwright/tools-settings.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert(await toolsPanel.evaluate(node => node.scrollWidth <= node.clientWidth), '工具清单窄屏无横向溢出');
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await settingsNav.getByRole('button', { name: '返回', exact: true }).click();
   await page.getByRole('button', { name: '技能', exact: true }).click();
   const trigger = page.getByRole('button', { name: '查看 novel-writing 详情' });
   await trigger.click();
@@ -63,6 +105,7 @@ async (page) => {
   await page.locator('#send-request').click();
   await page.waitForFunction(() => document.querySelector('#result-state')?.getAttribute('data-phase') === 'success');
   assert((await page.locator('#result-content').innerText()).includes('通过'), '试验台工具目录实际请求通过字段检查');
+  assert((await page.locator('#result-content').innerText()).includes('Plotloom 浏览器（Playwright）'), '试验台响应展示工具提供方');
   await page.goto('http://127.0.0.1:4434/#skills.enabled');
   await page.locator('[data-path-parameter="skillId"]').fill('builtin-novel-writing');
   await page.locator('#request-body').fill(JSON.stringify({ enabled: false }));

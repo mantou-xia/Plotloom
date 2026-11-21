@@ -78,12 +78,12 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       const linked = join(dir, 'linked-skill'); await mkdir(linked); await writeFile(join(linked, 'SKILL.md'), source('linked-skill'));
       await symlink(root, join(linked, 'outside'), 'junction'); await importSkill(linked, 400);
     });
-    await t.test('小说聊天固定归属、普通聊天与最近列表、空会话跨重启', async () => {
+    await t.test('小说聊天固定归属、项目聊天与最近列表、空会话跨重启', async () => {
       workspace = await json('/api/workspaces', 'POST', { title: '甲', root: book }, 201);
       workspace2 = await json('/api/workspaces', 'POST', { title: '乙', root: other }, 201);
       chat = await json(`/api/workspaces/${workspace.id}/sessions`, 'POST', { name: '甲聊天' }, 201);
       chat2 = await json(`/api/workspaces/${workspace2.id}/sessions`, 'POST', {}, 201);
-      normal = await json('/api/sessions', 'POST', {}, 201);
+      normal = await json('/api/sessions', 'POST', { projectPath: dir }, 201);
       assert.deepEqual((await json(`/api/workspaces/${workspace.id}/skills`)).skillIds, ['builtin-novel-writing', skill.id, imported.id]);
       const initial = await json(setting(chat.id)); assert.equal(initial.mode, 'inherit'); assert.equal(initial.unavailable.length, 0);
       await json(setting(chat.id), 'PUT', { skillIds: [skill.id] }); await restart();
@@ -102,7 +102,7 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       await json(setting(chat.id), 'PUT', { skillIds: [] }); assert.deepEqual((await json(setting(chat.id))).effectiveSkillIds, []);
       await json(setting(chat.id), 'PUT', { skillIds: null });
       assert.deepEqual((await json(setting(normal.id))).effectiveSkillIds, [skill.id, imported.id]);
-      // 普通聊天现在自动发现全局技能；显式空列表仍可独立限制该聊天。
+      // 项目聊天现在自动发现全局技能；显式空列表仍可独立限制该聊天。
       await json(setting(normal.id), 'PUT', { skillIds: [] });
       await json(setting(chat.id), 'PUT', { skillIds: ['unknown'] }, 404);
       await json(`/api/workspaces/${workspace.id}/skills`, 'PUT', { skillIds: [skill.id, skill.id] }, 400);
@@ -118,7 +118,7 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       assertFinal(await send(chat2.id, '加载小说技能', ['builtin-novel-writing']), 'completed');
       await json(setting(normal.id), 'PUT', { skillIds: ['builtin-novel-writing'] });
       assert.equal((await json(setting(normal.id))).unavailable.length, 1);
-      await json(msg(normal.id), 'POST', { text: '普通聊天缺少小说工具', skillIds: ['builtin-novel-writing'] }, 422);
+      await json(msg(normal.id), 'POST', { text: '项目聊天缺少小说工具', skillIds: ['builtin-novel-writing'] }, 422);
       await json(setting(normal.id), 'PUT', { skillIds: [] });
       const unavailable = await json('/api/skills', 'POST', { content: source('missing-tool', '依赖诊断', 'allowed-tools: nonexistent_tool\n') }, 201);
       await json(setting(chat2.id), 'PUT', { skillIds: [unavailable.id] });
@@ -126,7 +126,7 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       const bad = await send(chat.id, command(skill.id, '../secret')); assert(bad.some(e => e.type === 'tool_end' && e.outcome === 'failed'));
       const disabled = await json('/api/skills', 'POST', { content: source('not-enabled') }, 201);
       const cross = await send(chat.id, command(disabled.id)); assert(cross.some(e => e.type === 'tool_end' && e.outcome === 'failed'));
-      await send(normal.id, '普通聊天'); assert.doesNotMatch(JSON.stringify(fixture.requests.at(-1).tools), /read_skill/);
+      await send(normal.id, '项目聊天'); assert.doesNotMatch(JSON.stringify(fixture.requests.at(-1).tools), /read_skill/);
     });
     await t.test('生成中编辑与停用只影响下一轮，旧快照仍能读取', async () => {
       const prompt = command(skill.id, 'references/tone.md', true);

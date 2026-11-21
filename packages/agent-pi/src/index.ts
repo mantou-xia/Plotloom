@@ -8,7 +8,8 @@ import {
 import type {
   AgentEvent, ModelConfig, ModelInfo, ModelSelection, SessionDetail, SessionOrganization, SessionListItem, SessionSummary, Outcome,
   ThinkingLevel, ModelSettings, ModelCapabilities, SessionActivity, SessionConfig, SessionConfigRequest,
-  CreateSessionRequest, SessionContext, SessionStats, SessionTools, CompactionResult, SubmitMessageRequest,
+  AgentQuestionAnswer, AgentPersona, AgentProfile, AgentProfileUpdate,
+  CreateSessionRequest, CreateProjectSessionRequest, ProjectFileChange, TurnFileChanges, SessionContext, SessionStats, SessionTools, CompactionResult, SubmitMessageRequest, ToolApprovalDecision, ProjectApprovalMode,
 } from '@plotloom/contracts';
 import { AgentError, modelFailure } from './errors.ts';
 import { ProviderStore } from './provider-settings.ts';
@@ -19,13 +20,20 @@ import { SessionBrowsers, BROWSER_TOOL, type BrowserOptions } from './browser.ts
 import { createWebFetchTool } from './web-fetch.ts';
 export { WEB_FETCH_TOOL } from './web-fetch.ts';
 export { BROWSER_TOOL } from './browser.ts';
-import { createFixtureTool, createResources, createSettings } from './resources.ts';
+import { createResources, createSettings } from './resources.ts';
 import type { SessionSkillProfile } from '@plotloom/contracts/skills';
 import type { MessageSources, MessageSourceSnapshot } from '@plotloom/contracts/sources';
 import { createSkillTool, skillPrompt, type SkillSnapshot } from './skills.ts';
 import { adaptBusinessTool, type RequestResources } from './request-resources.ts';
-import { findProjectFiles, validateProjectPath, PROJECT_TOOLS } from './project.ts';
-export { PROJECT_TOOLS } from './project.ts';
+import { findProjectFiles, validateProjectPath } from './project.ts';
+import { createProjectTools } from './project-tools.ts';
+import { compareProjectFile, PROJECT_FILE_WRITE, summarizeProjectWrites, type ProjectWriteSnapshot } from './project-diff.ts';
+import { ToolApprovals } from './tool-approvals.ts';
+import { AgentQuestions, createAskUserTool, type QuestionWaiter } from './agent-question.ts';
+import { createAgentProfileTool } from './agent-profile-tool.ts';
+export { SETUP_AGENT_PROFILE } from './agent-profile-tool.ts';
+export { ASK_USER_TOOL } from './agent-question.ts';
+export { PROJECT_TOOLS } from './project-tools.ts';
 export type { RequestResources, BusinessTool } from './request-resources.ts';
 export { AgentError, publicError } from './errors.ts';
 
@@ -39,11 +47,38 @@ export interface AgentOptions {
   browser?: BrowserOptions;
   removeAttachments?: (id: string) => Promise<void>;
   resolveSkills?: (sessionId: string, explicit: string[]) => Promise<SkillSnapshot[]>;
-  resolveResources?: (sessionId: string, text: string, sources?: MessageSources) => Promise<RequestResources | undefined>;
+  resolveAgentProfile?: () => Promise<AgentProfile>;
+  completeAgentBootstrap?: (input: AgentProfileUpdate, signal?: AbortSignal) => Promise<boolean>;
+  resolveResources?: (sessionId: string, text: string, sources?: MessageSources, businessInput?: unknown) => Promise<RequestResources | undefined>;
+  recoverBusinessInput?: (request: SubmitMessageRequest, entries: ReadonlyMap<string, unknown>) => unknown;
   resolveSources?: (sessionId: string, text: string, sources: MessageSources) => Promise<MessageSourceSnapshot & { prompt: string; images: Array<{ mimeType: string; data: string }> }>;
 }
+interface TurnRequest {
+  request?: SubmitMessageRequest;
+  businessInput?: unknown;
+  execution?: { model: ModelSettings; autoCompaction: boolean; skills: Array<[string, string, boolean]> };
+  restoreModel?: ModelSettings;
+  persona?: AgentPersona | null;
+  bootstrap?: boolean;
+}
+
+const skillVersions = (skills: SkillSnapshot[]): Array<[string, string, boolean]> =>
+  skills.map(skill => [skill.id, skill.version, skill.autoLoad]);
+
+/** Pi 会在执行时写入实际模型和思考档位。临时重试覆盖结束后，恢复会话原先的设置。 */
+function restoreReplayModel(manager: SessionManager, model: ModelSettings) {
+  const current = manager.buildSessionContext();
+  if (current.model?.provider !== model.provider || current.model?.modelId !== model.model) {
+    manager.appendModelChange(model.provider, model.model);
+  }
+  if (model.thinkingLevel && current.thinkingLevel !== model.thinkingLevel) {
+    manager.appendThinkingLevelChange(model.thinkingLevel);
+  }
+}
+
 interface RecordState {
   manager: SessionManager;
+  fileChanges?: Map<string, TurnFileChanges>;
   selection: ModelSelection;
   session?: AgentSession;
   opening?: Promise<AgentSession>;
@@ -53,9 +88,15 @@ interface RecordState {
   activity?: Exclude<SessionActivity, 'idle'>;
   stopRequested: boolean;
   skills?: SkillSnapshot[];
+  persona?: AgentPersona;
+  bootstrap?: boolean;
   resourceKey?: string;
   runtime?: ModelRuntime;
   resources?: RequestResources;
+  approvals?: ToolApprovals;
+  questions?: AgentQuestions;
+  emit?: (event: AgentEvent) => void;
+  replayBaseModel?: ModelSettings;
 }
 
 /** 管理单进程中的会话实例；持久化权威记录始终是 SDK JSONL。 */
@@ -93,6 +134,7 @@ export class AgentService {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       service.selection = options.defaultModel;
     }
+    await service.removeUnboundSessions();
     return service;
   }
 
@@ -150,11 +192,16 @@ export class AgentService {
   }
 
   /** SDK 1.5.2 延迟到首条消息才写盘；用其公开头和条目初始化同一 JSONL，再交还 SDK。 */
-  async createSession(request: CreateSessionRequest = {}, profile?: SessionSkillProfile): Promise<SessionSummary> {
+  async createSession(request: CreateProjectSessionRequest): Promise<SessionSummary>;
+  async createSession(request: CreateSessionRequest, profile: SessionSkillProfile & { workspaceId: string }): Promise<SessionSummary>;
+  async createSession(request: CreateSessionRequest | CreateProjectSessionRequest, profile?: SessionSkillProfile): Promise<SessionSummary> {
+    const projectPath = 'projectPath' in request ? await validateProjectPath(request.projectPath) : undefined;
+    if (Boolean(projectPath) === Boolean(profile?.workspaceId)) {
+      throw new AgentError(400, 'INVALID_REQUEST', '会话必须绑定一个项目目录或小说工作区。');
+    }
     const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : this.selection;
     const model = await this.requireModel(selection);
     const thinkingLevel = this.thinking(model, request.thinkingLevel, this.selection?.thinkingLevel);
-    const projectPath = request.projectPath === undefined ? undefined : await validateProjectPath(request.projectPath);
     const manager = SessionManager.create(projectPath ?? this.cwd, this.sessionDir);
     manager.appendModelChange(selection!.provider, selection!.model);
     manager.appendThinkingLevelChange(thinkingLevel);
@@ -170,21 +217,50 @@ export class AgentService {
 
   private summary(record: RecordState): SessionSummary {
     return { id: record.manager.getSessionId(), ...record.selection, status: record.job ? 'running' : 'idle',
-      activity: record.activity ?? 'idle', name: record.manager.getSessionName() ?? '新聊天',
-      thinkingLevel: (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel,
-      ...(this.projectPath(record) ? { projectPath: this.projectPath(record) } : {}) };
+      activity: this.sessionActivity(record), name: record.manager.getSessionName() ?? '新聊天',
+      thinkingLevel: record.replayBaseModel?.thinkingLevel ?? (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel,
+      ...(this.projectPath(record.manager) ? { projectPath: this.projectPath(record.manager) } : {}) };
+  }
+
+  /** 用户交互仍占用生成锁；根据当前待处理请求派生活动，回复后恢复生成。 */
+  private sessionActivity(record: RecordState): SessionActivity {
+    if (record.activity === 'generating' && record.questions?.current) return 'awaiting_answer';
+    if (record.activity === 'generating' && record.approvals?.hasPending) return 'awaiting_approval';
+    return record.activity ?? 'idle';
   }
 
   /** 只有明确创建为项目会话才启用原生工具；不凭旧会话头的默认 cwd 扩大权限。 */
-  private projectPath(record: RecordState): string | undefined {
-    const entry = record.manager.getEntries().find(e => e.type === 'custom' && e.customType === 'plotloom-project');
+  private projectPath(manager: SessionManager): string | undefined {
+    const entry = manager.getEntries().find(e => e.type === 'custom' && e.customType === 'plotloom-project');
     return entry?.type === 'custom' ? (entry.data as { path: string }).path : undefined;
   }
 
   async projectFiles(id: string, query: string) {
-    const root = this.projectPath(await this.getRecord(id));
+    const root = this.projectPath((await this.getRecord(id)).manager);
     if (!root) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目目录，请新建项目聊天。');
-    return findProjectFiles(root, query);
+    return findProjectFiles(root, query, this.options.dataDir);
+  }
+
+  /** 用会话和记录 ID 查询保存的快照，磁盘当前内容不影响以前的对比。 */
+  private async projectWrites(id: string) {
+    const { manager } = await this.getRecord(id);
+    if (!this.projectPath(manager)) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目目录。');
+    return manager.getEntries().flatMap(entry => {
+      if (entry.type !== 'custom' || entry.customType !== PROJECT_FILE_WRITE) return [];
+      const { id, path, operation, before, after } = entry.data as ProjectWriteSnapshot;
+      const change: ProjectFileChange = { id, path, operation, createdAt: entry.timestamp };
+      return [{ change, before, after }];
+    });
+  }
+
+  async listProjectWrites(id: string): Promise<{ changes: ProjectFileChange[] }> {
+    return { changes: (await this.projectWrites(id)).map(item => item.change) };
+  }
+
+  async projectFileDiff(id: string, writeId: string) {
+    const entry = (await this.projectWrites(id)).find(item => item.change.id === writeId);
+    if (!entry) throw new AgentError(404, 'PROJECT_WRITE_NOT_FOUND', '该文件写入记录不存在。');
+    return compareProjectFile(entry.change, entry.before, entry.after);
   }
 
   /** 在任何异步工作前占用会话，消息、配置和压缩共用同一互斥边界，结束时统一释放。 */
@@ -219,6 +295,13 @@ export class AgentService {
     const existing = this.records.get(id);
     if (existing) return existing;
     const manager = SessionManager.open(file.path, this.sessionDir);
+    // 强制退出可能发生在 Pi 持久化临时档位后。结束标记之前先恢复配置，保证再次打开仍使用会话设置。
+    const boundary = manager.getBranch().findLast(entry =>
+      entry.type === 'custom' && (entry.customType === TURN_START || entry.customType === TURN_END));
+    if (boundary?.type === 'custom' && boundary.customType === TURN_START) {
+      const restoreModel = (boundary.data as TurnRequest | undefined)?.restoreModel;
+      if (restoreModel) restoreReplayModel(manager, restoreModel);
+    }
     const model = manager.buildSessionContext().model;
     if (!model) throw new AgentError(500, 'SESSION_INVALID', '会话模型记录缺失。');
     const record: RecordState = { manager, selection: { provider: model.provider, model: model.modelId }, stopRequested: false };
@@ -256,14 +339,30 @@ export class AgentService {
     const release = this.reserve(record, 'configuring');
     try {
       if (!this.organization(record).archived) throw new AgentError(409, 'SESSION_NOT_ARCHIVED', '请先归档对话。');
-      await this.browsers.remove(id);
-      await this.options.removeAttachments?.(id);
-      record.session?.dispose();
-      record.session = undefined;
-      await unlink(record.manager.getSessionFile()!);
-      this.records.delete(id);
+      await this.removeSessionFiles(record.manager);
       return { id };
     } finally { release(); }
+  }
+
+  /** 启动时按持久化归属清理旧普通会话，包括已归档记录。只要有明确的项目或小说归属就保留。 */
+  private async removeUnboundSessions(): Promise<void> {
+    for (const file of await SessionManager.listAll(this.sessionDir)) {
+      const manager = SessionManager.open(file.path, this.sessionDir);
+      if (!this.projectPath(manager) && !this.skillProfile(manager).workspaceId) await this.removeSessionFiles(manager);
+    }
+  }
+
+  /** 先清理会话专属数据，最后删除历史；启动中断后下次仍能根据同一会话重试。 */
+  private async removeSessionFiles(manager: SessionManager): Promise<void> {
+    const id = manager.getSessionId();
+    if (!/^[a-zA-Z0-9-]{1,80}$/.test(id)) throw new AgentError(500, 'SESSION_INVALID', '会话标识无效。');
+    await this.browsers.remove(id);
+    await this.options.removeAttachments?.(id);
+    const record = this.records.get(id);
+    record?.session?.dispose();
+    if (record) record.session = undefined;
+    await unlink(manager.getSessionFile()!);
+    this.records.delete(id);
   }
 
   async listSessions(): Promise<SessionListItem[]> {
@@ -274,13 +373,56 @@ export class AgentService {
     }));
   }
 
+  /** 写入快照位于轮次标记之间。终态摘要只算一次，既支持已有快照，也不在轮询时重复计算差异。 */
+  private finishedFileChanges(record: RecordState, messages: SessionDetail['messages']): TurnFileChanges[] {
+    const finishedTurns = new Set(messages.flatMap(message =>
+      message.role === 'user' && message.turnId && message.outcome ? [message.turnId] : []));
+    const summaries = record.fileChanges ??= new Map();
+    const writesByTurn = new Map<string, ProjectWriteSnapshot[]>();
+    let turnId: string | undefined;
+    for (const entry of record.manager.getBranch()) {
+      if (entry.type !== 'custom') continue;
+      if (entry.customType === TURN_START) turnId = entry.id;
+      else if (entry.customType === TURN_END) turnId = undefined;
+      else if (entry.customType === PROJECT_FILE_WRITE && turnId && finishedTurns.has(turnId) && !summaries.has(turnId)) {
+        const writes = writesByTurn.get(turnId) ?? [];
+        writes.push(entry.data as ProjectWriteSnapshot);
+        writesByTurn.set(turnId, writes);
+      }
+    }
+    for (const [turn, writes] of writesByTurn) summaries.set(turn, { turnId: turn, files: summarizeProjectWrites(writes) });
+    return [...finishedTurns].flatMap(turn => {
+      const summary = summaries.get(turn);
+      return summary ? [summary] : [];
+    });
+  }
+
   async getSession(id: string): Promise<SessionDetail> {
     const record = await this.getRecord(id);
     const messages = readMessages(record.manager, record.activeTurn, record.current);
     const latest = record.manager.getBranch().findLast(entry => entry.type === 'custom' && entry.customType === TURN_START);
     const request = latest?.type === 'custom' ? (latest.data as { request?: SubmitMessageRequest } | undefined)?.request : undefined;
     const user = messages.findLast(message => message.role === 'user');
-    return { ...this.summary(record), messages, ...(request && user && user.turnId === latest?.id ? { retryMessageId: user.id } : {}) };
+    const pendingApprovals = record.approvals?.list();
+    const pendingQuestion = record.questions?.current;
+    const fileChanges = this.projectPath(record.manager) ? this.finishedFileChanges(record, messages) : [];
+    return { ...this.summary(record), messages, ...(fileChanges.length ? { fileChanges } : {}), ...(pendingApprovals?.length ? { pendingApprovals } : {}),
+      ...(pendingQuestion ? { pendingQuestion } : {}),
+      ...(request && user && user.turnId === latest?.id ? { retryMessageId: user.id } : {}) };
+  }
+
+  /** 只接受当前会话仍待决定的调用；重启和重试没有可沿用的批准。 */
+  async decideToolApproval(id: string, approvalId: string, decision: ToolApprovalDecision) {
+    const record = await this.getRecord(id);
+    if (!record.approvals || record.stopRequested) throw new AgentError(409, 'TOOL_APPROVAL_UNAVAILABLE', '审批请求已结束。');
+    return record.approvals.decide(approvalId, decision);
+  }
+
+  /** 回复绑定当前运行中的会话和问题，防止晚到的答案落入下一轮。 */
+  async answerQuestion(id: string, questionId: string, answer: AgentQuestionAnswer) {
+    const record = await this.getRecord(id);
+    if (!record.questions || record.stopRequested) throw new AgentError(409, 'QUESTION_UNAVAILABLE', '问题已结束。');
+    return record.questions.answer(questionId, answer);
   }
 
   /** 只重放最新请求，保留全部旧记录；在 prepareMessage 的同一会话锁内核对目标和读取原始参数。 */
@@ -290,8 +432,11 @@ export class AgentService {
 
   /** 小说归属与技能设置复用 SDK 自定义元数据，不复制消息，也不随页面导航变化。 */
   async getSkillProfile(id: string): Promise<SessionSkillProfile> {
-    const record = await this.getRecord(id);
-    const entry = record.manager.getEntries().findLast(e => e.type === 'custom' && e.customType === 'plotloom-session-skills');
+    return this.skillProfile((await this.getRecord(id)).manager);
+  }
+
+  private skillProfile(manager: SessionManager): SessionSkillProfile {
+    const entry = manager.getEntries().findLast(e => e.type === 'custom' && e.customType === 'plotloom-session-skills');
     return entry?.type === 'custom' ? entry.data as SessionSkillProfile : { workspaceId: null, skillIds: null };
   }
 
@@ -306,7 +451,14 @@ export class AgentService {
     const record = await this.getRecord(id);
     return { id, ...record.selection, thinkingLevel: this.summary(record).thinkingLevel,
       autoCompaction: this.autoCompaction(record),
+      ...(this.projectPath(record.manager) ? { projectApprovalMode: this.projectApprovalMode(record) } : {}),
       capabilities: this.capabilities(this.registeredModel(record.selection)) };
+  }
+
+  /** 旧会话缺少模式记录时沿用逐次审批；会话配置独立于模型历史。 */
+  private projectApprovalMode(record: RecordState): ProjectApprovalMode {
+    const entry = record.manager.getEntries().findLast(e => e.type === 'custom' && e.customType === 'plotloom-project-approval-mode');
+    return entry?.type === 'custom' && entry.data === 'full_access' ? 'full_access' : 'required';
   }
 
   /** 会话元数据是开关的持久化来源；未设置的会话沿用默认开启，不写入模型上下文。 */
@@ -328,6 +480,8 @@ export class AgentService {
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'configuring');
     try {
+      if (request.projectApprovalMode !== undefined && !this.projectPath(record.manager))
+        throw new AgentError(409, 'PROJECT_NOT_SELECTED', '只有项目会话可以调整文件审批模式。');
       if (request.provider !== undefined || request.model !== undefined || request.thinkingLevel !== undefined) {
         const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : record.selection;
         const model = await this.requireModel(selection);
@@ -344,6 +498,8 @@ export class AgentService {
         record.manager.appendCustomEntry('plotloom-auto-compaction', { enabled: request.autoCompaction });
         session.setAutoCompactionEnabled(request.autoCompaction);
       }
+      if (request.projectApprovalMode !== undefined)
+        record.manager.appendCustomEntry('plotloom-project-approval-mode', request.projectApprovalMode);
       return await this.getSessionConfig(id);
     } finally { release(); }
   }
@@ -360,7 +516,7 @@ export class AgentService {
     const record = await this.getRecord(id);
     const session = await this.open(record);
     const usage = session.getContextUsage();
-    return { id, status: this.summary(record).status, activity: record.activity ?? 'idle',
+    return { id, status: this.summary(record).status, activity: this.sessionActivity(record),
       tokens: usage?.tokens ?? null, contextWindow: usage?.contextWindow ?? session.model?.contextWindow ?? 0,
       percent: usage?.percent ?? null, autoCompaction: session.autoCompactionEnabled };
   }
@@ -421,23 +577,51 @@ export class AgentService {
     return { id, status: this.summary(record).status };
   }
 
-  private async open(record: RecordState): Promise<AgentSession> {
+  private async open(record: RecordState, execution?: TurnRequest['execution']): Promise<AgentSession> {
     if (record.session) return record.session;
     if (!record.opening) record.opening = (async () => {
       // 查询上下文、统计和工具不发模型请求，因此不要求凭据；生成和压缩另行验证。
       const runtime = this.runtime;
-      const model = this.registeredModel(record.selection);
-      const projectPath = this.projectPath(record);
-      if (projectPath) await validateProjectPath(projectPath);
-      // 小说资源与普通演示保持各自入口；明确选择项目的会话使用原生工具和项目提示。
-      const customTools = [...(this.options.tools ?? (record.resources || projectPath ? [] : [createFixtureTool()])), this.browsers.tool(record.manager.getSessionId()), createWebFetchTool(), ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(adaptBusinessTool) ?? [])];
-      const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, writingPrompt: record.resources?.systemPrompt,
-        projectPath, skillPrompt: skillPrompt(record.skills ?? []) });
+      const model = this.registeredModel(execution?.model ?? record.selection);
+      const projectPath = this.projectPath(record.manager);
+      if (projectPath && await validateProjectPath(projectPath) !== projectPath)
+        throw new AgentError(422, 'PROJECT_PATH_INVALID', '项目目录已变化，请重新选择项目。');
+      const id = record.manager.getSessionId();
+      // 项目文件工具使用受控定义。联网工具下方统一注册，继续沿用各自的会话隔离和访问规则。
+      const tools = projectPath
+        ? createProjectTools(projectPath, await validateProjectPath(this.options.dataDir), async (callId, request, signal) => {
+          if (!record.activeTurn || !record.emit || record.stopRequested) return 'cancelled';
+          const turnId = record.activeTurn;
+          const emit = record.emit;
+          // 模式受会话锁保护；文件工具仍负责复核目标及取消信号。
+          if (this.projectApprovalMode(record) === 'full_access') {
+            record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation,
+              path: request.path, decision: 'full_access' });
+            return 'approve';
+          }
+          const approvals = record.approvals ??= new ToolApprovals();
+          const decision = await approvals.wait({ ...request, turnId, callId }, signal, approval =>
+            emit({ type: 'tool_approval_required', sessionId: id, approval }));
+          record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation, path: request.path, decision });
+          return decision;
+        }, change => { record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { id: crypto.randomUUID(), ...change }); })
+        : this.options.tools ?? [];
+      const ask: QuestionWaiter = async (question, signal) => {
+        const emit = record.emit;
+        if (!record.activeTurn || !emit || record.stopRequested) return { kind: 'cancelled' };
+        const questions = record.questions ??= new AgentQuestions();
+        return questions.wait(question, signal, pending => emit({ type: 'user_answer_required', sessionId: id, question: pending }));
+      };
+      const customTools = [...tools, this.browsers.tool(id), createWebFetchTool(), createAskUserTool(ask),
+        ...(record.bootstrap && this.options.completeAgentBootstrap ? [createAgentProfileTool(ask, this.options.completeAgentBootstrap)] : []),
+        ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(adaptBusinessTool) ?? [])];
+      const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, mode: projectPath ? 'project' : 'novel', writingPrompt: record.resources?.systemPrompt,
+        skillPrompt: skillPrompt(record.skills ?? []), persona: record.persona, bootstrap: record.bootstrap });
       const { session } = await createAgentSession({
         cwd: projectPath ?? this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: runtime, model,
-        thinkingLevel: this.summary(record).thinkingLevel, sessionManager: record.manager,
-        settingsManager: createSettings(this.autoCompaction(record)), resourceLoader: createResources(prompt),
-        customTools, tools: [...(projectPath ? PROJECT_TOOLS : []), ...customTools.map((tool) => tool.name)],
+        thinkingLevel: execution?.model.thinkingLevel ?? this.summary(record).thinkingLevel, sessionManager: record.manager,
+        settingsManager: createSettings(execution?.autoCompaction ?? this.autoCompaction(record)), resourceLoader: createResources(prompt),
+        customTools, tools: customTools.map((tool) => tool.name),
       });
       record.runtime = runtime;
       record.session = session;
@@ -447,41 +631,93 @@ export class AgentService {
   }
 
   /** 先验证、再原子占用会话，忙时不排队；返回执行入口供 HTTP 在写 SSE 头后启动。 */
-  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], resourcesFactory?: () => Promise<RequestResources>, sources?: MessageSources, retryMessageId?: string): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
+  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], businessInput?: unknown, sources?: MessageSources, retryMessageId?: string): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
     if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'generating');
     let session: AgentSession;
     let resources: RequestResources | undefined;
     let input: Awaited<ReturnType<NonNullable<AgentOptions['resolveSources']>>> | undefined;
+    let execution: TurnRequest['execution'];
+    let persona: AgentPersona | null | undefined;
+    let replayBootstrap = false;
+    let temporarySession = false;
+    const restoreSession = () => {
+      if (!temporarySession) return;
+      record.session?.dispose();
+      record.session = undefined;
+      record.resourceKey = undefined;
+      record.replayBaseModel = undefined;
+    };
     try {
       if (retryMessageId) {
-        const latest = record.manager.getBranch().findLast(entry => entry.type === 'custom' && entry.customType === TURN_START);
-        const request = latest?.type === 'custom' ? (latest.data as { request?: SubmitMessageRequest } | undefined)?.request : undefined;
+        const branch = record.manager.getBranch();
+        const index = branch.findLastIndex(entry => entry.type === 'custom' && entry.customType === TURN_START);
+        const latest = branch[index];
+        const saved = latest?.type === 'custom' ? latest.data as TurnRequest | undefined : undefined;
+        const request = saved?.request;
         const user = readMessages(record.manager).findLast(message => message.role === 'user');
         if (!request || user?.id !== retryMessageId || user.turnId !== latest?.id) {
           throw new AgentError(409, 'RETRY_UNAVAILABLE', '只能重试具备请求记录的最新一轮，请刷新会话后重试。');
         }
         text = request.text ?? ''; explicitSkills = request.skillIds ?? [];
         sources = { attachmentIds: request.attachmentIds, references: request.references };
+        businessInput = saved?.businessInput;
+        execution = saved?.execution;
+        // 即使原轮没有人设，之后设置的人设也不应改变本次重试的输入。
+        persona = saved?.persona ?? null;
+        replayBootstrap = saved?.bootstrap === true;
+        if (businessInput === undefined && this.options.recoverBusinessInput) {
+          // 旧轮次在开始标记前保存初始上下文。到上一轮边界即停止，避免误用陈旧资料。
+          const entries = new Map<string, unknown>();
+          for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+            const entry = branch[cursor];
+            if (entry.type !== 'custom') continue;
+            if (entry.customType === TURN_END || entry.customType === TURN_START) break;
+            if (!entries.has(entry.customType)) entries.set(entry.customType, entry.data);
+          }
+          businessInput = this.options.recoverBusinessInput(request, entries);
+        }
       }
-      const model = await this.requireModel(record.selection);
+      const model = await this.requireModel(execution?.model ?? record.selection);
+      if (execution?.model.thinkingLevel && clampThinkingLevel(model, execution.model.thinkingLevel) !== execution.model.thinkingLevel) {
+        throw new AgentError(409, 'RETRY_UNAVAILABLE', '原模型已不支持本轮的思考档位，请重新发起创作。');
+      }
       if (sources?.attachmentIds?.length || sources?.references?.length) {
         if (!this.options.resolveSources) throw new AgentError(422, 'MESSAGE_SOURCES_UNAVAILABLE', '当前服务未配置附件与引用能力。');
         input = await this.options.resolveSources(id, text, sources);
         if (input.images.length && !model.input.includes('image')) throw new AgentError(422, 'MODEL_IMAGE_UNSUPPORTED', '当前模型不支持图片，请切换支持图片输入的模型。');
       }
       // 占用会话后才编译业务上下文，避免两个创作请求并发建立相互覆盖的资源。
-      resources = resourcesFactory ? await resourcesFactory() : await this.options.resolveResources?.(id, text.trim() || '请查看随消息提供的资料。', sources);
+      resources = await this.options.resolveResources?.(id, text.trim() || '请查看随消息提供的资料。', sources, businessInput);
+      if (businessInput !== undefined && !resources) throw new AgentError(409, 'RETRY_UNAVAILABLE', '无法恢复本轮创作资源，请重新发起创作。');
       const skills = await this.options.resolveSkills?.(id, explicitSkills) ?? [];
-      const key = JSON.stringify([resources?.key, skills.map(s => [s.id, s.version, s.autoLoad])]);
-      if (record.resourceKey !== key) {
+      const profile = await this.options.resolveAgentProfile?.();
+      if (persona === undefined && profile) {
+        const { name, style, preferences } = profile;
+        persona = { name, style, preferences };
+      }
+      persona ??= null;
+      if (persona && !(persona.name || persona.style || persona.preferences)) persona = null;
+      // 只有正式聊天有确认卡，结构化创作工作台继续执行其写作任务。
+      const bootstrap = businessInput === undefined && profile?.setup === 'pending' && !!this.options.completeAgentBootstrap &&
+        (!retryMessageId || replayBootstrap);
+      const versions = skillVersions(skills);
+      if (execution && JSON.stringify(versions) !== JSON.stringify(execution.skills)) {
+        throw new AgentError(409, 'RETRY_UNAVAILABLE', '本轮使用的技能版本或启用状态已变化，请重新发起创作。');
+      }
+      const currentModel = { ...record.selection, thinkingLevel: this.summary(record).thinkingLevel };
+      const autoCompaction = this.autoCompaction(record);
+      temporarySession = !!execution && (execution.model.provider !== currentModel.provider || execution.model.model !== currentModel.model ||
+        execution.model.thinkingLevel !== currentModel.thinkingLevel || execution.autoCompaction !== autoCompaction);
+      const key = JSON.stringify([resources?.key, versions, persona, bootstrap]);
+      if (temporarySession || record.resourceKey !== key) {
         // 用同一权威 SessionManager 重建 SDK 资源，保留历史和压缩状态；不改 SDK 内部 prompt。
         await record.opening;
         record.session?.dispose(); record.session = undefined;
-        record.skills = skills; record.resources = resources; record.resourceKey = key;
+        record.skills = skills; record.resources = resources; record.persona = persona ?? undefined; record.bootstrap = bootstrap; record.resourceKey = key;
       }
-      session = await this.open(record);
+      session = await this.open(record, execution);
       await resources?.start?.();
       // 元数据保存用户原文与来源；Pi 消息保存实际上下文，公开历史不泄漏内部拼接格式。
       // 附件可提前创建空会话，因此只在首轮通过校验后取原始提示词命名。
@@ -490,11 +726,17 @@ export class AgentService {
       }
       record.activeTurn = record.manager.appendCustomEntry(TURN_START, {
         request: { text, skillIds: explicitSkills, ...sources },
+        persona,
+        ...(bootstrap ? { bootstrap } : {}),
+        ...(businessInput !== undefined ? { businessInput, execution: execution ?? { model: currentModel, autoCompaction, skills: versions } } : {}),
+        ...(temporarySession ? { restoreModel: currentModel } : {}),
         ...(input ? { input: { text, attachments: input.attachments, references: input.references } } : {}),
       });
-    } catch (error) { release(); throw error; }
+      if (temporarySession) record.replayBaseModel = currentModel;
+    } catch (error) { restoreSession(); release(); throw error; }
     const startIndex = record.manager.getEntryCount();
     return async (emit) => {
+      record.emit = emit;
       let accepted = false;
       let aborted = false;
       let outcome: Outcome = 'failed';
@@ -539,7 +781,11 @@ export class AgentService {
         outcome = record.stopRequested ? 'aborted' : 'failed';
       } finally {
         unsubscribe();
+        record.approvals?.cancel();
+        record.questions?.cancel();
+        record.emit = undefined;
         try {
+          if (record.replayBaseModel) restoreReplayModel(record.manager, record.replayBaseModel);
           await resources?.finish?.(outcome);
           record.manager.appendCustomEntry(TURN_END, { turnId: record.activeTurn, outcome });
         } catch {
@@ -547,6 +793,8 @@ export class AgentService {
         }
         record.current = undefined;
         record.activeTurn = undefined;
+        // 临时重放的模型与压缩设置只用于这一轮，下一轮仍由会话当前设置装配。
+        restoreSession();
         release();
       }
       if (outcome === 'completed') emit({ type: 'completed', sessionId: id, usage: turnUsage(record.manager, startIndex) });
@@ -561,6 +809,8 @@ export class AgentService {
     if (record.job) {
       const job = record.job;
       record.stopRequested = true;
+      record.approvals?.cancel();
+      record.questions?.cancel();
       record.session?.abortCompaction();
       await record.session?.abort();
       await job;

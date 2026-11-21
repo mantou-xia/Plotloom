@@ -12,7 +12,7 @@ function ToolFields({ data, onChange }: { data: ToolCallData; onChange: (data: T
     <label>工具名称<input value={data.name} onChange={e => onChange({ ...data, name: e.target.value })} /></label>
     <label>操作摘要<input value={data.summary ?? ''} onChange={e => onChange({ ...data, summary: e.target.value })} /></label>
     <label>执行状态<select value={data.status} onChange={e => onChange({ ...data, status: e.target.value as ToolCallData['status'] })}>
-      <option value="running">进行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="stopped">已停止</option>
+      <option value="running">进行中</option><option value="awaiting_approval">待审批</option><option value="awaiting_answer">待回答</option><option value="completed">已完成</option><option value="failed">失败</option><option value="stopped">已停止</option>
     </select></label>
     {(['input', 'output'] as const).map(key => <div key={key}>
       <label className="pl-workbench__check"><input type="checkbox" checked={data[key] !== undefined} onChange={e => onChange({ ...data, [key]: e.target.checked ? '' : undefined })} />提供{key === 'input' ? '输入' : '结果'}</label>

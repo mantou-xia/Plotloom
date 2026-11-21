@@ -6,7 +6,7 @@
 
 服务仅监听本机。前端只依赖本契约，不导入 Pi 类型、不访问本机 JSONL、不知道 Pi 内部目录。SDK 的模型、会话与工具接入放在后端适配层。
 
-会话使用不透明 `id`；客户端不提交文件路径。生成、配置修改、命名和手动压缩共用会话互斥边界，忙时返回 409，不排队。用户等待和候选选择都是普通消息。状态仍为 `idle` / `running`，另有 `activity: idle | generating | configuring | compacting` 区分操作；已结束消息提供 `completed` / `aborted` / `failed` 结果。
+会话使用不透明 `id`；客户端不提交文件路径。生成、配置修改、命名和手动压缩共用会话互斥边界，忙时返回 409，不排队。状态为 `idle` / `running`，活动为 `idle`、`generating`、`awaiting_approval`、`configuring` 或 `compacting`。工具申请等待决定时为 `awaiting_approval`，仍占用生成锁。最后一项离开审批队列后恢复生成活动，整轮结束后变为空闲。已结束消息提供 `completed` / `aborted` / `failed` 结果。
 
 消息公开结构：`{ id, role, content, outcome? }`。`role` 为 `user` / `assistant` / `tool`；`content` 是内容块数组，正文为 `{ type: "text", text }`，模型可见思考为 `{ type: "thinking", text }`，工具块为 `{ type: "tool", callId, name, status, text? }`。工具 `status` 为 `running` / `completed` / `failed`。思考签名、加密数据和已隐去内容不公开；没有 thinking 块不表示模型没有推理。已保存消息 ID 重启后稳定，临时快照以 `stream:` 开头；完成后以 GET 返回的保存结果为准。
 
@@ -21,12 +21,17 @@
 | `GET /api/models` | 无 | `{ models: [{ provider, id, name, configured, reasoning, thinkingLevels, contextWindow, maxTokens, input }] }` |
 | `GET /api/model-config` | 无 | `{ provider, model, configured, thinkingLevel }`；未选择时 provider/model 为 null |
 | `PUT /api/model-config` | `{ provider, model, thinkingLevel? }` | 同 GET；只影响以后新会话 |
-| `POST /api/sessions` | `{ provider?, model?, thinkingLevel?, name? }`；模型标识成对 | `201 { id, provider, model, thinkingLevel, name, status, activity }` |
+| `POST /api/sessions` | `{ projectPath, provider?, model?, thinkingLevel?, name? }`。项目目录为现存的绝对路径，模型标识成对 | `201 { id, projectPath, provider, model, thinkingLevel, name, status, activity }` |
+| `POST /api/workspaces/:workspaceId/sessions` | `{ provider?, model?, thinkingLevel?, name? }`。小说归属由路径中的工作区 ID 固定 | `201 { id, workspaceId, provider, model, thinkingLevel, name, status, activity }` |
 | `GET /api/sessions` | 无 | `{ sessions: [{ id, provider, model, thinkingLevel, name, updatedAt, status, activity }] }` |
-| `GET /api/sessions/:id` | 无 | 会话摘要字段加 `messages`；必要时从磁盘重开 |
-| `GET /api/sessions/:id/config` | 无 | `{ id, provider, model, thinkingLevel, capabilities }` |
-| `PUT /api/sessions/:id/config` | `{ provider?, model?, thinkingLevel? }`，至少一项，模型标识成对 | 同 GET；只改变此会话并保存 |
+| `GET /api/sessions/:id` | 无 | 会话摘要字段加 `messages` 和可选 `fileChanges`；必要时从磁盘重开 |
+| `GET /api/sessions/:id/config` | 无 | `{ id, provider, model, thinkingLevel, autoCompaction, capabilities, projectApprovalMode? }` |
+| `PUT /api/sessions/:id/config` | `{ provider?, model?, thinkingLevel?, autoCompaction?, projectApprovalMode? }`，至少一项，模型标识成对 | 同 GET；只改变此会话并保存 |
+
+`projectApprovalMode` 仅适用于项目会话。历史及新建会话默认 `required`，项目写入逐次等待批准。用户主动选择 `full_access` 后，当前项目内文件变更免逐次审批，文件访问限制照常生效。忙碌或待审批时不可修改；小说会话提交此项返回 `409 PROJECT_NOT_SELECTED`。
 | `PUT /api/sessions/:id/name` | `{ name }`，1–120 字符，不能全空白 | 会话摘要，名称去除首尾空白 |
+| `GET /api/sessions/:id/project-writes` | 会话 ID | `{ changes: [{ id, path, operation, createdAt }] }`，按成功写入顺序返回 |
+| `GET /api/sessions/:id/project-writes/:writeId` | 会话 ID、本次写入 ID | 写入摘要及 `{ added, removed, blocks: [{ kind, beforeStart, afterStart, lines }] }` |
 | `GET /api/sessions/:id/tools` | 无 | `{ id, tools: [{ name, description, parameters, active }] }`；parameters 为 JSON Schema |
 | `GET /api/sessions/:id/context` | 无 | `{ id, status, activity, tokens, contextWindow, percent, autoCompaction }` |
 | `GET /api/sessions/:id/stats` | 无 | `{ id, userMessages, assistantMessages, toolCalls, toolResults, totalMessages, usage? }` |
@@ -35,7 +40,7 @@
 | `POST /api/sessions/:id/messages` | `{ text, skillIds? }` | `200 text/event-stream`，见下文 |
 | `POST /api/sessions/:id/stop` | 无 | 停止当前生成或手动压缩，等待收尾后返回 `{ id, status: "idle" }` |
 
-新建会话立即保存并可查询，重启后仍存在。SDK 1.5.2 不持久化仅有元信息的空会话，因此创建时将 SDK 公共 API 返回的头和元信息写入同一 JSONL，再交给 SessionManager 打开；之后消息、工具结果与压缩全部由 SDK 保存，没有第二份聊天历史。
+新建会话立即保存并可查询，重启后仍存在。项目创建缺少 `projectPath` 返回 `400 INVALID_REQUEST`，无效目录返回 `422 PROJECT_PATH_INVALID`。升级时启动清理未绑定项目或小说的旧普通会话及其附件、浏览器数据。SDK 1.5.2 不持久化仅有元信息的空会话，因此创建时将 SDK 公共 API 返回的头和元信息写入同一 JSONL，再交给 SessionManager 打开；之后消息、工具结果与压缩全部由 SDK 保存，没有第二份聊天历史。
 
 默认模型与思考档位保存在数据目录的 `model-config.json`，用于后续新建会话。`configured` 表示存在可用凭据。设置页通过 `GET /api/providers` 读取自定义供应商，通过同路径的 POST 新增、PUT 编辑。服务在数据目录的 `agent/providers.json` 保存设置页的覆盖值，包括本机明文 API Key；公开响应只返回配置状态。编辑时省略密钥会沿用已有凭据，更换已配置服务的源地址须重新输入密钥。原有 `models.json`、模型能力和环境凭据继续作为基础配置。
 
@@ -59,6 +64,14 @@ P2.1 新增可选 `skillIds:string[]`，最多 50 项且不可重复：仅明确
 
 手动压缩是等待结束的 JSON 请求，客户端应允许较长等待。`outcome` 为 `completed` 或 `aborted`，成功返回摘要及压缩前后估算。断开 HTTP 不停止压缩；取消接口或通用停止接口会等待取消收尾，原请求返回 `aborted`。压缩不删除原历史，失败保持原记录；空会话、内容不足或刚压缩过返回 `COMPACTION_UNAVAILABLE`。
 
+### 项目文件对比
+
+项目工具成功新建、覆盖或编辑文件时保存当次前后内容。同一文件的多次写入各有独立 ID。后续改稿或服务重启不会改变已经记录的差异。历史会话在文件对比功能上线前的写入没有对应记录。
+
+会话详情的 `fileChanges` 只包含已结束且有成功写入的轮次。每条记录含 `turnId` 和 `files`，文件字段为 `path`、`added`、`removed`、`writeIds`。同一文件的连续改动合并计算净增删，遇到独立外部修改时分段计数。无法在时限内得到准确行数时，统计字段为 `null`。
+
+差异中的 `kind` 为 `context`、`added` 或 `removed`，起始行号从 1 开始，缺席的一侧为 `null`，`lines` 保留原始行尾换行。小说会话返回 409 `PROJECT_NOT_SELECTED`，未知写入记录或不属于当前会话的记录返回 404 `PROJECT_WRITE_NOT_FOUND`，无效参数返回 400 `INVALID_REQUEST`，行级计算超时返回 422 `PROJECT_DIFF_TOO_COMPLEX`。
+
 ## 流式事件与重新查询
 
 为避免“先开始生成、后订阅导致丢首段”的竞态，消息提交直接返回该次请求的 SSE；前端用 `fetch` 读取 POST 响应流，无需先创建任务再连接另一个订阅接口。
@@ -70,7 +83,9 @@ P2.1 新增可选 `skillIds:string[]`，最多 50 项且不可重复：仅明确
 | `accepted` | `messageId` | 用户消息已接受，后续生成开始 |
 | `text_delta` | `delta` | 正文增量 |
 | `thinking_delta` | `delta` | 模型实际返回的可见思考文本；与正文独立累加 |
-| `tool_start` | `callId, name` | 工具开始 |
+| `tool_start` | `callId, name` | SDK 开始处理工具调用；项目写入可能先等待审批 |
+| `tool_approval_required` | `approval` | 文件变更待审批。包含 id、turnId、callId、operation、path、preview、expiresAt |
+| `user_answer_required` | `question` | 等待用户作答。包含 id、callId、question、options |
 | `tool_end` | `callId, name, outcome` | 工具成功或失败；完整结果通过消息查询 |
 | `retrying` | `attempt, maxAttempts` | SDK 正在有限重试，不代表最终失败 |
 | `compacting` | `phase: "start" | "end"` | SDK 正在处理上下文压缩 |
@@ -78,7 +93,15 @@ P2.1 新增可选 `skillIds:string[]`，最多 50 项且不可重复：仅明确
 | `aborted` | 无 | 本轮已停止 |
 | `failed` | `error: { code, message }` | 本轮最终失败 |
 
+Agent 调用 `ask_user` 时，会话保持 `status: running`，活动变为 `awaiting_answer`。详情的 `pendingQuestion` 与等待事件中的 `question` 使用同一结构。刷新后可重新读取详情继续作答。
+
+首用引导待完成时，普通项目或小说聊天可由 Agent 发起全局人设确认。专用工具复用同一等待事件和回答接口。确认对应操作后由服务端写入本机配置，未确认的提案没有持久写入。详见 [全局 Agent 人设](../agent-profile-validation.md)。
+
+向 `POST /api/sessions/:id/questions/:questionId/answer` 提交 `{"kind":"option","index":1}`、`{"kind":"custom","text":"书信体"}` 或 `{"kind":"skip"}`。选项序号从 1 开始。接口返回 `{id,kind}`，原轮次拿到工具结果后继续。错误格式返回 400，未知会话返回 404，已处理、已取消或会话不符返回 409 `QUESTION_UNAVAILABLE`，不存在的选项返回 422 `INVALID_QUESTION_OPTION`。停止接口会取消待回答问题，原流结束于 `aborted`。
+
 每个已接受请求只有一个最终事件：`completed`、`aborted`、`failed`。底层 `agent_end` 不直接映射最终事件，须等待 SDK 重试/压缩完成。用量仅返回 SDK 实际提供的数据，不虚构缺失值。断流本身不等于生成结束。
+
+项目会话统一使用受限项目工具。调用 `POST /api/sessions/:id/tool-approvals/:approvalId` 并提交 `{"decision":"approve"}` 或 `{"decision":"deny"}`。响应 `{id,decision}` 确认决定被接收，原消息流的 `tool_end` 才表示执行结果。会话详情的 `pendingApprovals` 仅在有待审批项时返回。等待最长 120 秒，停止、重启、拒绝及过期均不产生批准。重复提交和会话不符返回 `409 TOOL_APPROVAL_UNAVAILABLE`。整轮重试需要新批准；审批期间文件内容变化会拒绝执行。
 
 `usage` 字段为 `{ input, output, cacheRead, cacheWrite, totalTokens }`，合计本次请求中 SDK 提供的所有模型调用和压缩用量。全部缺失或全零时省略，不表示没有消耗。配置价格为占位值，因此不返回推测账单金额。
 
@@ -117,10 +140,10 @@ event: accepted
 data: {"sessionId":"会话ID","messageId":"消息ID"}
 
 event: tool_start
-data: {"sessionId":"会话ID","callId":"read-1","name":"read_fixture"}
+data: {"sessionId":"会话ID","callId":"read-1","name":"read"}
 
 event: tool_end
-data: {"sessionId":"会话ID","callId":"read-1","name":"read_fixture","outcome":"completed"}
+data: {"sessionId":"会话ID","callId":"read-1","name":"read","outcome":"completed"}
 
 event: text_delta
 data: {"sessionId":"会话ID","delta":"灯塔-731。A：检查台阶。"}
@@ -130,7 +153,7 @@ data: {"sessionId":"会话ID","usage":{"input":20,"output":10,"cacheRead":0,"cac
 
 ```
 
-本机确定性协议替身的测试数据位于 `tests/api/fixture.ts`：`TOOL` 触发真实 SDK 工具循环，`WAIT:*` 保持流打开，`FAIL` 返回带测试密钥的失败，`RETRY*` 触发有限重试，`SEED_COMPACTION` / `COMPACT` 触发真实 SDK 摘要压缩。这些是测试模型指令，产品 API 不为它们添加特殊分支。实际只读资料为 `packages/agent-pi/fixtures/scene.md`。
+本机确定性协议替身的测试数据位于 `tests/api/fixture.ts`：`TOOL` 触发真实 SDK 工具循环，`WAIT:*` 保持流打开，`FAIL` 返回带测试密钥的失败，`RETRY*` 触发有限重试，`SEED_COMPACTION` / `COMPACT` 触发真实 SDK 摘要压缩。这些是测试模型指令，产品 API 不为它们添加特殊分支。测试在隔离的项目目录写入 `scene.md`，使用项目的 `read` 工具读取。
 
 ```text
 pnpm.cmd typecheck
@@ -145,7 +168,7 @@ pnpm.cmd verify:real
 1. 创建 `apps/server`、`packages/agent-pi`、`packages/contracts` 和接口测试；固定模型接入配置，显式注册提示和工具。
 2. 实现模型选择及会话创建、列出、查询/重开；用接口验证重启前后 ID 与历史一致，两个会话不串用。
 3. 实现消息 POST 的 SSE 映射、SDK 结束状态判断及停止；测试正文、工具、成功、失败、中断和忙时冲突。
-4. 测试断流后查询、服务重启后继续普通对话；核对空会话、完整回复与中断消息实际保存情况。
+4. 测试断流后查询、服务重启后继续同一会话；核对空会话、完整回复与中断消息实际保存情况。
 5. 交付请求示例、可重复执行的 HTTP / SSE 用例和真实模型验收记录；检查模型错误不泄漏凭据。
 
 所有验收从公开接口完成，不启动产品前端。P1 不实现小说正文、候选采纳、版本管理或自建执行循环；这些能力按路线图在后续阶段增加。

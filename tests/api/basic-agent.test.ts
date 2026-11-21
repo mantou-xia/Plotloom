@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { link, mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -18,7 +18,7 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
   await writeFile(modelsPath, JSON.stringify({ providers: { 'p1-test': { api: 'openai-completions', baseUrl: fixture.baseUrl,
     models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
-  const options = { dataDir: directory, modelsPath, defaultModel: { provider: 'p1-test', model: 'fixture' }, apiKey: TEST_KEY, browser: { headless: true } };
+  const options = { dataDir: join(directory, 'data'), modelsPath, defaultModel: { provider: 'p1-test', model: 'fixture' }, apiKey: TEST_KEY, browser: { headless: true } };
   let app = await buildServer(options);
   let address = await app.listen({ host: '127.0.0.1', port: 0 });
   let submitted = '';
@@ -36,7 +36,7 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
   const json = async (path: string, method = 'GET', body?: unknown, status = 200): Promise<any> => {
     const response = await request(path, method, body); const value = await response.json(); assert.equal(response.status, status, JSON.stringify(value)); return value;
   };
-  const create = async (body = {}) => (await json('/api/sessions', 'POST', body, 201)).id as string;
+  const create = async (body = {}) => (await json('/api/sessions', 'POST', { projectPath: project, ...body }, 201)).id as string;
   const send = async (id: string, text: string) => collect(await request(`/api/sessions/${id}/messages`, 'POST', { text }));
   const plan = (steps: unknown[]) => 'WRITE:' + JSON.stringify({ steps, finalText: '操作已完成。' });
   try {
@@ -72,7 +72,36 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
     await t.test('项目写文件与最新请求重试保留历史，旧目标拒绝，重启保持轮次', async () => {
       const id = await create({ projectPath: project });
       const text = plan([{ name: 'write', args: { path: 'hello.txt', content: '正式接入验收' } }]);
-      assertFinal(await send(id, text), 'completed');
+      const wrong = await create();
+      const approvals = new Set<string>();
+      const approve = async (response: Response, expected: 'create' | 'overwrite') => {
+        const received = [];
+        for await (const event of events(response)) {
+          received.push(event);
+          if (event.type !== 'tool_approval_required') continue;
+          const { approval } = event;
+          assert(!approvals.has(approval.id));
+          approvals.add(approval.id);
+          assert.equal(approval.operation, expected);
+          const waiting: SessionDetail = await json(`/api/sessions/${id}`);
+          assert.equal(waiting.status, 'running');
+          assert.equal(waiting.activity, 'awaiting_approval');
+          assert.deepEqual(waiting.pendingApprovals, [approval]);
+          assert.equal((await json(`/api/sessions/${id}/context`)).activity, 'awaiting_approval');
+          assert.equal((await json('/api/chats')).sessions.find((item: SessionDetail) => item.id === id).activity, 'awaiting_approval');
+          if (expected === 'create') await assert.rejects(readFile(join(project, 'hello.txt')), { code: 'ENOENT' });
+          else assert.equal(await readFile(join(project, 'hello.txt'), 'utf8'), '重试前改动');
+          const approvalPath = `/tool-approvals/${approval.id}`;
+          await json(`/api/sessions/${wrong}${approvalPath}`, 'POST', { decision: 'approve' }, 409);
+          await json(`/api/sessions/${id}${approvalPath}`, 'POST', { decision: 'invalid' }, 400);
+          await json(`/api/sessions/${id}${approvalPath}`, 'POST', { decision: 'approve' });
+          await json(`/api/sessions/${id}${approvalPath}`, 'POST', { decision: 'approve' }, 409);
+        }
+        assertFinal(received, 'completed');
+        assert.equal((await json(`/api/sessions/${id}`)).activity, 'idle');
+        assert(received.some(event => event.type === 'tool_approval_required'));
+      };
+      await approve(await request(`/api/sessions/${id}/messages`, 'POST', { text }), 'create');
       assert.equal(await readFile(join(project, 'hello.txt'), 'utf8'), '正式接入验收');
       const before: SessionDetail = await json(`/api/sessions/${id}`);
       assert((before.messages.find(m => m.role === 'user')?.elapsedSeconds ?? -1) >= 0);
@@ -80,7 +109,7 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
       assert(before.messages.some(m => m.phase === 'answer'));
       assert(before.messages.some(m => m.content.some(b => b.type === 'tool' && b.input?.includes('hello.txt'))));
       await writeFile(join(project, 'hello.txt'), '重试前改动');
-      assertFinal(await collect(await request(`/api/sessions/${id}/retry`, 'POST', { messageId: before.retryMessageId })), 'completed');
+      await approve(await request(`/api/sessions/${id}/retry`, 'POST', { messageId: before.retryMessageId }), 'overwrite');
       assert.equal(await readFile(join(project, 'hello.txt'), 'utf8'), '正式接入验收');
       const after: SessionDetail = await json(`/api/sessions/${id}`);
       assert.deepEqual(after.messages.slice(0, before.messages.length), before.messages);
@@ -89,7 +118,78 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
       await app.close(); app = await buildServer(options); address = await app.listen({ host: '127.0.0.1', port: 0 });
       assert.deepEqual(await json(`/api/sessions/${id}`), after);
     });
-    await t.test('普通聊天浏览器真实导航、ref 填写点击、来源与会话隔离', async () => {
+    await t.test('项目工具拒绝越界和私密文件；拒绝、目标变化和停止均不写入', async () => {
+      const id = await create({ projectPath: project });
+      const path = `/api/sessions/${id}`;
+      const active = (await json(path + '/tools')).tools.filter((tool: any) => tool.active).map((tool: any) => tool.name);
+      assert.deepEqual(new Set(active), new Set(['read', 'ls', 'find', 'grep', 'write', 'edit', 'browser', 'web_fetch', 'ask_user']));
+      await writeFile(join(project, '.env'), 'synthetic-private-file');
+      await link(modelsPath, join(project, 'linked-file.json'));
+      await symlink(directory, join(project, 'linked-directory'), process.platform === 'win32' ? 'junction' : 'dir');
+      for (const input of ['../models.json', '.env', 'linked-file.json', 'linked-directory/models.json']) {
+        const output = await send(id, plan([{ name: 'read', args: { path: input } }]));
+        assert(output.some(event => event.type === 'tool_end' && event.outcome === 'failed'));
+      }
+      const candidates = await json(path + '/project-files', 'POST', { query: '' });
+      assert(!candidates.entries.some((entry: { path: string }) => /^(?:\.env|linked-)/.test(entry.path)));
+      for (const scenario of ['deny', 'changed', 'stop'] as const) {
+        const file = join(project, scenario + '.txt');
+        await writeFile(file, '原稿');
+        const received = [];
+        const response = await request(path + '/messages', 'POST', { text: plan([{ name: 'edit',
+          args: { path: scenario + '.txt', oldText: '原稿', newText: '新稿' } }]) });
+        for await (const event of events(response)) {
+          received.push(event);
+          if (event.type !== 'tool_approval_required') continue;
+          const approvalPath = path + '/tool-approvals/' + event.approval.id;
+          assert.equal(await readFile(file, 'utf8'), '原稿');
+          if (scenario === 'stop') {
+            await json(path + '/stop', 'POST');
+            await json(approvalPath, 'POST', { decision: 'approve' }, 409);
+          } else {
+            if (scenario === 'changed') await writeFile(file, '外部修改');
+            await json(approvalPath, 'POST', { decision: scenario === 'deny' ? 'deny' : 'approve' });
+          }
+        }
+        assert(received.some(event => event.type === 'tool_approval_required'));
+        assertFinal(received, scenario === 'stop' ? 'aborted' : 'completed');
+        assert.equal(await readFile(file, 'utf8'), scenario === 'changed' ? '外部修改' : '原稿');
+        const settled = await json(path);
+        assert.equal(settled.pendingApprovals, undefined);
+        assert.equal(settled.activity, 'idle');
+      }
+    });
+    await t.test('项目审批模式可持久切换，完全访问只免审批且不能越界', async () => {
+      const id = await create({ projectPath: project });
+      const path = `/api/sessions/${id}`;
+      const config = path + '/config';
+      assert.equal((await json(config)).projectApprovalMode, 'required');
+      await json(config, 'PUT', { projectApprovalMode: 'unsupported' }, 400);
+      assert.equal((await json(config, 'PUT', { projectApprovalMode: 'full_access' })).projectApprovalMode, 'full_access');
+      await app.close(); app = await buildServer(options); address = await app.listen({ host: '127.0.0.1', port: 0 });
+      assert.equal((await json(config)).projectApprovalMode, 'full_access');
+      const direct = await send(id, plan([
+        { name: 'write', args: { path: 'permission.txt', content: '直接写入' } },
+        { name: 'write', args: { path: '../outside-permission.txt', content: '越界' } },
+      ]));
+      assertFinal(direct, 'completed');
+      assert(!direct.some(event => event.type === 'tool_approval_required'));
+      assert(direct.some(event => event.type === 'tool_end' && event.outcome === 'failed'));
+      assert.equal(await readFile(join(project, 'permission.txt'), 'utf8'), '直接写入');
+      await assert.rejects(readFile(join(directory, 'outside-permission.txt')), { code: 'ENOENT' });
+      await json(config, 'PUT', { projectApprovalMode: 'required' });
+      for await (const event of events(await request(path + '/messages', 'POST', { text: plan([
+        { name: 'write', args: { path: 'permission.txt', content: '等待审批' } },
+      ]) }))) {
+        if (event.type !== 'tool_approval_required') continue;
+        assert.equal(await readFile(join(project, 'permission.txt'), 'utf8'), '直接写入');
+        await json(config, 'PUT', { projectApprovalMode: 'full_access' }, 409);
+        await json(path + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'deny' });
+      }
+      assert.equal(await readFile(join(project, 'permission.txt'), 'utf8'), '直接写入');
+      assert.equal((await json(config)).projectApprovalMode, 'required');
+    });
+    await t.test('项目聊天浏览器真实导航、ref 填写点击、来源与会话隔离', async () => {
       const id = await create();
       assertFinal(await send(id, plan([{ name: 'browser', args: { action: 'navigate', url } }])), 'completed');
       let detail: SessionDetail = await json(`/api/sessions/${id}`);
@@ -110,7 +210,7 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
       assertFinal(await send(id, plan([{ name: 'browser', args: { action: 'navigate', url: 'file:///invalid' } }])), 'completed');
       assert((await json(`/api/sessions/${id}`)).messages.some((m: any) => m.role === 'tool' && m.content.some((b: any) => b.status === 'failed')));
     });
-    await t.test('正文引用使用本轮来源、按正文去重排序，重启后可恢复', async () => {
+    await t.test('项目聊天可浏览、抓取并引用本轮来源，重启后可恢复', async () => {
       const id = await create({ projectPath: project });
       const fetchStep = (path: string) => ({ name: 'web_fetch', args: { url: url + path } });
       const cite = (source: string) => `[来源](#plotloom-source-${source})`;
@@ -119,11 +219,13 @@ test('单栏 Agent 契约：写文件、浏览器、停止、重试及恢复', {
         { name: 'browser', args: { action: 'navigate', url } }, fetchStep('/second'), fetchStep('/code-only'),
       ], finalText })), 'completed');
       const systemPrompt = fixture.requests.at(-1).messages.find((message: { role: string }) => message.role === 'system')?.content;
+      assert.match(JSON.stringify(systemPrompt), /需要访问网页时使用 browser 工具/);
       assert.match(JSON.stringify(systemPrompt), /最终聊天回复中给出文档位置和带引用的关键结论/);
       assert.match(JSON.stringify(systemPrompt), /只有用户明确要求在文档中附来源时/);
       const first: SessionDetail = await json(`/api/sessions/${id}`);
       const results = first.messages.filter(message => message.role === 'tool').flatMap(message => message.content);
       const sources = results.flatMap(block => block.type === 'tool' && block.source ? [block.source] : []);
+      assert.deepEqual(results.map(block => block.type === 'tool' && block.name), ['browser', 'web_fetch', 'web_fetch']);
       assert.equal(sources.length, 3);
       for (const source of sources) assert(source.id);
       assert.deepEqual(first.messages.at(-1)?.citations, [sources[1], sources[0]]);

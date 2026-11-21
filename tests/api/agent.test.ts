@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,13 +10,16 @@ import { createModelFixture, TEST_KEY } from './fixture.ts';
 test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'plotloom-p1-'));
   const fixture = await createModelFixture();
+  const projectPath = join(directory, 'project');
+  await mkdir(projectPath);
+  await writeFile(join(projectPath, 'scene.md'), '核对标记：灯塔-731。');
   const models = join(directory, 'models.json');
   await writeFile(models, JSON.stringify({ providers: { 'p1-test': {
     api: 'openai-completions', baseUrl: fixture.baseUrl,
     models: ['fixture', 'alternate'].map((id) => ({ id, name: id, reasoning: false, input: ['text'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 2048 })),
   } } }), 'utf8');
-  const env = { PLOTLOOM_DATA_DIR: directory, PLOTLOOM_MODELS_PATH: models, PLOTLOOM_PROVIDER: 'p1-test', PLOTLOOM_MODEL: 'fixture', PLOTLOOM_API_KEY: TEST_KEY };
+  const env = { PLOTLOOM_DATA_DIR: join(directory, 'data'), PLOTLOOM_MODELS_PATH: models, PLOTLOOM_PROVIDER: 'p1-test', PLOTLOOM_MODEL: 'fixture', PLOTLOOM_API_KEY: TEST_KEY };
   let server = await startServer(env);
   const allLogs: string[] = [];
   const restart = async (force = false) => {
@@ -24,7 +27,7 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
     allLogs.push(server.logs());
     server = await startServer(env);
   };
-  const create = () => server.json('/api/sessions', 'POST', {}, 201);
+  const create = () => server.json('/api/sessions', 'POST', { projectPath }, 201);
   const message = async (id: string, text: string) => collect(await server.request(`/api/sessions/${id}/messages`, 'POST', { text }));
   const get = (id: string) => server.json(`/api/sessions/${id}`);
   const waitIdle = async (id: string) => {
@@ -54,7 +57,7 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
       assert(listed.sessions.some((item: any) => item.id === firstId));
       assert.equal((await create()).model, 'alternate');
     });
-    await t.test('工具循环、SSE 顺序、用量、稳定消息 ID、普通选择跨进程继续', async () => {
+    await t.test('工具循环、SSE 顺序、用量、稳定消息 ID、候选选择跨进程继续', async () => {
       const result = await message(firstId, 'TOOL');
       assertFinal(result, 'completed');
       assert(result.some((event) => event.type === 'tool_start'));
@@ -74,10 +77,10 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
       assert.match(JSON.stringify((await get(firstId)).messages), /第七级台阶/);
     });
     await t.test('参数、未知会话、未知模型、错误格式及跨站拒绝', async () => {
-      await server.json('/api/sessions', 'POST', { provider: 'p1-test' }, 400);
-      await server.json('/api/sessions', 'POST', { model: 'fixture' }, 400);
-      await server.json('/api/sessions', 'POST', { provider: 'p1-test', model: 'unknown' }, 422);
-      await server.json('/api/sessions', 'POST', { path: 'arbitrary.jsonl' }, 400);
+      await server.json('/api/sessions', 'POST', { projectPath, provider: 'p1-test' }, 400);
+      await server.json('/api/sessions', 'POST', { projectPath, model: 'fixture' }, 400);
+      await server.json('/api/sessions', 'POST', { projectPath, provider: 'p1-test', model: 'unknown' }, 422);
+      await server.json('/api/sessions', 'POST', { projectPath, path: 'arbitrary.jsonl' }, 400);
       await server.json('/api/sessions/unknown', 'GET', undefined, 404);
       await server.json(`/api/sessions/${firstId}/messages`, 'POST', { text: '   ' }, 400);
       await server.json(`/api/sessions/${firstId}/messages`, 'POST', { text: 123 }, 400);
@@ -218,19 +221,20 @@ test('P1 公开 HTTP / SSE 验收', { timeout: 120000 }, async (t) => {
       server = await startServer({ ...env, PLOTLOOM_API_KEY: '' });
       assert.equal((await server.json('/api/model-config')).configured, false);
       await get(firstId);
-      await server.json('/api/sessions', 'POST', {}, 422);
+      await server.json('/api/sessions', 'POST', { projectPath }, 422);
       await server.json(`/api/sessions/${firstId}/messages`, 'POST', { text: '不应发送' }, 422);
       const fresh = await startServer({ ...env, PLOTLOOM_DATA_DIR: join(directory, 'unconfigured'), PLOTLOOM_PROVIDER: '', PLOTLOOM_MODEL: '', PLOTLOOM_API_KEY: '' });
       try {
         assert.deepEqual(await fresh.json('/api/model-config'), { provider: null, model: null, configured: false, thinkingLevel: 'off' });
-        await fresh.json('/api/sessions', 'POST', {}, 422);
+        await fresh.json('/api/sessions', 'POST', { projectPath }, 422);
       } finally { await fresh.close(); }
     });
     for (const request of fixture.requests) {
       if (!request.tools?.length) continue; // 压缩由 SDK 独立摘要提示处理。
-      assert.deepEqual(request.tools.map((tool: any) => tool.function.name), ['read_fixture', 'browser', 'web_fetch']);
+      assert.deepEqual(request.tools.map((tool: any) => tool.function.name),
+        ['read', 'ls', 'find', 'grep', 'write', 'edit', 'browser', 'web_fetch', 'ask_user', 'setup_agent_profile']);
       const system = JSON.stringify(request.messages.filter((message: any) => ['system', 'developer'].includes(message.role)));
-      assert.match(system, /Plotloom 的通用助手/);
+      assert.match(system, /Plotloom 的项目助手/);
       assert.doesNotMatch(system, /读取内置 scene 示例|项目开发规则|Self-Improvement|You are a coding/);
     }
     assert.deepEqual(fixture.errors, []);

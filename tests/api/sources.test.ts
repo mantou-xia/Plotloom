@@ -30,7 +30,7 @@ test('聊天附件与指定版本资料的独立 HTTP / SSE 验收', { timeout: 
     PLOTLOOM_PROVIDER: 'test', PLOTLOOM_MODEL: 'vision', PLOTLOOM_API_KEY: TEST_KEY };
   let server = await startServer(env);
   const json = (...args: Parameters<typeof server.json>) => server.json(...args);
-  const create = () => json('/api/sessions', 'POST', {}, 201);
+  const create = () => json('/api/sessions', 'POST', { projectPath: directory }, 201);
   const base = (id: string) => `/api/sessions/${id}`;
   const upload = (id: string, file: unknown, status = 201) => json(`${base(id)}/attachments`, 'POST', file, status);
   const filePath = (id: string, file: { id: string }) => `${base(id)}/attachments/${file.id}`;
@@ -139,7 +139,7 @@ test('聊天附件与指定版本资料的独立 HTTP / SSE 验收', { timeout: 
       await json(`${base(b.id)}/messages`, 'POST', { references: [reference, reference] }, 400);
       const novel = await json(`/api/workspaces/${ws.id}/sessions`, 'POST', {}, 201);
       assert.equal((await json(`${base(novel.id)}/messages`, 'POST', { references: [{ workspaceId: ws2.id, path: otherDoc.path, version: otherDoc.version }] }, 403)).error.code, 'REFERENCE_FORBIDDEN');
-      // 小说聊天继续遵守创作用例的当前版本校验，普通聊天才可明确引用历史稿。
+      // 小说聊天继续遵守创作用例的当前版本校验，项目聊天才可明确引用历史稿。
       await json(`${base(novel.id)}/messages`, 'POST', { references: [reference] }, 409);
       assert.equal(fixture.requests.length, count);
       const snapshot = await history(b.id); await restart(); assert.deepEqual(await history(b.id), snapshot);

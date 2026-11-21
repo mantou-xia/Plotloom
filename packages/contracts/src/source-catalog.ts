@@ -12,9 +12,9 @@ export const ATTACHMENT_FIELDS = [
   field('createdAt', 'string', true, '上传完成时间，ISO 8601。', '2026-11-19T04:00:00.000Z'),
 ];
 export const REFERENCE_FIELDS = [
-  field('workspaceId', 'string', true, '已登记工作区 ID。普通聊天可显式引用；小说聊天仅允许本书。', 'workspace-id'),
+  field('workspaceId', 'string', true, '已登记工作区 ID。项目聊天可显式引用；小说聊天仅允许本书。', 'workspace-id'),
   field('path', 'string', true, '工作区内 Markdown 相对路径，沿用既有路径约束。', '角色/林舟.md'),
-  field('version', 'string', true, '文档内容版本（64 位 SHA-256）；普通聊天可引用已保存历史版本，未知版本返回 404。', 'a'.repeat(64)),
+  field('version', 'string', true, '文档内容版本（64 位 SHA-256）；项目聊天可引用已保存历史版本，未知版本返回 404。', 'a'.repeat(64)),
   field('selection', 'object', false, '可选原文选区；不传则引用全文。', '{"start":0,"end":2,"text":"林舟"}'),
   field('selection.start', 'number', false, 'UTF-16 起点，含。', '0'), field('selection.end', 'number', false, 'UTF-16 终点，不含。', '2'),
   field('selection.text', 'string', false, '必须等于指定版本对应选区，不得切开 emoji。', '林舟'),
