@@ -91,5 +91,11 @@ test('供应商可新增、更新和恢复，公开响应隐藏密钥，保留�
     assert.equal((await save('PUT', { ...body, models: ['two'], baseUrl: replacement.baseUrl, apiKey: 'replacement-test-only' })).statusCode, 200);
     await send();
     assert(replacement.requests.length > 0);
-  } finally { await app.close(); await upstream.close(); await replacement.close(); await rm(dataDir, { recursive: true, force: true }); }
+  } finally {
+    await app.close();
+    await upstream.close();
+    await replacement.close();
+    // Windows 上 SDK 凭据文件可能在服务关闭后短暂占用，给临时目录清理有限的重试。
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 3 });
+  }
 });
