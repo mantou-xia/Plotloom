@@ -52,7 +52,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
   });
   writing = new WritingService(workspaces, { profile: id => agent.getSkillProfile(id),
     append: (id, kind, data) => agent.appendMetadata(id, kind, data), entries: (id, kind) => agent.metadata(id, kind),
-    active: async id => (await agent.getSession(id)).activity === 'generating' });
+    active: async id => (await agent.getSession(id)).activity === 'generating' }, characterCards);
   skills = new SkillService(new FileSkillRepository(options.dataDir), {
     create: (request, profile) => agent.createSession(request, profile), list: () => agent.listSessions(),
     profile: id => agent.getSkillProfile(id), setSkills: (id, ids) => agent.setSkills(id, ids),

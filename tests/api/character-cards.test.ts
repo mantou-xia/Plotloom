@@ -14,7 +14,8 @@ test('五栏角色卡阶段按章节筛选并保留历史', async () => {
     const workspace = await server.json<{ id: string }>('/api/workspaces', 'POST', { title: '测试书', root: book }, 201);
     const base = `/api/workspaces/${workspace.id}/character-cards`;
     const first = await server.json<any>(base, 'POST', { character: '林舟', chapter: 1, note: '初始', content: '## 性格特点\n### 表征\n随和\n### 内在\n谨慎\n\n## 愿景\n### 明示\n安全\n### 潜意识\n保护妹妹' }, 201);
-    const second = await server.json<any>(base, 'POST', { character: '林舟', chapter: 4, note: '黑化、失去双亲', content: '## 性格特点\n### 表征\n冷硬\n### 内在\n悲恸\n\n## 愿景\n### 明示\n复仇\n### 潜意识\n求得补偿' }, 201);
+    await server.json(`/api/workspaces/${workspace.id}/document`, 'PUT', { path: '正文章节/第四章.md', baseVersion: null, content: '他烧掉了旧信。' });
+    const second = await server.json<any>(base, 'POST', { character: '林舟', chapter: 4, note: '黑化、失去双亲', evidence: { path: '正文章节/第四章.md', quote: '他烧掉了旧信。' }, content: '## 性格特点\n### 表征\n冷硬\n### 内在\n悲恸\n\n## 愿景\n### 明示\n复仇\n### 潜意识\n求得补偿' }, 201);
     const beforeChange = await server.json<any>(`${base}?chapter=3`);
     assert.deepEqual(beforeChange.applicable.map((card: any) => [card.character, card.chapter, card.note]), [['林舟', 1, '初始']]);
     const afterChange = await server.json<any>(`${base}?chapter=4`);
@@ -26,6 +27,7 @@ test('五栏角色卡阶段按章节筛选并保留历史', async () => {
     assert.equal(read.createdAt, second.createdAt);
     assert.match(read.content, /### 表征/);
     assert.match(read.content, /### 潜意识/);
+    assert.deepEqual(read.evidence, { path: '正文章节/第四章.md', quote: '他烧掉了旧信。' });
     await server.json(`/api/workspaces/${workspace.id}/document`, 'PUT', {
       path: first.path, content: first.content + '\n补充设定', baseVersion: first.version,
     });

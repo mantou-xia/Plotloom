@@ -82,6 +82,34 @@ test('试验台工具目录展示小说分段暂存及交稿参数', async () =>
     const tools = response.json().tools;
     assert.deepEqual(tools.find((t: any) => t.name === 'write_chapter_part').availableIn, ['novel']);
     assert.equal(tools.find((t: any) => t.name === 'deliver_chapter').parameters, 'partCount、reason');
+    assert.equal(tools.find((t: any) => t.name === 'propose_character_change').parameters, 'character、chapter、note、content、evidence');
+    assert.deepEqual(tools.find((t: any) => t.name === 'propose_character_change').availableIn, ['novel']);
+  } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('试验台按登记示例核对角色变化证据并查询历史', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'plotloom-change-demo-'));
+  const book = join(directory, 'book');
+  await mkdir(book);
+  const app = await buildServer({ dataDir: join(directory, 'data') });
+  try {
+    const workspace = await app.inject({ method: 'POST', url: '/api/workspaces', payload: { title: '试验书', root: book } });
+    const id = workspace.json().id;
+    const endpoint = API_CATALOG.find(item => item.id === 'character-cards.create')!;
+    const url = endpoint.path.replace(':workspaceId', id);
+    const payload = endpoint.examples[0].body;
+    const { path, quote } = payload.evidence as { path: string; quote: string };
+    const send = () => app.inject({ method: endpoint.method, url, payload });
+    assert.equal((await send()).statusCode, 400);
+    const source = await app.inject({ method: 'PUT', url: '/api/workspaces/' + id + '/document', payload: { path, content: quote, baseVersion: null } });
+    assert.equal(source.statusCode, 200);
+    const card = await send();
+    assert.equal(card.statusCode, endpoint.success);
+    assert(checkFields(card.json(), endpoint.response).every(check => check.passed));
+    assert.deepEqual(card.json().evidence, payload.evidence);
+    const list = await app.inject({ method: 'GET', url: url + '?chapter=4' });
+    assert.deepEqual(list.json().applicable[0].evidence, payload.evidence);
+    assert(API_CATALOG.find(item => item.id === 'generation.send')!.examples.some(example => example.name === '交稿后复核角色变化'));
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });
 

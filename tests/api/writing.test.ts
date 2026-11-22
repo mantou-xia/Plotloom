@@ -448,6 +448,78 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert.equal((await target()).content, '作者手改对白。');
       await json(base + '/proposals/' + proposal.id + '/changes/' + proposal.changes[0].id, 'POST', { action: 'accept' });
       assert.equal((await target()).content, fresh.content);
+
+      const phaseCard = await stage(4, '第四章前');
+      const changeContent = '## 性格特点\n### 表征\n冷硬\n### 内在\n悲恸\n\n## 愿景\n### 明示\n复仇\n### 潜意识\n求得补偿\n\n## 社会背景\n\n## 外表特点\n\n## 特殊性\n### 心理特质\n警觉。';
+      const runCharacterChange = async (chapter: number, answer: number, edit?: 'other' | 'evidence' | 'stop' | 'card') => {
+        const chapterPath = `正文章节/第${chapter}章.md`;
+        const received = [];
+        const change = (quote: string, note: string) => ({ name: 'propose_character_change', args: {
+          character: '林舟', chapter, note, content: changeContent + '\n' + note, evidence: { path: chapterPath, quote },
+        } });
+        for await (const event of events(await server.request(session + '/messages', 'POST', { text:
+          `写第${chapter}章：林舟烧掉旧信。\n` + plan([
+            part(1, `第${chapter}章\n\n他烧掉了旧信。`), review,
+            { name: 'deliver_chapter', args: { partCount: 1, reason: '完成本章交稿。' } },
+            change('他烧掉了旧信。', '黑化'),
+            ...(edit === 'evidence' ? [change('原来那是一场梦。', '梦醒')] : []),
+          ]) }))) {
+          received.push(event);
+          if (event.type !== 'user_answer_required') continue;
+          if (received.filter(item => item.type === 'user_answer_required').length === 1) {
+            await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: 1 });
+          } else {
+            if (received.filter(item => item.type === 'user_answer_required').length === 2) {
+              if (edit === 'stop') { await json(session + '/stop', 'POST'); continue; }
+              if (edit === 'other' || edit === 'evidence') {
+                const doc = await json(base + '/document/read', 'POST', { path: chapterPath });
+                await json(base + '/document', 'PUT', { path: chapterPath, baseVersion: doc.version,
+                  content: doc.content + (edit === 'other' ? '\n\n他走进院中。' : '原来那是一场梦。') });
+              }
+              if (edit === 'card') await stage(chapter, '作者手改人物设定');
+            } else {
+              assert.match(event.question.question, /原来那是一场梦/);
+              const stages = await json(base + '/character-cards?chapter=' + chapter);
+              assert(!stages.cards.some((card: any) => card.chapter === chapter));
+            }
+            assert.match(event.question.question, /原阶段[\s\S]*对应情节[\s\S]*建议变化/);
+            await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: answer });
+          }
+        }
+        assertFinal(received, edit === 'stop' ? 'aborted' : 'completed');
+        assert.equal(received.filter(item => item.type === 'user_answer_required').length, edit === 'evidence' ? 3 : 2);
+        return { received, chapterPath };
+      };
+      await runCharacterChange(5, 2);
+      const declined = await json(`${base}/character-cards?chapter=5&character=林舟`);
+      assert.equal(declined.applicable[0].path, phaseCard.path);
+      await runCharacterChange(6, 1, 'other');
+      const accepted = await json(`${base}/character-cards?chapter=6&character=林舟`);
+      assert.equal(accepted.applicable[0].chapter, 6);
+      assert.deepEqual(accepted.applicable[0].evidence, { path: '正文章节/第6章.md', quote: '他烧掉了旧信。' });
+      await runCharacterChange(7, 1, 'evidence');
+      const reconsidered = await json(base + '/character-cards?chapter=7');
+      assert.deepEqual(reconsidered.cards.filter((card: any) => card.chapter === 7).map((card: any) => card.note), ['梦醒']);
+      await runCharacterChange(8, 1, 'stop');
+      assert.equal((await json(base + '/character-cards?chapter=8')).applicable[0].chapter, 7);
+      await runCharacterChange(9, 1, 'card');
+      assert.deepEqual((await json(base + '/character-cards?chapter=9')).cards.filter((card: any) => card.chapter === 9)
+        .map((card: any) => card.note), ['作者手改人物设定']);
+      // 重写已采纳后，跨轮次从同一聊天的交稿记录核对第四章，保留同章旧阶段。
+      await restart();
+      const followup = [];
+      for await (const event of events(await server.request(session + '/messages', 'POST', { text: plan([{
+        name: 'propose_character_change', args: { character: '林舟', chapter: 4, note: '复核重写', content: changeContent,
+          evidence: { path, quote: '交稿。' } },
+      }]) }))) {
+        followup.push(event);
+        if (event.type === 'user_answer_required') {
+          assert.match(event.question.question, /第四章前/);
+          await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: 1 });
+        }
+      }
+      assertFinal(followup, 'completed');
+      assert.equal((await json(base + '/character-cards?chapter=4')).applicable[0].note, '复核重写');
     });
     assert.deepEqual(fixture.errors, []);
   } finally {

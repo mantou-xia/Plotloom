@@ -15,13 +15,21 @@ export interface CharacterCardStage extends DocumentView {
   character: string;
   chapter: number;
   note: string;
+  evidence?: CharacterCardEvidence;
 }
+
+export interface CharacterCardEvidence { path: string; quote: string }
 
 export interface CharacterCardCreateRequest {
   character: string;
   chapter: number;
   note?: string;
   content: string;
+  evidence?: CharacterCardEvidence;
+}
+
+export interface CharacterCardChangeRequest extends CharacterCardCreateRequest {
+  evidence: CharacterCardEvidence;
 }
 
 export interface CharacterCardListResponse {

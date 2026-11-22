@@ -8,6 +8,7 @@ const descriptions: Record<string, [string, string]> = {
   import_chapters: ['从本轮 UTF-8 TXT/Markdown 附件导入旧章节，作者确认后写入。', '空对象；附件从本轮消息读取'],
   manuscript_workspace: ['操作小说正文和大纲，每次等待作者确认。', 'action；按操作填写 path、content 或 revisionId'],
   propose_world_rule: ['提交需作者确认的世界观设定，区分生效和揭示章节。', 'subject、fact、effective、revealed；章节变化另需 evidence'],
+  propose_character_change: ['提交交稿后的角色卡变化建议，展示原卡、情节证据和新阶段，作者确认后才保存。', 'character、chapter、note、content、evidence'],
   read: ['读取项目内 UTF-8 文本。', 'path；可选 offset、limit'],
   ls: ['列出目录中的直接文件和子目录。', '可选 path、limit；默认从项目根目录列出'],
   find: ['按文件名模式查找项目文件。', 'pattern；可选 path、limit'],

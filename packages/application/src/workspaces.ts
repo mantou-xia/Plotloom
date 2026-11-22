@@ -5,6 +5,12 @@ import { changesFor, checkSelection, checkVersion, documentPath, hash, invalid, 
 import type { DocumentView, ExportRequest, NovelShelfUpdate, PendingCommit, Proposal, ProposalRequest, RecoveryView, Reference, Revision, SaveDocumentRequest, Workspace } from '@plotloom/contracts/workspaces';
 import { countManuscriptCharacters, type NovelManuscriptStats } from '@plotloom/contracts/workspaces';
 
+/** 同一工作区队列内的只读视图，用于在正式写入前重新核对作者看过的资料。 */
+export interface WorkspaceDocuments {
+  listDocuments(): Promise<{ paths: string[] }>;
+  readWithCreation(path: string): Promise<DocumentView & { createdAt?: string }>;
+}
+
 export interface WorkspaceState { format: 1; workspace: Workspace; history: Record<string, Revision[]>; finalized?: Record<string, Revision[]>; proposals: Proposal[]; pending: (PendingCommit & { writerPid?: number }) | null }
 /** 存储负责路径约束、排他提交与恢复；用例负责候选和版本业务规则，HTTP/Pi 共用。 */
 export interface WorkspaceStore {
@@ -53,11 +59,12 @@ export class WorkspaceService {
 
   /** 沿用初次存档时间，使编辑或定稿不会改变管理页的阶段创建顺序。 */
   readWithCreation(id: string, path: string) {
-    return this.store.run(id, async state => {
-      const document = await this.readObserved(state, path);
-      const createdAt = state.history[path]?.find(revision => revision.version !== null)?.createdAt;
-      return { ...document, createdAt };
-    });
+    return this.store.run(id, state => this.documentWithCreation(state, path));
+  }
+  private async documentWithCreation(state: WorkspaceState, path: string) {
+    const document = await this.readObserved(state, path);
+    const createdAt = state.history[path]?.find(revision => revision.version !== null)?.createdAt;
+    return { ...document, createdAt };
   }
   read(id: string, path: string) { return this.store.run(id, (s) => this.readObserved(s, path)); }
   peek(id: string, path: string) { return this.store.run(id, state => this.store.read(state, path)); }
@@ -112,11 +119,13 @@ export class WorkspaceService {
     await this.store.observe(state, doc);
     return doc;
   }
-  save(id: string, input: SaveDocumentRequest) {
+  save(id: string, input: SaveDocumentRequest, validate?: (documents: WorkspaceDocuments) => Promise<void>) {
     if (!input.content.isWellFormed()) invalid('Markdown 不能含有未配对的 UTF-16 代理字符。');
     return this.store.run(id, async (s) => {
       const current = await this.readObserved(s, input.path);
       checkVersion(current.version, input.baseVersion);
+      if (validate) await validate({ listDocuments: async () => ({ paths: await this.store.files(s) }),
+        readWithCreation: path => this.documentWithCreation(s, path) });
       if (current.version !== hash(input.content)) await this.store.commit(s, current, input.content, 'manual');
       return this.store.read(s, input.path);
     });

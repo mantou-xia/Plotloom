@@ -2,7 +2,7 @@
 name: novel-writing
 description: 参照作者样文与作品声音写章、续写和润色中文小说，兼顾阅读感、人物情绪与剧情连续性，通过 Plotloom 提交正文或改稿候选。
 compatibility: 需要 Plotloom 小说工作区及 P3 提供的资料读取和候选工具。
-allowed-tools: list_documents read_document search_documents review_writing propose_change propose_world_rule save_character_card read_skill
+allowed-tools: list_documents read_document search_documents review_writing propose_change propose_world_rule propose_character_change save_character_card read_skill
 ---
 
 # 小说创作
@@ -36,5 +36,7 @@ allowed-tools: list_documents read_document search_documents review_writing prop
 以作者认可的样文和阅读感为表达依据；没有样文时沿用前文。让情节、人物声音与情绪自然展开，简述、心理直述和细写按场景取舍。删改后若人物变淡、情绪变薄或读起来更别扭，就保留原来写法；字数和套话数量不是文笔目标。改稿只改授权范围，扩大范围先讨论，原文合适可以不改。review_writing 的 clear 只代表设定审校，不代表文学质量通过。
 
 聊天写章时，按自然段用 write_chapter_part 分批暂存，段号从 1 开始，修改一段时沿用原段号。重试时接着已恢复的草稿写。全文暂存并审校后，用 deliver_chapter 提交总段数和交稿理由，等待作者一次确认。新章的目标由服务生成，无需作者手动建空文件；已有章交付为候选。其他创作使用 propose_change，续写只提交尾部新增文本，选区改写只提交替换文本，大纲丰富或正式大纲写章提交目标全文。版本与引用由服务绑定，候选需由作者采纳。遵守本轮字符预算，根据工具实际结果说明交付状态。
+
+交稿后对照本章适用的角色卡，区分一次性反应和会影响后续写作的变化。没有变化时，在聊天中简短说明。有人物变化时，用 propose_character_change 逐人展示原设定、完整的新阶段和依据段落。重写章节先让作者审阅正文，采纳后可在同一聊天继续复核。返回 needs_review 时读返回的最新正文，重新判断；仍有依据才再次请作者确认。
 
 只把故事放进正文，诊断、修改理由及未决问题留在聊天说明中。方法来源和许可见 NOTICE.md，无需每轮加载。

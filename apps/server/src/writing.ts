@@ -85,7 +85,7 @@ export async function writingResources(service: WritingService, sessionId: strin
   if (input.worldviewVersion !== undefined) checkVersion(worldviewVersion, input.worldviewVersion);
   const tool = (name: string, description: string, parameters: Record<string, unknown>, execute: BusinessTool['execute']): BusinessTool => ({ name, description, parameters, execute });
   const importPrompt = files.length ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。' : '';
-  const chapterPrompt = input.chatChapter ? '\n作者的本轮消息就是大纲。依据前文和当章资料按自然段分批调用 write_chapter_part，每批建议 500–1000 字，章标题只写一次。收到暂存成功后再写下一批。全部暂存后调用 review_writing 审校，再用 deliver_chapter 提交总段数和理由，等待作者确认。'
+  const chapterPrompt = input.chatChapter ? '\n作者的本轮消息就是大纲。依据前文和当章资料按自然段分批调用 write_chapter_part，每批建议 500–1000 字，章标题只写一次。收到暂存成功后再写下一批。全部暂存后调用 review_writing 审校，再用 deliver_chapter 提交总段数和理由，等待作者确认。交稿确认后先说明本章人物有无阶段变化；如确有变化，每次只用 propose_character_change 提交一个角色，必须引用本章交稿原句。'
     + (run.restoredParts.length ? '\n重试已恢复的草稿如下（按段号从 1 排列）。从最后一段接着写；已写完则直接审校交稿。\n' + JSON.stringify(run.restoredParts) : '') : '';
   return { key: run.record.id, replayInput: { ...input, worldviewVersion, chapterDraftId: run.draftId }, persistReplayInput: input.chatChapter,
     systemPrompt: writingPrompt(run.record.context, input.chatChapter) + importPrompt + chapterPrompt, start: run.start, finish: run.finish, tools: [
@@ -106,13 +106,17 @@ export async function writingResources(service: WritingService, sessionId: strin
       effective: { type: 'integer', minimum: 1, maximum: 999999 }, revealed: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 999999 }] },
       evidence: objectSchema({ path: { ...pathSchema, description: '实际章节的 .md 相对路径；作者本轮口述请省略。' }, quote: { ...text, maxLength: 300 } }, ['quote']),
     }, ['subject', 'fact', 'effective', 'revealed']), (input, signal, confirm) => run.proposeRule(input, signal, confirm)), confirmable: true },
+    ...((input.chatChapter || input.task === 'discuss') && characterCards ? [{ ...tool('propose_character_change', '提交交稿后的单个角色卡变化建议。必须引用本章交稿原句；确认卡会展示原阶段、证据和建议新阶段，作者确认后才保存。', objectSchema({
+      character: { type: 'string', minLength: 1, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 }, note: { type: 'string', maxLength: 200 },
+      content: { type: 'string', minLength: 1, maxLength: 500000 }, evidence: objectSchema({ path: pathSchema, quote: { ...text, maxLength: 300 } }, ['path', 'quote']),
+    }, ['character', 'chapter', 'content', 'evidence']), (value, signal, confirm) => run.proposeCharacterChange(value, signal, confirm)), confirmable: true, confirmationOptions: ['接受变化', '保留原卡'] as [string, string] }] : []),
     tool('list_documents', '列出当前小说正式 Markdown 相对路径。', objectSchema({}), () => run.list()),
     tool('read_document', '读取当前小说正式资料，固定本轮版本；返回原文与来源。', objectSchema({ path: pathSchema }), (v, signal) => run.read(v.path, signal)),
     tool('search_documents', '按字面查找用户指定历史情节，返回实际原文位置和版本。', objectSchema({ query: { ...text, maxLength: 200 }, paths: { type: 'array', minItems: 1, maxItems: 30, items: pathSchema } }, ['query']), (v, signal) => run.search(v.query, v.paths, signal)),
     tool('review_writing', '审校已读取资料的设定/视角冲突；问题须引用原文，有问题结束本轮等待用户。', objectSchema({ status: { enum: ['clear', 'needs_input'] }, issues: { type: 'array', maxItems: 20, items: objectSchema({ kind: { enum: ['setting', 'viewpoint', 'missing_material'] }, message: text,
       evidence: { type: 'array', maxItems: 10, items: objectSchema({ path: pathSchema, quote: text }) } }) } }), (v, signal) => run.review(v, signal)),
     ...(!input.chatChapter ? [tool('propose_change', '审校 clear 后提交一个候选；改写只给选区替换，续写只给尾部新增。不会保存正式稿。', objectSchema({ path: pathSchema, content: { type: 'string', maxLength: 20000 }, reason: text }), (v, signal) => run.propose(v.path, v.content, v.reason, signal))] : []),
-    ...(characterCards ? [{ ...tool('save_character_card', '根据作者已确认的信息整理并保存一份细化五栏角色卡阶段。性格特点必须含表征、内在和描写，愿景必须含明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。chapter 是开始适用的章节，note 填写 Agent 从剧情中提取的变化关键词。保存前必须向作者展示并等待确认。', objectSchema({
+    ...(!input.chatChapter && characterCards ? [{ ...tool('save_character_card', '根据作者已确认的信息整理并保存一份细化五栏角色卡阶段。性格特点必须含表征、内在和描写，愿景必须含明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。chapter 是开始适用的章节，note 填写 Agent 从剧情中提取的变化关键词。保存前必须向作者展示并等待确认。', objectSchema({
       character: { type: 'string', minLength: 1, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 }, note: { type: 'string', maxLength: 200 }, content: { type: 'string', minLength: 1, maxLength: 500000 },
     }, ['character', 'chapter', 'content']), async (value, signal, confirm) => {
       if (!await confirm?.(`保存 ${value.character} 的第 ${value.chapter} 章角色卡阶段${value.note ? `（${value.note}）` : ''}\n\n${value.content}`)) return { status: 'declined' };
