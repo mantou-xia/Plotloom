@@ -1,3 +1,4 @@
+import { chapterText } from './chapter-text.ts';
 import { EventEmitter, on } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { chapterFromTitle } from '@plotloom/contracts/writing';
@@ -253,6 +254,14 @@ export class WorkspaceService {
       }
       return { matches, limit: 100 };
     });
+  }
+  /** 两个入口共用这一用例，导出只读本书正文章节，候选和浏览器草稿不参与转换。 */
+  async exportChapterText(id: string, path: string) {
+    documentPath(path);
+    if (!path.startsWith('正文章节/')) invalid('TXT 导出需要本书正文章节目录内的文稿。');
+    const doc = await this.peek(id, path);
+    if (doc.version === null) missing();
+    return { filename: path.split('/').at(-1)!.replace(/\.md$/, '.txt'), content: chapterText(doc.content), version: doc.version };
   }
   export(id: string, input: ExportRequest) {
     return this.store.run(id, async (s) => {

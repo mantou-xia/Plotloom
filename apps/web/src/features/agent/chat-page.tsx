@@ -68,7 +68,7 @@ export function ChatPage({ title, sessionId, onRename, onSessionsChange, setting
   const [openedAt] = useState(() => Date.now());
   const manuscriptRequest = session?.manuscriptRequest;
   useEffect(() => {
-    if (!manuscriptRequest || (manuscriptRequest.view.mode === 'discard' && Date.parse(manuscriptRequest.createdAt) < openedAt)) return;
+    if (!manuscriptRequest || (['discard', 'export_txt'].includes(manuscriptRequest.view.mode) && Date.parse(manuscriptRequest.createdAt) < openedAt)) return;
     const key = 'plotloom:manuscript-request:' + sessionId;
     if (sessionStorage.getItem(key) === manuscriptRequest.id) return;
     if (onOpenManuscript(manuscriptRequest.view)) sessionStorage.setItem(key, manuscriptRequest.id);
@@ -184,6 +184,7 @@ export function ChatPage({ title, sessionId, onRename, onSessionsChange, setting
           setReload(value => value + 1);
           void onSessionsChange();
         }
+        if (event.type === 'tool_end' && event.manuscriptView?.mode === 'export_txt') onOpenManuscript(event.manuscriptView);
         if (event.type === 'failed') notifyRequestError(new Error(event.error.message), `chat-send-${sessionId}`);
       });
     } catch (cause) {

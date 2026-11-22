@@ -10,7 +10,7 @@ export interface NovelManuscriptStats { chapters: number; characters: number }
 export function countManuscriptCharacters(content: string): number {
   return Array.from(content.replace(/\s/g, '')).length;
 }
-export interface ManuscriptView { workspaceId: string; path: string; mode: 'edit' | 'preview' | 'history' | 'refresh' | 'discard'; revisionId?: string; proposalId?: string }
+export interface ManuscriptView { workspaceId: string; path: string; mode: 'edit' | 'preview' | 'history' | 'refresh' | 'discard' | 'export_txt'; downloadId?: string; revisionId?: string; proposalId?: string }
 export interface Revision { id: string; path: string; version: string | null; source: 'observed' | 'manual' | 'accepted' | 'restored'; createdAt: string; restoredFrom?: string }
 export interface Selection { start: number; end: number; text: string }
 export interface Reference { path: string; version: string }
@@ -23,6 +23,8 @@ export interface Proposal {
   origin?: { sessionId: string; requestId: string; reason: string };
 }
 export interface SaveDocumentRequest { path: string; baseVersion: string | null; content: string }
+/** 单章导出直接取最近保存的磁盘稿，version 标识该 Markdown 原文。 */
+export interface ChapterTextExport { filename: string; content: string; version: string }
 export interface ExportRequest { files: Array<{ path: string; revisionId?: string }> }
 export interface ExportResult { files: DocumentView[] }
 export interface PendingCommit { path: string; beforeVersion: string | null; afterVersion: string; revision: Revision; proposalId?: string; changeId?: string }

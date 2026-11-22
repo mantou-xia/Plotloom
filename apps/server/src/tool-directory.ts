@@ -6,7 +6,7 @@ const descriptions: Record<string, [string, string]> = {
   write_chapter_part: ['按段号暂存本轮章节草稿，同号重写。', 'part、content；单段最多 1500 个 UTF-16 字符'],
   deliver_chapter: ['拼接已暂存的草稿，审校后交给作者确认。新章保存，重写生成候选。', 'partCount、reason'],
   import_chapters: ['从本轮 UTF-8 TXT/Markdown 附件导入旧章节，作者确认后写入。', '空对象；附件从本轮消息读取'],
-  manuscript_workspace: ['操作小说正文和大纲，每次等待作者确认。', 'action；按操作填写 path、content 或 revisionId'],
+  manuscript_workspace: ['操作小说正文和大纲；export_txt 下载单章纯文本。每次等待作者确认。', 'action；按操作填写 path、content 或 revisionId'],
   propose_world_rule: ['提交需作者确认的世界观设定，区分生效和揭示章节。', 'subject、fact、effective、revealed；章节变化另需 evidence'],
   suggest_character_card: ['交稿后询问是否为关键人物建卡或补早期阶段，作者同意后起草并单独确认保存。', 'character、chapter、reason、evidence；可选 possibleIdentity、content'],
   propose_character_change: ['提交交稿后的角色卡变化建议，展示原卡、情节证据和新阶段，作者确认后才保存。', 'character、chapter、note、content、evidence'],

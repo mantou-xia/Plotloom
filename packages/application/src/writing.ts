@@ -163,13 +163,14 @@ export class WritingService {
         if (path && !(path.startsWith('正文章节/') || path.startsWith('大纲/'))) invalid('请选择本书正文章节或大纲。');
         if (!path && !['list', 'refresh'].includes(action)) invalid('请指定文稿路径。');
         if (path) documentPath(path);
+        if (action === 'export_txt' && !path?.startsWith('正文章节/')) invalid('请选择本书正文章节导出 TXT。');
         if ((action === 'edit' && content === undefined) || (['restore', 'read_final'].includes(action) && !revisionId)) invalid('缺少文稿内容或定稿 ID。');
         // 单次同意只对应这里展示的动作、正文与磁盘基础版本。
         const baseVersion = path && ['edit', 'restore', 'finalize'].includes(action)
           ? (await this.workspaces.peek(context.workspaceId, path)).version : null;
         const labels: Record<string, string> = { list: '列出正文和大纲', refresh: '刷新文稿目录', open: '打开文稿',
           preview: '预览文稿', history: '查看定稿记录', read_final: '查看指定定稿', edit: '提交文稿修改候选',
-          finalize: '留档为定稿', restore: '回退到指定定稿', discard: '丢弃浏览器中这篇文稿的未保存草稿' };
+          export_txt: '下载本章最新保存稿为 TXT', finalize: '留档为定稿', restore: '回退到指定定稿', discard: '丢弃浏览器中这篇文稿的未保存草稿' };
         if (!labels[action]) invalid('文稿操作无效。');
         if (!await confirm?.(labels[action] + (path ? ' · ' + path : '') + (revisionId ? '\n定稿 ID：' + revisionId : '')
           + (action === 'edit' ? '\n拟提交全文：\n' + content : ''))) return { status: 'declined' };
@@ -185,6 +186,12 @@ export class WritingService {
           case 'open': case 'preview': return { document: await this.workspaces.read(id, path), view };
           case 'history': return { ...await this.workspaces.history(id, path), view: { ...view, mode: 'history' } };
           case 'read_final': return { ...await this.workspaces.export(id, { files: [{ path, revisionId }] }), view: { ...view, mode: 'history', revisionId } };
+          case 'export_txt': {
+            // 告知客户端从公开接口下载；模型只得到章节定位，不接收整篇正文再转述。
+            const doc = await this.workspaces.peek(id, path);
+            if (doc.version === null) fail('ASSET_NOT_FOUND', '该章节尚未保存或已移除。', 404);
+            return { status: 'download_requested', view: { ...view, mode: 'export_txt', downloadId: randomUUID() } };
+          }
           case 'discard': return { view: { ...view, mode: 'discard' } };
           case 'finalize': return this.workspaces.finalize(id, { path, baseVersion });
           case 'restore': return { document: await this.workspaces.restore(id, { path, baseVersion, revisionId: revisionId! }), view };
@@ -389,7 +396,7 @@ export function writingPrompt(context: WritingContext, chatChapter?: boolean): s
     + '作者给出具体设定后，简短复述，用 propose_world_rule 提出供作者采纳的设定。区分生效章节和主角得知章节；尚未决定何时揭示可传 null。仅作者采纳才正式生效。'
     + '章节交稿后如确有规则变化或新发现，用 propose_world_rule 引用本章原句提出建议，说明原因。已有主题沿用原名称。'
     + '角色卡资料按当前章节引用。整理角色时，性格特点必须分为表征、内在和描写，愿景必须分为明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。建卡或作者确认后补录角色卡时使用 save_character_card。整章交稿后如发现角色变化，每次只处理一个角色，提取简短关键词（例如黑化、失去双亲、获得神力），用 propose_character_change 展示原阶段、对应情节和细化后的五栏建议，作者确认后才保存；不能把建议直接当作正式角色卡。重写候选在作者采纳后可于后续对话中复核。工具返回 needs_review 时，依据返回的最新正文重新判断，仍有变化则重新提出并等待确认。无变化时简要说明原因。交稿时也检查对后续剧情有影响却缺卡的人物，包含有稳定称呼的无名人物。仅被提及或路过的人略过。核对已知别名，身份不确定先问作者。用 suggest_character_card 提醒，跳过后仅在出现新的重要情节时再提。'
-    + '作者要求操作右侧工作区（打开、预览、修改、定稿、回退等）时，使用 manuscript_workspace，并等作者确认。作者拒绝或跳过时不得换工具绕过。'
+    + '作者要求操作右侧工作区（打开、预览、修改、定稿、回退等）时，使用 manuscript_workspace，并等作者确认。单章 TXT 导出使用 export_txt，按本书章节清单确定 path。下载由客户端完成。作者拒绝或跳过时不得换工具绕过。'
     + (context.chapterNumber ? `当前写第${context.chapterNumber}章。主角对白与内心只使用本章已知的信息，即使前次聊天讨论过后期设定。\n` : '\n')
     + `本轮正式资料（JSON）：${JSON.stringify(materials)}\n`;
 }

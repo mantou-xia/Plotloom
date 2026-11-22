@@ -109,3 +109,9 @@
 5. 启动服务，用原工作区 ID 查询文档、历史和候选并核对。不要另行登记成新工作区后期待旧历史自动关联。
 
 只需要取回正文时，直接打开或复制 manuscripts 即可。完整应用（含会话）备份在 P8 单独验收。
+
+## 单章 TXT 下载
+
+`POST /api/workspaces/:workspaceId/chapter/export-txt` 接收 `{"path":"正文章节/第四章.md"}`，返回 `filename`、`content` 和源 Markdown 的 `version`。浏览器用 UTF-8 保存返回的文本。已有标题保留文字，导出不补标题；单章来自当前磁盘，历史定稿和候选仍可由原接口查阅。无效路径或大纲返回 400，未知文稿或工作区返回 404。
+
+聊天工具 `manuscript_workspace` 使用 `action: "export_txt"` 和正文路径。作者确认后，`tool_end.manuscriptView` 带有 `workspaceId`、`path`、`mode: "export_txt"` 和单次下载的 `downloadId`。客户端按标识去重，再从单章接口取得文件内容。拒绝或在等待确认时停止不会产生下载指令。右侧正文编辑器的“定稿选项”提供同一下载入口。

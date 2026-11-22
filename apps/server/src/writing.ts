@@ -97,8 +97,8 @@ export async function writingResources(service: WritingService, sessionId: strin
     }), (value, signal, confirm) => run.deliver(value.partCount, value.reason, signal, confirm)), confirmable: true }] : []),
     ...(files.length ? [{ ...tool('import_chapters', '将本轮 TXT/Markdown 附件按独立章标题分章。作者确认后才写入，保护已有正文。', objectSchema({}),
       (_input, signal, confirm) => run.importChapters(signal, confirm)), confirmable: true, confirmationOptions: ['确认导入', '取消导入'] as [string, string] }] : []),
-    { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲，每次等待确认。list/refresh 列出或刷新目录；open/preview 打开文稿；edit 提交整篇候选；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿。', objectSchema({
-      action: { enum: ['list', 'refresh', 'open', 'preview', 'edit', 'finalize', 'history', 'read_final', 'restore', 'discard'] },
+    { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲，每次等待确认。list/refresh 列出或刷新目录；open/preview 打开文稿；edit 提交整篇候选；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿；export_txt 下载单章最新保存稿为纯文本。', objectSchema({
+      action: { enum: ['list', 'refresh', 'open', 'preview', 'edit', 'finalize', 'history', 'read_final', 'restore', 'discard', 'export_txt'] },
       path: pathSchema, content: { type: 'string', maxLength: 8000 }, revisionId: { type: 'string', maxLength: 80 },
     }, ['action']), (input, signal, confirm) => run.manuscript(input, signal, confirm)), confirmable: true, confirmationOptions: ['确认操作', '取消操作'] },
     { ...tool('propose_world_rule', '提交一条世界设定。effective 是规则生效章，revealed 是主角得知章或 null。作者直接讲的设定可省略 evidence，或只给 quote 引用本轮原话。只在引用实际章节文件时给出 path。同主题沿用原名称。', objectSchema({

@@ -334,6 +334,34 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert.equal((await read(path)).content, doc.content);
       assert.equal((await before()).revisions.length, 1);
     });
+    await t.test('确认导出得到单次下载指令，停止或拒绝保留上一条指令', async () => {
+      const session = '/api/sessions/' + chat.id;
+      const path = '正文章节/导出测试.md';
+      await save(path, '# 开船\n\n“等潮退了再走。”');
+      let downloadId: string | undefined;
+      for (const decision of ['accept', 'reject', 'stop']) {
+        const stream = await server.request(session + '/messages', 'POST', { text: plan([
+          { name: 'manuscript_workspace', args: { action: 'export_txt', path } },
+        ]) });
+        const received = [];
+        for await (const event of events(stream)) {
+          received.push(event);
+          if (event.type !== 'user_answer_required') continue;
+          if (decision === 'stop') await json(session + '/stop', 'POST');
+          else await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: decision === 'accept' ? 1 : 2 });
+        }
+        assertFinal(received, decision === 'stop' ? 'aborted' : 'completed');
+        const result = received.find(event => event.type === 'tool_end' && event.manuscriptView);
+        if (decision === 'accept') {
+          assert(result?.type === 'tool_end');
+          assert.equal(result.manuscriptView?.mode, 'export_txt');
+          assert.equal(result.manuscriptView.path, path);
+          downloadId = result.manuscriptView.downloadId;
+          assert(downloadId);
+        } else assert.equal(result, undefined);
+        assert.equal((await json(session)).manuscriptRequest.view.downloadId, downloadId);
+      }
+    });
     await t.test('旧稿附件只在作者确认后导入，保留正文、可重试且不覆盖手改', async () => {
       const session = '/api/sessions/' + chat2.id;
       const bookPath = '/api/workspaces/' + ws2.id;

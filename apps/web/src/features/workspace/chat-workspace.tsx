@@ -8,6 +8,7 @@ import { MarkdownPage } from './markdown-page';
 import { ImagePage } from './image-page';
 import { CitationSourcesPage, type OpenCitations } from './citation-sources-page';
 import { FileChangesPage } from './file-changes-page';
+import { exportManuscript } from '../novels/novel-review';
 import { ChapterWorkspace } from '../novels/chapter-workspace';
 import './workspace.css';
 
@@ -29,6 +30,14 @@ export function ChatWorkspace({ children, open, onOpenChange, sessionId, workspa
   const [manuscript, setManuscript] = useState<ManuscriptView>();
   function openManuscript(view: ManuscriptView) {
     if (view.workspaceId !== workspaceId) return false;
+    if (view.mode === 'export_txt') {
+      // 流事件和聊天快照可能先后到达；同一次确认只交给浏览器一次。
+      const key = 'plotloom:chapter-download:' + view.downloadId;
+      if (sessionStorage.getItem(key)) return true;
+      sessionStorage.setItem(key, '1');
+      void exportManuscript('/api/workspaces/' + encodeURIComponent(workspaceId), view.path, 'TXT');
+      return true;
+    }
     setManuscript(view);
     onOpenChange(true);
     return true;

@@ -238,6 +238,8 @@ export function ManuscriptEditor({ workspaceId, base, path, reload, onRefresh, o
           aria-label="定稿选项" disabled={!document}><ChevronDown /></Button>}>
           <ActionMenuItem icon={<History />} onSelect={() => setHistory(true)}>定稿记录</ActionMenuItem>
           {onReviewCandidate && <ActionMenuItem onSelect={onReviewCandidate}>审阅本章候选</ActionMenuItem>}
+          {path.startsWith('正文章节/') && <ActionMenuItem icon={<Download />} disabled={!hasSavedDocument || !!draft || locked}
+            onSelect={() => void exportManuscript(base, path, 'TXT')}>导出 TXT</ActionMenuItem>}
           <ActionMenuItem icon={<Download />} disabled={!hasSavedDocument} onSelect={() => void exportManuscript(base, path)}>导出 Markdown</ActionMenuItem>
         </ActionMenu>
       </>} editor={editor} reading={previewContent}

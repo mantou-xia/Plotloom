@@ -50,6 +50,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, service: Workspace
   app.post<{ Params: WorkspaceParams; Body: { query: string; paths?: string[] } }>('/api/workspaces/:workspaceId/search', {
     schema: { params, body: obj({ query: { type: 'string', minLength: 1, maxLength: 1000 }, paths: { type: 'array', maxItems: 100, uniqueItems: true, items: path } }, ['query']) },
   }, (req) => service.search(req.params.workspaceId, req.body));
+  app.post<{ Params: WorkspaceParams; Body: { path: string } }>('/api/workspaces/:workspaceId/chapter/export-txt', {
+    schema: { params, body: bodyPath },
+  }, req => service.exportChapterText(req.params.workspaceId, req.body.path));
   app.post<{ Params: WorkspaceParams; Body: ExportRequest }>('/api/workspaces/:workspaceId/export', {
     schema: { params, body: obj({ files: { type: 'array', minItems: 1, maxItems: 100, items: obj({ path, revisionId: id }, ['path']) } }) },
   }, (req) => service.export(req.params.workspaceId, req.body));

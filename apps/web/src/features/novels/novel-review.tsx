@@ -1,23 +1,32 @@
 import { useEffect, useState } from 'react';
-import type { DocumentView, ExportResult, Revision } from '@plotloom/contracts/workspaces';
+import type { ChapterTextExport, DocumentView, ExportResult, Revision } from '@plotloom/contracts/workspaces';
 import { Button } from '@plotloom/ui/button';
 import { Dialog } from '@plotloom/ui/dialog';
 import { Select } from '@plotloom/ui/select';
 import { requestJson } from '../../utils/http';
 import { notifyRequestError, runWithToast } from '../../utils/feedback';
 
-/** 导出正式稿直接下载接口返回的 Markdown，保留原文和行尾。 */
-export async function exportManuscript(base: string, path: string) {
+/** 手动导出和聊天确认都在浏览器接收同一后端生成的文件，不读取编辑器草稿。 */
+export async function exportManuscript(base: string, path: string, format: 'Markdown' | 'TXT' = 'Markdown') {
   await runWithToast(async () => {
-    const { files: [file] } = await requestJson<ExportResult>(base + '/export', 'POST', { files: [{ path }] });
-    if (!file) throw new Error('没有可导出的文稿。');
-    const url = URL.createObjectURL(new Blob([file.content], { type: 'text/markdown;charset=UTF-8' }));
+    let filename: string;
+    let content: string;
+    if (format === 'TXT') {
+      ({ filename, content } = await requestJson<ChapterTextExport>(base + '/chapter/export-txt', 'POST', { path }));
+    } else {
+      const { files: [file] } = await requestJson<ExportResult>(base + '/export', 'POST', { files: [{ path }] });
+      if (!file) throw new Error('没有可导出的文稿。');
+      filename = path.split('/').at(-1) ?? '文稿.md';
+      content = file.content;
+    }
+    const mime = format === 'TXT' ? 'text/plain' : 'text/markdown';
+    const url = URL.createObjectURL(new Blob([content], { type: mime + ';charset=UTF-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = path.split('/').at(-1) ?? '文稿.md';
+    link.download = filename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, { loading: '正在导出 Markdown…', success: '已开始下载 Markdown' });
+  }, { loading: `正在导出 ${format}…`, success: `已开始下载 ${format}` });
 }
 
 /** 先选择并查看历史原文，再用当前文稿的版本恢复；外部变化仍由接口做冲突校验。 */

@@ -16,7 +16,7 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 84);
+  assert.equal(routes.length, 85);
   assert(registered.includes('PUT /api/sessions/:id/organization'));
   assert(registered.includes('DELETE /api/sessions/:id'));
   for (const id of ['sessions.list', 'chats.list', 'chats.workspace-list']) {
@@ -32,11 +32,15 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
   assert.equal(routes.filter(route => route.includes('/project-writes')).length, 2);
   assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
-  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 28);
+  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 29);
   assert(API_CATALOG.find(item => item.id === 'character-cards.list')?.response.some(field => field.name === 'cards[].createdAt'));
   assert.equal(API_CATALOG.find(item => item.id === 'character-cards.list')?.examples.length, 0, '角色卡查询通过无请求体的 GET 发送');
   assert.deepEqual(API_CATALOG.filter(item => item.id.startsWith('character-cards.')).map(item => item.id), ['character-cards.list', 'character-cards.create', 'character-cards.read']);
   assert(API_CATALOG.find(item => item.id === 'character-cards.list')?.response.some(field => field.name === 'applicable[].version'));
+  const txt = API_CATALOG.find(item => item.id === 'documents.export-txt')!;
+  assert.deepEqual(txt.examples[0].body, { path: '正文章节/第四章.md' });
+  assert.deepEqual(txt.response.map(field => field.name), ['filename', 'content', 'version']);
+  assert(API_CATALOG.find(item => item.id === 'generation.send')!.examples.some(example => example.name === '聊天导出第四章 TXT'));
   const createBook = API_CATALOG.find(endpoint => endpoint.id === 'workspaces.create')!;
   assert.deepEqual(createBook.request.map(field => field.name), ['title', 'root']);
   assert.match(createBook.note, /WORKSPACE_NOT_EMPTY/);

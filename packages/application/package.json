@@ -1,4 +1,4 @@
 {
   "name": "@plotloom/application", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts", "./writing": "./src/writing.ts", "./sources": "./src/sources.ts", "./character-cards": "./src/character-cards.ts" },
-  "dependencies": { "@plotloom/contracts": "workspace:*", "@plotloom/domain": "workspace:*", "yaml": "2.9.0", "@silvia-odwyer/photon-node": "0.3.4" }
+  "dependencies": { "@plotloom/contracts": "workspace:*", "@plotloom/domain": "workspace:*", "mdast-util-from-markdown": "2.1.0", "mdast-util-gfm": "3.1.0", "micromark-extension-gfm": "3.0.0", "yaml": "2.9.0", "@silvia-odwyer/photon-node": "0.3.4" }
 }
