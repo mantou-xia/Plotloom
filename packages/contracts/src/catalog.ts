@@ -419,6 +419,7 @@ export const API_CATALOG: EndpointDoc[] = [
       { name: '显式使用已启用技能', body: { text: '请按所选技能处理这段对白。', skillIds: ['替换为已启用技能ID'] } },
       { name: '发送当前聊天附件', body: { text: '请根据附件整理线索。', attachmentIds: ['替换为附件ID'] } },
       { name: '小说聊天导入旧章节', body: { text: '请调用 import_chapters 导入本轮旧稿附件并让我确认。', attachmentIds: ['替换为TXT或Markdown附件ID'] } },
+      { name: '提醒为关键人物建卡', body: { text: '请核对本聊天已交付的章节，若有影响后续剧情且缺卡的人物，请引用原句提醒我建卡。先核对称呼，等我选择后再起草。' } },
       { name: '交稿后复核角色变化', body: { text: '请复核本聊天刚交付的第四章。逐一对照出场角色的适用卡片，引用证据段提出变化；如有变化请逐项让我确认。' } },
       { name: '分段起草第四章并确认整章', body: { text: '完成第四章，大纲如下：林舟抵达码头，从前一章的约定展开。分段暂存，整章写完后交给我确认。' } },
       { name: '访问浏览器并引用网页', body: { text: '使用 browser 打开 https://example.com，读取页面标题与正文，简要总结并在结论旁引用网页来源。' } },

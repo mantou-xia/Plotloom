@@ -1,3 +1,4 @@
+import { EventEmitter, on } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { chapterFromTitle } from '@plotloom/contracts/writing';
 import type { ImportedChapter } from './chapter-import.ts';
@@ -11,7 +12,8 @@ export interface WorkspaceDocuments {
   readWithCreation(path: string): Promise<DocumentView & { createdAt?: string }>;
 }
 
-export interface WorkspaceState { format: 1; workspace: Workspace; history: Record<string, Revision[]>; finalized?: Record<string, Revision[]>; proposals: Proposal[]; pending: (PendingCommit & { writerPid?: number }) | null }
+type CardReminderDecision = 'draft' | 'skipped';
+export interface WorkspaceState { cardReminders?: Record<string, CardReminderDecision>; format: 1; workspace: Workspace; history: Record<string, Revision[]>; finalized?: Record<string, Revision[]>; proposals: Proposal[]; pending: (PendingCommit & { writerPid?: number }) | null }
 /** 存储负责路径约束、排他提交与恢复；用例负责候选和版本业务规则，HTTP/Pi 共用。 */
 export interface WorkspaceStore {
   list(): Promise<Workspace[]>;
@@ -29,6 +31,7 @@ export interface WorkspaceStore {
 /** 无模型、无前端也能完成 Markdown 编辑、候选审阅和历史恢复。 */
 export class WorkspaceService {
   private readonly store: WorkspaceStore;
+  private readonly chapterReviews = new EventEmitter();
   constructor(store: WorkspaceStore) { this.store = store; }
   list() { return this.store.list(); }
   create(input: { title: string; root: string }) { return this.store.create(input.title, input.root); }
@@ -39,6 +42,16 @@ export class WorkspaceService {
       state.workspace = { ...state.workspace, ...update };
       await this.store.persist(state);
       return state.workspace;
+    });
+  }
+  /** 每本书按人物和证据段记住建卡意愿，刷新、换会话及更换摘录都不会重复提醒。 */
+  cardReminder(id: string, key: string, decision?: CardReminderDecision) {
+    return this.store.run(id, async state => {
+      if (decision) {
+        (state.cardReminders ??= {})[key] = decision;
+        await this.store.persist(state);
+      }
+      return state.cardReminders?.[key];
     });
   }
   listDocuments(id: string) { return this.store.run(id, async (s) => ({ paths: await this.store.files(s) })); }
@@ -191,6 +204,17 @@ export class WorkspaceService {
     });
   }
   /** 正式提交只在显式采纳用例执行；模型适配只能调用 createProposal。 */
+  /** 先订阅再读快照，连点采纳也不会错过最后一次决定。停止聊天即解除等待。 */
+  async waitForChapterReview(id: string, proposalId: string, signal?: AbortSignal): Promise<Proposal> {
+    signal?.throwIfAborted();
+    const decisions = on(this.chapterReviews, proposalId, { signal });
+    try {
+      const proposal = await this.proposal(id, proposalId);
+      if (proposal.status !== 'pending' && proposal.status !== 'partial') return proposal;
+      const { value } = await decisions.next();
+      return value![0] as Proposal;
+    } finally { await decisions.return!(); }
+  }
   decide(id: string, proposalId: string, changeId: string, action: 'accept' | 'reject') {
     return this.store.run(id, async (s) => {
       const proposal = s.proposals.find((p) => p.id === proposalId) ?? missing();
@@ -206,6 +230,9 @@ export class WorkspaceService {
       const anyAccepted = proposal.changes.some((c) => c.status === 'accepted');
       checkVersion(current.version, !anyAccepted && proposal.baseVersion === null ? null : hash(renderProposal(proposal)));
       await this.store.commit(s, current, renderProposal(proposal, changeId), 'accepted', { proposalId, changeId });
+      return proposal;
+    }).then(proposal => {
+      if (proposal.status !== 'pending' && proposal.status !== 'partial') this.chapterReviews.emit(proposalId, proposal);
       return proposal;
     });
   }

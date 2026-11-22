@@ -84,6 +84,10 @@ test('试验台工具目录展示小说分段暂存及交稿参数', async () =>
     assert.equal(tools.find((t: any) => t.name === 'deliver_chapter').parameters, 'partCount、reason');
     assert.equal(tools.find((t: any) => t.name === 'propose_character_change').parameters, 'character、chapter、note、content、evidence');
     assert.deepEqual(tools.find((t: any) => t.name === 'propose_character_change').availableIn, ['novel']);
+    const reminder = tools.find((t: any) => t.name === 'suggest_character_card');
+    assert.deepEqual(reminder.availableIn, ['novel']);
+    assert.match(reminder.parameters, /character、chapter、reason、evidence/);
+    assert(API_CATALOG.find(item => item.id === 'generation.send')?.examples.some(example => example.name === '提醒为关键人物建卡'));
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });
 

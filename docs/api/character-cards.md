@@ -36,3 +36,6 @@
 
 聊天工具返回 `needs_review` 时附最新正文，Agent 重新判断并在有依据时再次发起确认。只改其他段落时原确认仍可生效。等待期间适用角色卡变更会返回 `REFERENCE_CONFLICT`。重写候选须先完成正文审阅并有采纳的改动，再回到同一本书的原聊天继续复核。
 
+## 交稿后提醒建卡
+
+在小说聊天发送消息或使用试验台“提醒为关键人物建卡”示例。工具 `suggest_character_card` 以人物称呼、章节号、建卡理由和章节原句查验正式稿，疑似别称可附 `possibleIdentity`。已有当章适用卡返回 `already_exists`，已有后期卡则提示补早期阶段。作者在 `user_answer_required` 中选择建卡后返回 `draft_requested`，Agent 再传同一证据和五栏 `content` 请求保存。跳过的决定按书籍、人物和证据段保留；确认时证据变化返回 `needs_review`。沿用小说聊天的停止接口和结束事件。

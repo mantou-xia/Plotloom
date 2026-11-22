@@ -8,8 +8,8 @@ import { chapterFromTitle, WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import { planChapterImport, type ChapterImportFile } from './chapter-import.ts';
 import type { Proposal } from '@plotloom/contracts/workspaces';
 import { ruleSection, worldviewAt, type WorldRule } from './worldview.ts';
-import type { CharacterCardChangeRequest } from '@plotloom/contracts/character-cards';
-import { evidenceParagraph, retainsEvidence, EvidenceChanged, type CharacterCardService } from './character-cards.ts';
+import type { CharacterCardChangeRequest, CharacterCardStage } from '@plotloom/contracts/character-cards';
+import { evidenceParagraph, retainsEvidence, EvidenceChanged, type MissingCardSuggestion, type CharacterCardService } from './character-cards.ts';
 
 const INPUT_LIMIT = 60000;
 export const WRITING_ENTRY = 'plotloom-writing-request';
@@ -19,7 +19,7 @@ interface ChapterDelivery { path: string; version: string; proposalId?: string }
 const CHAPTER_PART_ENTRY = 'plotloom-chapter-draft-part';
 export const CHAPTER_PART_LIMIT = 1500;
 interface ChapterPart { draftId: string; part: number; content: string }
-export const WRITING_TOOLS = ['list_documents', 'read_document', 'search_documents', 'review_writing', 'propose_change', 'propose_world_rule', 'propose_character_change', 'save_character_card', 'manuscript_workspace', 'import_chapters', 'write_chapter_part', 'deliver_chapter'];
+export const WRITING_TOOLS = ['list_documents', 'read_document', 'search_documents', 'review_writing', 'propose_change', 'propose_world_rule', 'propose_character_change', 'suggest_character_card', 'save_character_card', 'manuscript_workspace', 'import_chapters', 'write_chapter_part', 'deliver_chapter'];
 export interface WritingSessions {
   profile(id: string): Promise<SessionSkillProfile>;
   append(id: string, kind: string, data: unknown): Promise<void>;
@@ -259,9 +259,11 @@ export class WritingService {
         return { status: 'candidate', proposalId: chapterProposal.id, view: { ...view, proposalId: chapterProposal.id } };
       },
       /** 交稿后的角色变化逐项确认，绑定章节正文和旧角色卡版本，避免手改后误写新阶段。 */
-      proposeCharacterChange: async (change: CharacterCardChangeRequest, signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>) => {
+      proposeCharacterChange: async (change: CharacterCardChangeRequest | MissingCardSuggestion, signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>) => {
         signal?.throwIfAborted();
         const path = change.evidence.path;
+        const character = change.character.trim();
+        if (!character) invalid('请提供正文中的人物姓名或稳定称呼。');
         // 作者可能在稍后的聊天轮次才完成重写审阅，按会话和路径找回本次交稿。
         const delivery = input.task === 'discuss'
           ? (await this.sessions.entries(sessionId, DELIVERY_ENTRY) as ChapterDelivery[]).findLast(item => item.path === path)
@@ -273,7 +275,11 @@ export class WritingService {
         if (decided.has(key)) invalid('本轮已经处理过这位角色的变化。');
         let original: string;
         if (delivery.proposalId) {
-          const proposal = await this.workspaces.proposal(context.workspaceId, delivery.proposalId);
+          const proposal = 'reason' in change && input.chatChapter
+            ? await this.workspaces.waitForChapterReview(context.workspaceId, delivery.proposalId, signal)
+            : await this.workspaces.proposal(context.workspaceId, delivery.proposalId);
+          signal?.throwIfAborted();
+          if ('reason' in change && proposal.status === 'rejected') return { status: 'chapter_rejected' };
           if (!['accepted', 'resolved'].includes(proposal.status))
             fail('CHARACTER_CHANGE_REQUIRES_CHAPTER_ACCEPTANCE', '请先完成章节候选审阅并采纳正文，再在本书聊天中复核角色变化。');
           original = proposal.content;
@@ -288,19 +294,34 @@ export class WritingService {
         if ((!paragraph && baseline !== chapter.content) || (paragraph && !retainsEvidence(chapter.content, paragraph)))
           return recheck(chapter);
         if (!paragraph) invalid('请引用能唯一定位本章一个自然段的原文。');
-        const [current] = (await this.characterCards.list(context.workspaceId, change.chapter, change.character)).applicable;
-        if (!current) fail('CHARACTER_CARD_NOT_FOUND', '本章尚无可供比较的角色阶段。', 404);
-        const question = `角色卡变化建议 · ${change.character} · 第 ${change.chapter} 章\n\n`
-          + `原阶段（适用第 ${current.chapter} 章，${current.note || '无备注'}）：\n${current.content}\n\n`
-          + `对应情节（${change.evidence.path}）：\n${paragraph}\n\n`
-          + `建议变化（${change.note || '无备注'}）：\n${change.content}\n\n接受后将从第 ${change.chapter} 章开始引用新阶段。`;
+        const missing = 'reason' in change;
+        const reminderKey = hash(JSON.stringify([path, character, paragraph]));
+        let question: string;
+        let content: string;
+        let current: CharacterCardStage | undefined;
+        if (missing) {
+          const suggestion = await this.characterCards.prepareSuggestion(context.workspaceId, change, paragraph, reminderKey, confirm, signal);
+          if (suggestion.status !== 'review') return suggestion;
+          content = suggestion.content;
+          question = `${suggestion.heading}\n\n对应情节：${paragraph}\n\n待保存的五栏草稿：\n${content}`;
+        } else {
+          [current] = (await this.characterCards.list(context.workspaceId, change.chapter, character)).applicable;
+          if (!current) fail('CHARACTER_CARD_NOT_FOUND', '本章尚无可供比较的角色阶段。', 404);
+          content = change.content;
+          question = `角色卡变化建议 · ${character} · 第 ${change.chapter} 章\n\n`
+            + `原阶段（适用第 ${current.chapter} 章，${current.note || '无备注'}）：\n${current.content}\n\n`
+            + `对应情节（${path}）：\n${paragraph}\n\n`
+            + `建议变化（${change.note || '无备注'}）：\n${content}\n\n接受后将从第 ${change.chapter} 章开始引用新阶段。`;
+        }
         if (!await confirm?.(question)) {
+          signal?.throwIfAborted();
+          if (missing) await this.workspaces.cardReminder(context.workspaceId, reminderKey, 'skipped');
           decided.add(key);
           return { status: 'rejected', character: change.character, chapter: change.chapter };
         }
         signal?.throwIfAborted();
         try {
-          const card = await this.characterCards.create(context.workspaceId, change, { paragraph, previous: current, signal });
+          const card = await this.characterCards.create(context.workspaceId, { ...change, character, content }, { paragraph, previous: current, signal });
           decided.add(key);
           return { status: 'accepted', card };
         } catch (error) {
@@ -367,7 +388,7 @@ export function writingPrompt(context: WritingContext, chatChapter?: boolean): s
       '本书尚无正式世界观。作者聊设定时，从其题材出发追问一个与开篇有关的问题。作者可先交旧稿或稍后再谈。')
     + '作者给出具体设定后，简短复述，用 propose_world_rule 提出供作者采纳的设定。区分生效章节和主角得知章节；尚未决定何时揭示可传 null。仅作者采纳才正式生效。'
     + '章节交稿后如确有规则变化或新发现，用 propose_world_rule 引用本章原句提出建议，说明原因。已有主题沿用原名称。'
-    + '角色卡资料按当前章节引用。整理角色时，性格特点必须分为表征、内在和描写，愿景必须分为明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。建卡或作者确认后补录角色卡时使用 save_character_card。整章交稿后如发现角色变化，每次只处理一个角色，提取简短关键词（例如黑化、失去双亲、获得神力），用 propose_character_change 展示原阶段、对应情节和细化后的五栏建议，作者确认后才保存；不能把建议直接当作正式角色卡。重写候选在作者采纳后可于后续对话中复核。工具返回 needs_review 时，依据返回的最新正文重新判断，仍有变化则重新提出并等待确认。无变化时简要说明原因。'
+    + '角色卡资料按当前章节引用。整理角色时，性格特点必须分为表征、内在和描写，愿景必须分为明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。建卡或作者确认后补录角色卡时使用 save_character_card。整章交稿后如发现角色变化，每次只处理一个角色，提取简短关键词（例如黑化、失去双亲、获得神力），用 propose_character_change 展示原阶段、对应情节和细化后的五栏建议，作者确认后才保存；不能把建议直接当作正式角色卡。重写候选在作者采纳后可于后续对话中复核。工具返回 needs_review 时，依据返回的最新正文重新判断，仍有变化则重新提出并等待确认。无变化时简要说明原因。交稿时也检查对后续剧情有影响却缺卡的人物，包含有稳定称呼的无名人物。仅被提及或路过的人略过。核对已知别名，身份不确定先问作者。用 suggest_character_card 提醒，跳过后仅在出现新的重要情节时再提。'
     + '作者要求操作右侧工作区（打开、预览、修改、定稿、回退等）时，使用 manuscript_workspace，并等作者确认。作者拒绝或跳过时不得换工具绕过。'
     + (context.chapterNumber ? `当前写第${context.chapterNumber}章。主角对白与内心只使用本章已知的信息，即使前次聊天讨论过后期设定。\n` : '\n')
     + `本轮正式资料（JSON）：${JSON.stringify(materials)}\n`;

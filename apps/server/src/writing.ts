@@ -110,6 +110,13 @@ export async function writingResources(service: WritingService, sessionId: strin
       character: { type: 'string', minLength: 1, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 }, note: { type: 'string', maxLength: 200 },
       content: { type: 'string', minLength: 1, maxLength: 500000 }, evidence: objectSchema({ path: pathSchema, quote: { ...text, maxLength: 300 } }, ['path', 'quote']),
     }, ['character', 'chapter', 'content', 'evidence']), (value, signal, confirm) => run.proposeCharacterChange(value, signal, confirm)), confirmable: true, confirmationOptions: ['接受变化', '保留原卡'] as [string, string] }] : []),
+    ...((input.chatChapter || input.task === 'discuss') && characterCards ? [{ ...tool('suggest_character_card',
+      '交稿后检查值得跟进且缺卡的人物。新章保存后调用；重写候选交付后也可调用，工具等正文采纳才询问。先传称呼、章号、理由和原句询问建卡；若可能为已有角色的别称，传 possibleIdentity。得到 draft_requested 后才传五栏 content 请求保存。', objectSchema({
+        character: { ...text, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 },
+        reason: { ...text, maxLength: 300 }, possibleIdentity: { ...text, maxLength: 100 }, content: { ...text, maxLength: 500000 },
+        evidence: objectSchema({ path: pathSchema, quote: { ...text, maxLength: 300 } }),
+      }, ['character', 'chapter', 'reason', 'evidence']), (value, signal, confirm) => run.proposeCharacterChange(value, signal, confirm)),
+      confirmable: true, confirmationOptions: ['建卡', '暂时跳过'] as [string, string] }] : []),
     tool('list_documents', '列出当前小说正式 Markdown 相对路径。', objectSchema({}), () => run.list()),
     tool('read_document', '读取当前小说正式资料，固定本轮版本；返回原文与来源。', objectSchema({ path: pathSchema }), (v, signal) => run.read(v.path, signal)),
     tool('search_documents', '按字面查找用户指定历史情节，返回实际原文位置和版本。', objectSchema({ query: { ...text, maxLength: 200 }, paths: { type: 'array', minItems: 1, maxItems: 30, items: pathSchema } }, ['query']), (v, signal) => run.search(v.query, v.paths, signal)),

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { invalid, WorkspaceError } from '@plotloom/domain';
-import type { CharacterCardCreateRequest, CharacterCardListResponse, CharacterCardStage } from '@plotloom/contracts/character-cards';
+import type { CharacterCardChangeRequest, CharacterCardCreateRequest, CharacterCardListResponse, CharacterCardStage } from '@plotloom/contracts/character-cards';
 import type { DocumentView } from '@plotloom/contracts/workspaces';
 import { chapterFromTitle } from '@plotloom/contracts/writing';
 import type { WorkspaceDocuments, WorkspaceService } from './workspaces.ts';
@@ -47,6 +47,13 @@ export function retainsEvidence(content: string, paragraph: string) {
   return paragraphs(content).filter(item => item === paragraph).length === 1;
 }
 
+/** 同一工具分两次调用：先询问是否起草，作者同意后再传五栏正文请求保存。 */
+export interface MissingCardSuggestion extends Omit<CharacterCardChangeRequest, 'content'> {
+  content?: string;
+  reason: string;
+  possibleIdentity?: string;
+}
+
 export class EvidenceChanged extends Error {
   readonly document: DocumentView;
   constructor(document: DocumentView) {
@@ -81,8 +88,38 @@ export class CharacterCardService {
     return { cards, applicable: [...latest.values()].sort(compare) };
   }
 
+  /** 缺卡提醒先征求建卡意愿；同意只允许起草，写入仍需单独确认。 */
+  async prepareSuggestion(id: string, suggestion: MissingCardSuggestion, paragraph: string, key: string,
+    confirm?: (question: string) => Promise<boolean>, signal?: AbortSignal) {
+    const { chapter, reason, possibleIdentity } = suggestion;
+    const character = safeSegment(suggestion.character);
+    if (character !== suggestion.character.trim()) invalid('请使用可作为角色卡名称的稳定称呼。');
+    const { cards, applicable } = await this.list(id, chapter);
+    const current = applicable.find(card => card.character === character);
+    if (current) return { status: 'already_exists' as const, character, chapter: current.chapter };
+    const future = cards.find(card => card.character === character);
+    const heading = future ? `补充 ${character} 的第 ${chapter} 章阶段（已有第 ${future.chapter} 章角色卡）` : `为 ${character} 建立角色卡`;
+    const decision = await this.workspaces.cardReminder(id, key);
+    if (decision === 'skipped') return { status: 'skipped' as const };
+    if (!decision) {
+      if (suggestion.content !== undefined) invalid('请先询问作者是否建卡，再提交五栏草稿。');
+      // 只用姓名提示可能的别称，后期人物卡的正文不进入早期章节。
+      const candidates = [...new Set(cards.map(card => card.character))].filter(name =>
+        name !== character && (name === possibleIdentity || name.startsWith(character[0])));
+      const identity = !future && candidates.length
+        ? `\n请核对称呼：${character} 是否就是${candidates.join('、')}？同一人物可跳过并沿用原卡，确认是另一人再建卡。` : '';
+      const wantsDraft = await confirm?.(`${heading}？\n\n${paragraph}\n\n值得记录的原因：${reason}${identity}`);
+      signal?.throwIfAborted();
+      await this.workspaces.cardReminder(id, key, wantsDraft ? 'draft' : 'skipped');
+      if (!wantsDraft) return { status: 'skipped' as const };
+    }
+    if (!suggestion.content) return { status: 'draft_requested' as const, character, chapter,
+      message: '按当章证据起草五栏；未确定的信息留空或向作者核对，再用本工具传 content 请求保存。' };
+    return { status: 'review' as const, heading, content: suggestion.content };
+  }
+
   async create(id: string, input: CharacterCardCreateRequest, review?: {
-    paragraph: string; previous: CharacterCardStage; signal?: AbortSignal;
+    paragraph: string; previous?: CharacterCardStage; signal?: AbortSignal;
   }): Promise<CharacterCardStage> {
     const character = safeSegment(input.character);
     if (!Number.isInteger(input.chapter) || input.chapter < 1 || input.chapter > 999999) invalid('章节号必须是 1 到 999999 的整数。');
@@ -99,7 +136,7 @@ export class CharacterCardService {
         invalid('证据须来自对应章号的正文章节。');
       if (review) {
         const [current] = (await this.stages(reader, input.chapter, character)).applicable;
-        if (current?.path !== review.previous.path || current.version !== review.previous.version)
+        if (current?.path !== review.previous?.path || current?.version !== review.previous?.version)
           throw new WorkspaceError('REFERENCE_CONFLICT', '角色卡已更新，请根据当前阶段重新提出建议。');
       }
       const chapter = await reader.readWithCreation(source.path);
