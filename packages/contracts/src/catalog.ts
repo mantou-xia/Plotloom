@@ -2,6 +2,7 @@ import { WORKSPACE_CATALOG } from './workspace-catalog.ts';
 import { SKILL_CATALOG } from './skill-catalog.ts';
 import { WRITING_CATALOG } from './writing-catalog.ts';
 import { SOURCE_CATALOG, SOURCE_REQUEST_FIELDS, ATTACHMENT_FIELDS, REFERENCE_FIELDS } from './source-catalog.ts';
+import { CHARACTER_CARD_CATALOG } from './character-card-catalog.ts';
 /** 公开接口目录：供测试台和契约覆盖检查共用，只登记 HTTP 知识，不导入后端实现。 */
 export interface FieldDoc {
   name: string;
@@ -12,7 +13,7 @@ export interface FieldDoc {
 }
 export interface EndpointDoc {
   id: string;
-  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'attachments' | 'projects' | 'agent-profile';
+  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'character-cards' | 'attachments' | 'projects' | 'agent-profile';
   name: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
@@ -79,11 +80,12 @@ export const API_MODULES = [
   { id: 'agent-profile', name: 'Agent 人设', description: '首用引导和全局协作偏好', number: '14' },
   { id: 'projects', name: '项目', description: '系统选择文件夹、登记项目及切换已有项目', number: '13' },
   { id: 'attachments', name: '聊天附件', description: '上传、读取及移除当前会话资料', number: '12' },
-  { id: 'writing', name: '内容创作', description: '大纲留档、上下文、创作与来源', number: '11' },
+  { id: 'writing', name: '内容创作', description: '大纲留档、分章世界观、创作与来源', number: '11' },
+  { id: 'character-cards', name: '五栏角色卡', description: '创建阶段卡片、查询适用角色和历史版本', number: '15' },
   { id: 'skills', name: '技能库', description: '内置、自定义与本机文件夹选择导入', number: '08' },
   { id: 'skill-settings', name: '技能启用', description: '工作区默认、聊天覆盖和依赖诊断', number: '09' },
   { id: 'chats', name: '小说聊天', description: '聊天归属与最近列表', number: '10' },
-  { id: 'workspaces', name: '小说工作区', description: '登记小说目录、备份及恢复提交', number: '05' },
+  { id: 'workspaces', name: '小说工作区', description: '绑定空目录新建小说、备份及恢复提交', number: '05' },
   { id: 'documents', name: 'Markdown 资料', description: '原稿读写、历史、搜索和导出', number: '06' },
   { id: 'proposals', name: '候选与逐处采纳', description: '查看差异、逐处采纳或拒绝', number: '07' },
   { id: 'models', name: '模型配置', description: '查看可用模型，选择默认模型', number: '01' },
@@ -116,7 +118,7 @@ const agentProfileResponse = [
 ];
 const agentPersonaExample = { name: '小舟', style: '简洁直率', preferences: '先列出分歧，再给出选项。' };
 
-export const API_CATALOG: readonly EndpointDoc[] = [
+export const API_CATALOG: EndpointDoc[] = [
   { id: 'agent-profile.get', module: 'agent-profile', name: '读取全局人设', method: 'GET', path: '/api/agent-profile', success: 200,
     description: '读取所有项目会话与小说会话共用的 Agent 人设及首用状态。',
     note: '全新本机数据目录返回 pending 和空字段。异源浏览器请求返回 403 ORIGIN_FORBIDDEN。',
@@ -301,6 +303,7 @@ export const API_CATALOG: readonly EndpointDoc[] = [
       ...approvalFields('pendingApprovals[].').map(item => ({ ...item, required: false })),
       field('pendingQuestion', 'object', false, '当前待回答问题。刷新后从这里恢复。', '{"id":"question-id","callId":"ask-user-1","question":"采用哪个叙事视角？","options":["第一人称","第三人称"]}'),
       ...questionFields('pendingQuestion.').map(item => ({ ...item, required: false })),
+      field('manuscriptRequest', 'object', false, '最近一次经作者确认的右侧文稿操作，含请求 id 与 view，用于刷新或断流后去重恢复。', '{}'),
       field('fileChanges', 'array', false, '包含成功写入的已结束轮次；生成中及无记录时省略对应轮次。', '[]'),
       field('fileChanges[].turnId', 'string', false, '与同轮消息一致的轮次 ID。', 'turn-1'),
       field('fileChanges[].files', 'array', false, '按首次写入顺序排列，一个文件仅出现一次。', '[]'),
@@ -415,6 +418,8 @@ export const API_CATALOG: readonly EndpointDoc[] = [
       { name: '测试长文本与停止', body: { text: '请直接写一段约 2000 字的灯塔暴雨描写，不调用工具。' } },
       { name: '显式使用已启用技能', body: { text: '请按所选技能处理这段对白。', skillIds: ['替换为已启用技能ID'] } },
       { name: '发送当前聊天附件', body: { text: '请根据附件整理线索。', attachmentIds: ['替换为附件ID'] } },
+      { name: '小说聊天导入旧章节', body: { text: '请调用 import_chapters 导入本轮旧稿附件并让我确认。', attachmentIds: ['替换为TXT或Markdown附件ID'] } },
+      { name: '分段起草第四章并确认整章', body: { text: '完成第四章，大纲如下：林舟抵达码头，从前一章的约定展开。分段暂存，整章写完后交给我确认。' } },
       { name: '访问浏览器并引用网页', body: { text: '使用 browser 打开 https://example.com，读取页面标题与正文，简要总结并在结论旁引用网页来源。' } },
       { name: '写项目文件', body: { text: '在当前项目创建 plotloom-check.md，写入「Plotloom 文件写入验证」，然后读取核对内容。' } },
       { name: '让 Agent 提问', body: { text: '请调用 ask_user 询问我想采用「第一人称」还是「第三人称」，等我回答后再写一句示例。' } },
@@ -468,6 +473,8 @@ export const API_CATALOG: readonly EndpointDoc[] = [
   },
 ];
 
+API_CATALOG.push(...CHARACTER_CARD_CATALOG);
+
 export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fields: FieldDoc[] }> = [
   { name: 'accepted', description: '消息已接受并保存。', fields: [field('messageId', 'string', true, '已保存用户消息 ID，可在会话详情中找到。', 'e2ab17')] },
   { name: 'text_delta', description: '追加一段模型原文；网页引用标记可能跨增量，最终校验结果见会话详情的 citations。', fields: [field('delta', 'string', true, '本次增量，需要顺序追加。', '灯塔')] },
@@ -475,7 +482,8 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
   { name: 'tool_start', description: 'SDK 开始处理工具调用；写入可能进入待审批。', fields: [field('callId', 'string', true, '工具调用 ID。', 'read-1'), field('name', 'string', true, '工具名称。', 'read')] },
   { name: 'tool_approval_required', description: '项目文件变更等待一次性审批；停止会取消等待。', fields: approvalFields('approval.') },
   { name: 'user_answer_required', description: 'Agent 等待用户回答，消息流保持开启；提交答案、跳过或停止可结束等待。', fields: questionFields('question.') },
-  { name: 'tool_end', description: '工具执行结束，完整结果由会话查询读取。', fields: [field('callId', 'string', true, '关联开始事件。', 'read-1'), field('name', 'string', true, '工具名称。', 'read'), field('outcome', 'completed | failed', true, '工具执行结果。', 'completed')] },
+  { name: 'tool_end', description: '工具执行结束，完整结果由会话查询读取。', fields: [field('callId', 'string', true, '关联开始事件。', 'read-1'), field('name', 'string', true, '工具名称。', 'read'), field('outcome', 'completed | failed', true, '工具执行结果。', 'completed'),
+    field('manuscriptView', 'object', false, '作者确认后的右侧文稿操作，含 workspaceId、path、mode（edit、preview、history、refresh 或 discard）；可含 revisionId 或 proposalId。刷新时 path 为空。', '{}')] },
   { name: 'retrying', description: '有限重试进行中，还不是最终失败。', fields: [field('attempt', 'number', true, '当前重试次数。', '1'), field('maxAttempts', 'number', true, '最大重试次数。', '2')] },
   { name: 'compacting', description: '自动压缩上下文，结束后继续等待最终事件。', fields: [field('phase', 'start | end', true, '压缩开始或结束。', 'start')] },
   { name: 'completed', description: '整轮请求最终完成。', fields: [field('usage', 'object', false, 'SDK 提供的整轮用量；缺失不代表无消耗。', '{}'),
@@ -494,6 +502,7 @@ export const API_ERRORS = [
   { status: '422', code: 'MODEL_IMAGE_UNSUPPORTED / MESSAGE_SOURCES_TOO_LARGE / MESSAGE_SOURCES_UNAVAILABLE', description: '模型不支持图片、引用超预算或宿主未配置资料能力；请求在 SSE 开始前拒绝，不写用户消息。' },
   { status: '500', code: 'ATTACHMENT_INVALID', description: '附件记录损坏或归属元数据不一致，请检查本机备份。' },
   { status: '422', code: 'NOVEL_SESSION_REQUIRED / WRITING_SOURCE_MISSING / WRITING_CONTEXT_TOO_LARGE', description: '创作需要小说聊天、存在的正式资料和预算内上下文。' },
+  { status: '404', code: 'CHARACTER_CARD_NOT_FOUND', description: '指定角色卡阶段不存在或文件缺少阶段元数据。' },
   { status: '工具失败', code: 'WRITING_REVIEW_REQUIRED / WRITING_NEEDS_INPUT / WRITING_TARGET_MISMATCH / WRITING_OUTPUT_TOO_LARGE', description: '审校未完成、待确认冲突、目标不符或超预算时不生成候选；结果通过工具消息与创作查询查看。' },
   { status: '404', code: 'SKILL_NOT_FOUND / SKILL_FILE_NOT_FOUND', description: '技能或资源不存在；重新查询技能列表和资源路径。' },
   { status: '409', code: 'SKILL_NAME_EXISTS / SKILL_READ_ONLY / SKILL_VERSION_CONFLICT', description: '名称已存在、内置只读或版本已变化；换名、复制或重新读取。' },
@@ -501,8 +510,11 @@ export const API_ERRORS = [
   { status: '500', code: 'SKILL_STATE_INVALID', description: '技能清单格式无效，请检查本机备份。' },
   { status: '400 / 404', code: 'INVALID_REQUEST / ASSET_NOT_FOUND', description: '资产参数、选区或路径无效，或资源不属于当前工作区。' },
   { status: '409', code: 'REVISION_CONFLICT / REFERENCE_CONFLICT', description: '原稿或参考资料已变化；重新读取并核对候选，不覆盖现稿。' },
+  { status: '409', code: 'CHAPTER_IMPORT_CONFLICT', description: '旧稿导入遇到同章已有不同文件或正文，保留现稿。聊天工具在 SSE 中报告失败。' },
+  { status: '422', code: 'CHAPTER_IMPORT_AMBIGUOUS', description: '旧稿章标题不明确、章号重复或没有正文，需核对附件后重试。聊天工具在 SSE 中报告失败。' },
   { status: '409', code: 'FILE_BUSY / FILE_UNWRITABLE / WORKSPACE_UNAVAILABLE', description: '文件被占用、上次写入进程仍在结束、权限不足或目录不可用；检查后重新读取。' },
   { status: '500', code: 'ASSET_INVALID', description: '工作区元数据格式无效，请核对本机备份。' },
+  { status: '409', code: 'WORKSPACE_NOT_EMPTY', description: '新建小说只能绑定空文件夹，请另选目录。' },
   { status: '409', code: 'WORKSPACE_OVERLAP / BACKUP_EXISTS / CHANGE_RESOLVED', description: '目录归属冲突、备份目标已存在或差异已处理；选择独立目录或查看已有结果。' },
   { status: '409', code: 'COMMIT_UNCERTAIN', description: '提交尚未确认；查询工作区恢复信息，核对后显式保留当前磁盘。' },
   { status: '422', code: 'ENCODING_UNSUPPORTED / DIFF_TOO_COMPLEX / PLATFORM_UNSUPPORTED', description: '转换 UTF-8、缩小修改范围，或在已验证 Windows 平台执行文件写入。' },

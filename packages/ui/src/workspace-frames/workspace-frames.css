@@ -26,3 +26,4 @@
 .pl-browser-frame__address { flex: 1; min-width: 0; margin: 0; }
 .pl-browser-frame__address .pl-form-input { width: 100%; border-radius: 18px; }
 .pl-browser-frame__viewport { position: relative; overflow: hidden; }
+.pl-workspace-preview-image { display: block; max-width: 100%; height: auto; margin: auto; }

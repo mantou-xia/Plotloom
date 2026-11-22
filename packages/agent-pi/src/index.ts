@@ -167,9 +167,10 @@ export class AgentService {
 
   async modelConfig(): Promise<ModelConfig> {
     const selected = this.selection;
+    const model = selected && this.runtime.getModel(selected.provider, selected.model);
     return { provider: selected?.provider ?? null, model: selected?.model ?? null,
-      thinkingLevel: selected?.thinkingLevel ?? 'off',
-      configured: !!selected && this.providers.enabled(selected.provider) && !!this.runtime.getModel(selected.provider, selected.model) && !!(await this.runtime.getAuth(selected.provider)) };
+      thinkingLevel: model ? this.thinking(model, undefined, selected?.thinkingLevel) : selected?.thinkingLevel ?? 'off',
+      configured: !!selected && this.providers.enabled(selected.provider) && !!model && !!(await this.runtime.getAuth(selected.provider)) };
   }
 
   private async requireModel(selection?: ModelSelection) {
@@ -216,9 +217,12 @@ export class AgentService {
   }
 
   private summary(record: RecordState): SessionSummary {
+    // 旧会话可能保存了已移除的档位；按当前模型能力恢复，确保显示与下一次生成一致。
+    const saved = record.replayBaseModel?.thinkingLevel ?? (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel;
+    const model = this.runtime.getModel(record.selection.provider, record.selection.model);
     return { id: record.manager.getSessionId(), ...record.selection, status: record.job ? 'running' : 'idle',
       activity: this.sessionActivity(record), name: record.manager.getSessionName() ?? '新聊天',
-      thinkingLevel: record.replayBaseModel?.thinkingLevel ?? (record.manager.buildSessionContext().thinkingLevel || 'off') as ThinkingLevel,
+      thinkingLevel: model ? this.thinking(model, undefined, saved) : saved,
       ...(this.projectPath(record.manager) ? { projectPath: this.projectPath(record.manager) } : {}) };
   }
 
@@ -405,9 +409,12 @@ export class AgentService {
     const user = messages.findLast(message => message.role === 'user');
     const pendingApprovals = record.approvals?.list();
     const pendingQuestion = record.questions?.current;
+    const manuscript = record.manager.getEntries().findLast(entry => entry.type === 'custom' && entry.customType === 'plotloom-manuscript-view');
+    const manuscriptData = manuscript?.type === 'custom' ? manuscript.data as Omit<NonNullable<SessionDetail['manuscriptRequest']>, 'id'> : undefined;
+    const manuscriptRequest = manuscript && manuscriptData ? { id: manuscript.id, ...manuscriptData } : undefined;
     const fileChanges = this.projectPath(record.manager) ? this.finishedFileChanges(record, messages) : [];
     return { ...this.summary(record), messages, ...(fileChanges.length ? { fileChanges } : {}), ...(pendingApprovals?.length ? { pendingApprovals } : {}),
-      ...(pendingQuestion ? { pendingQuestion } : {}),
+      ...(pendingQuestion ? { pendingQuestion } : {}), ...(manuscriptRequest ? { manuscriptRequest } : {}),
       ...(request && user && user.turnId === latest?.id ? { retryMessageId: user.id } : {}) };
   }
 
@@ -614,7 +621,7 @@ export class AgentService {
       };
       const customTools = [...tools, this.browsers.tool(id), createWebFetchTool(), createAskUserTool(ask),
         ...(record.bootstrap && this.options.completeAgentBootstrap ? [createAgentProfileTool(ask, this.options.completeAgentBootstrap)] : []),
-        ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(adaptBusinessTool) ?? [])];
+        ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(tool => adaptBusinessTool(tool, ask)) ?? [])];
       const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, mode: projectPath ? 'project' : 'novel', writingPrompt: record.resources?.systemPrompt,
         skillPrompt: skillPrompt(record.skills ?? []), persona: record.persona, bootstrap: record.bootstrap });
       const { session } = await createAgentSession({
@@ -700,7 +707,7 @@ export class AgentService {
       persona ??= null;
       if (persona && !(persona.name || persona.style || persona.preferences)) persona = null;
       // 只有正式聊天有确认卡，结构化创作工作台继续执行其写作任务。
-      const bootstrap = businessInput === undefined && profile?.setup === 'pending' && !!this.options.completeAgentBootstrap &&
+      const bootstrap = businessInput === undefined && !resources?.persistReplayInput && profile?.setup === 'pending' && !!this.options.completeAgentBootstrap &&
         (!retryMessageId || replayBootstrap);
       const versions = skillVersions(skills);
       if (execution && JSON.stringify(versions) !== JSON.stringify(execution.skills)) {
@@ -728,7 +735,7 @@ export class AgentService {
         request: { text, skillIds: explicitSkills, ...sources },
         persona,
         ...(bootstrap ? { bootstrap } : {}),
-        ...(businessInput !== undefined ? { businessInput, execution: execution ?? { model: currentModel, autoCompaction, skills: versions } } : {}),
+        ...(businessInput !== undefined || resources?.persistReplayInput ? { businessInput: resources?.replayInput ?? businessInput, execution: execution ?? { model: currentModel, autoCompaction, skills: versions } } : {}),
         ...(temporarySession ? { restoreModel: currentModel } : {}),
         ...(input ? { input: { text, attachments: input.attachments, references: input.references } } : {}),
       });
@@ -757,7 +764,13 @@ export class AgentService {
           if (event.assistantMessageEvent.type === 'thinking_delta') emit({ type: 'thinking_delta', sessionId: id, delta: event.assistantMessageEvent.delta });
         }
         if (event.type === 'tool_execution_start') emit({ type: 'tool_start', sessionId: id, callId: event.toolCallId, name: event.toolName });
-        if (event.type === 'tool_execution_end') emit({ type: 'tool_end', sessionId: id, callId: event.toolCallId, name: event.toolName, outcome: event.isError ? 'failed' : 'completed' });
+        if (event.type === 'tool_execution_end') {
+          // 只向客户端发送定位指令，工具文稿原文仍走公开文档读取接口。
+          const manuscriptView = !event.isError && ['manuscript_workspace', 'import_chapters', 'deliver_chapter'].includes(event.toolName) ? event.result?.details?.view : undefined;
+          if (manuscriptView) record.manager.appendCustomEntry('plotloom-manuscript-view', { view: manuscriptView, createdAt: new Date().toISOString() });
+          emit({ type: 'tool_end', sessionId: id, callId: event.toolCallId, name: event.toolName,
+            outcome: event.isError ? 'failed' : 'completed', ...(manuscriptView ? { manuscriptView } : {}) });
+        }
         if (event.type === 'auto_retry_start') {
           record.manager.appendCustomEntry(TURN_EVENT, { type: 'event', name: 'retrying', text: `模型请求重试（${event.attempt}/${event.maxAttempts}）`, status: 'running' });
           emit({ type: 'retrying', sessionId: id, attempt: event.attempt, maxAttempts: event.maxAttempts });

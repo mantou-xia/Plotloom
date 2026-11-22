@@ -88,7 +88,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
     await t.test('选区改写重复句与 emoji、尾部续写、历史恢复', async () => {
       const original = '前文😀\n同一句。\n中段\n同一句。\n后文\n';
       let doc = await save('章节/选区.md', original);
-      const history = (await json(`${prefix}/history`, 'POST', { path: doc.path })).revisions;
+      const first = await json(`${prefix}/finalize`, 'POST', { path: doc.path, baseVersion: doc.version });
       const start = original.lastIndexOf('同一句。');
       const p = (await send({ task: 'rewrite', instructions: plan([review, proposal(doc.path, '换一句！')]), target: { path: doc.path, baseVersion: doc.version, selection: { start, end: start + 4, text: '同一句。' } } })).result.proposals[0];
       assert.equal(p.content, original.slice(0, start) + '换一句！' + original.slice(start + 4)); await decide(p);
@@ -96,7 +96,6 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       const continued = (await send({ task: 'continue', instructions: plan([review, proposal(doc.path, '新增尾部。\n')]), target: { path: doc.path, baseVersion: doc.version } })).result.proposals[0];
       assert.equal(continued.content, before + '新增尾部。\n'); await decide(continued);
       doc = await read(doc.path);
-      const first = history.find((r: any) => r.version !== null);
       await json(`${prefix}/restore`, 'POST', { path: doc.path, revisionId: first.id, baseVersion: doc.version });
       assert.equal((await read(doc.path)).content, original);
     });
@@ -250,6 +249,205 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert.equal((await json(session + '/config')).model, 'fixture');
       assert.equal((await json(session + '/config')).thinkingLevel, 'high');
       assert.equal((await results())[0].outcome, 'aborted');
+    });
+    await t.test('世界观需逐条确认，按生效与揭示章节引用；交稿建议依赖对应正式稿', async () => {
+      const world = '世界观.md';
+      const session = '/api/sessions/' + chat.id;
+      const rule = { subject: '内功境界', fact: '宗师之上还有归元境。', effective: 1, revealed: 10,
+        evidence: { quote: '宗师之上还有归元境。' } };
+      const steps = (args: typeof rule) => [{ name: 'propose_world_rule', args }];
+      for (const index of [0, 2, 1]) {
+        const stream = await server.request(session + '/messages', 'POST', { text: plan(steps(rule)) });
+        const seen = [];
+        for await (const event of events(stream)) {
+          seen.push(event);
+          if (event.type === 'user_answer_required') {
+            assert.match(event.question.question, /归元境/);
+            assert.equal((await read(world)).version, null);
+            if (index === 0) await json(session + '/stop', 'POST');
+            else await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index });
+          }
+        }
+        assert(seen.some(event => event.type === 'user_answer_required'));
+        assertFinal(seen, index === 0 ? 'aborted' : 'completed');
+        assert.equal((await read(world)).version === null, index !== 1);
+      }
+      const nextChat = await json(prefix + '/sessions', 'POST', {}, 201);
+      const context = async (chapterNumber: number) => (await json('/api/sessions/' + nextChat.id + '/writing/context',
+        'POST', { task: 'discuss', chapterNumber, instructions: '核对设定' })).sources[0].content;
+      assert.equal(await context(4), '');
+      assert.match(await context(10), /归元境/);
+      const early = await collect(await server.request('/api/sessions/' + nextChat.id + '/writing/messages', 'POST', {
+        task: 'discuss', chapterNumber: 4, instructions: plan([{ name: 'read_document', args: { path: world } },
+          { name: 'search_documents', args: { query: '宗师', paths: [world] } }]) }));
+      assertFinal(early, 'completed');
+      const toolMessages = fixture.requests.at(-1).messages.filter((m: any) => m.role === 'tool');
+      assert.equal(toolMessages.length, 2);
+      assert.doesNotMatch(JSON.stringify(toolMessages), /归元境/);
+      const source = { path: '正文章节/第十二章.md', baseVersion: null };
+      const quote = '江湖最后一座练功塔倒塌了。';
+      const { result } = await send({ task: 'chapter', instructions: plan([review, proposal(source.path, quote),
+        { name: 'propose_world_rule', args: { subject: '练功塔', fact: '练功塔已全部倒塌。', effective: 12, revealed: 12, evidence: { path: source.path, quote } } }]),
+        target: source, outline: { path: outline.path, version: outline.version } });
+      const chapter = result.proposals.find((p: any) => p.path === source.path);
+      const change = result.proposals.find((p: any) => p.path === world);
+      assert(chapter && change);
+      await json(prefix + '/proposals/' + change.id + '/changes/' + change.changes[0].id, 'POST', { action: 'accept' }, 409);
+      await decide(chapter); await decide(change);
+      assert.doesNotMatch(await context(11), /倒塌/);
+      assert.match(await context(12), /倒塌/);
+      assert.doesNotMatch(await context(4), /归元|倒塌/);
+    });
+    await t.test('面板工具逐次确认，拒绝不留档，回退核对确认前的磁盘版本', async () => {
+      const path = '正文章节/第三章.md';
+      const doc = await save(path, '第三章初稿');
+      const session = '/api/sessions/' + chat.id;
+      async function operate(action: string, index: number, revisionId?: string, onQuestion?: () => Promise<void>) {
+        const results = [];
+        const response = await server.request(session + '/messages', 'POST', { text: plan([{ name: 'manuscript_workspace',
+          args: { action, path, ...(revisionId ? { revisionId } : {}) } }]) });
+        for await (const event of events(response)) {
+          results.push(event);
+          if (event.type === 'user_answer_required') {
+            await onQuestion?.();
+            await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index });
+          }
+        }
+        assert.equal(results.filter(event => event.type === 'user_answer_required').length, 1);
+        assertFinal(results, 'completed');
+        return results.find(event => event.type === 'tool_end' && event.name === 'manuscript_workspace');
+      }
+      const before = () => json(prefix + '/history', 'POST', { path });
+      await operate('finalize', 2);
+      assert.deepEqual((await before()).revisions, []);
+      await operate('finalize', 1);
+      const [final] = (await before()).revisions;
+      const edited = await save(path, '第三章新稿', doc.version);
+      const failed = await operate('restore', 1, final.id, async () => { await save(path, '等待确认时的手改', edited.version); });
+      assert(failed?.type === 'tool_end');
+      assert.equal(failed.outcome, 'failed');
+      assert.equal((await read(path)).content, '等待确认时的手改');
+      const restored = await operate('restore', 1, final.id);
+      assert(restored?.type === 'tool_end');
+      assert.deepEqual(restored.manuscriptView, { workspaceId: ws.id, path, mode: 'edit' });
+      assert.deepEqual((await json(session)).manuscriptRequest.view, restored.manuscriptView);
+      assert.equal((await read(path)).content, doc.content);
+      assert.equal((await before()).revisions.length, 1);
+    });
+    await t.test('旧稿附件只在作者确认后导入，保留正文、可重试且不覆盖手改', async () => {
+      const session = '/api/sessions/' + chat2.id;
+      const bookPath = '/api/workspaces/' + ws2.id;
+      const attach = async (name: string, file: string) => (await json(session + '/attachments', 'POST',
+        { name, mimeType: 'text/plain', data: Buffer.from(file).toString('base64') }, 201)).id;
+      const originals = ['\r\n第一章重回\r\n作者正文😀\r\n\r\n第二段。', '第二章往日\r\n原文段落。\r\n', '第三章访客\r\n保留空行。\r\n\r\n'];
+      const ids = await Promise.all(originals.map((file, index) => attach(`样本${index + 1}.txt`, file)));
+      const expected = ['第一章重回', '第二章往日', '第三章访客'].map(name => '正文章节/' + name + '.md');
+      const paths = async () => (await json(bookPath + '/documents')).paths.filter((path: string) => path.startsWith('正文章节/'));
+      async function run(attachmentIds: string[], decision: 'accept' | 'skip' | 'stop' | 'ambiguous', expectedCount = 0) {
+        const received = [];
+        for await (const event of events(await server.request(session + '/messages', 'POST', {
+          text: plan([{ name: 'import_chapters', args: {} }]), attachmentIds,
+        }))) {
+          received.push(event);
+          if (event.type !== 'user_answer_required') continue;
+          assert.equal((await paths()).length, expectedCount);
+          assert.match(event.question.question, /第一章重回[\s\S]*第二章往日[\s\S]*第三章访客/);
+          if (decision === 'stop') await json(session + '/stop', 'POST');
+          else await json(session + '/questions/' + event.question.id + '/answer', 'POST',
+            decision === 'accept' ? { kind: 'option', index: 1 } : { kind: 'skip' });
+        }
+        assertFinal(received, decision === 'stop' ? 'aborted' : 'completed');
+        assert.equal(received.some(event => event.type === 'user_answer_required'), decision !== 'ambiguous');
+        return received.find(event => event.type === 'tool_end' && event.name === 'import_chapters');
+      }
+      await run([await attach('没有章号.txt', '需要先核对的正文。')], 'ambiguous');
+      await run(ids, 'skip');
+      await run(ids, 'stop');
+      assert.deepEqual(await paths(), []);
+      const imported = await run(ids, 'accept');
+      assert(imported?.type === 'tool_end');
+      assert.equal(imported.manuscriptView?.path, expected[0]);
+      assert.deepEqual((await paths()).sort(), expected.slice().sort());
+      for (const [index, path] of expected.entries()) {
+        const original = originals[index].replace(/^\r\n/, '');
+        assert.equal(await readFile(join(other, path), 'utf8'), '# ' + original.replace('\r\n', '\r\n\r\n'));
+      }
+      await run(ids, 'accept', 3);
+      const doc = await json(bookPath + '/document/read', 'POST', { path: expected[1] });
+      await json(bookPath + '/document', 'PUT', { path: doc.path, baseVersion: doc.version, content: '作者手改。' });
+      const conflict = await run(ids, 'accept', 3);
+      assert(conflict?.type === 'tool_end' && conflict.outcome === 'failed');
+      assert.equal(await readFile(join(other, expected[1]), 'utf8'), '作者手改。');
+    });
+    await t.test('聊天大纲交付新章，重写候选保护作者正文及重试版本', async () => {
+      const session = '/api/sessions/' + chat2.id;
+      const base = '/api/workspaces/' + ws2.id;
+      const path = '正文章节/第四章.md';
+      const stage = (chapter: number, note: string) => json(base + '/character-cards', 'POST', { character: '林舟', chapter, note,
+        content: '## 性格特点\n### 表征\n随和\n### 内在\n谨慎\n\n## 愿景\n### 明示\n安全\n### 潜意识\n保护妹妹' }, 201);
+      const currentCard = await stage(3, '守约');
+      const futureCard = await stage(10, '离乡');
+      await json(base + '/document', 'PUT', { path: '世界观.md', baseVersion: null,
+        content: '# 世界观\n\n## 隐藏境界\n生效章节：1\n揭示章节：10\n\n归元境。\n' });
+      const target = () => json(base + '/document/read', 'POST', { path });
+      const part = (part: number, content: string) => ({ name: 'write_chapter_part', args: { part, content } });
+      const deliver = { name: 'deliver_chapter', args: { partCount: 2, reason: '按大纲完成整章' } };
+      // 真实中止进程后重试只生成第二段；最终确认卡必须包含重启前已成功暂存的第一段。
+      const firstPart = '保留的第一段。'.repeat(150);
+      const secondPart = '续写的第二段。'.repeat(150);
+      const resumePlan = plan([part(1, firstPart)], { waitBefore: 1,
+        resumedSteps: [part(2, secondPart), review, deliver] });
+      const stream = events(await server.request(session + '/messages', 'POST', { text: '写第四章：码头。\n' + resumePlan }));
+      for await (const event of stream) if (event.type === 'text_delta' && event.delta === '等待测试继续。') break;
+      await restart(true);
+      const retryEvents = [];
+      for await (const event of events(await server.request(session + '/retry', 'POST', { messageId: (await json(session)).retryMessageId }))) {
+        retryEvents.push(event);
+        if (event.type === 'user_answer_required') {
+          assert(event.question.question.endsWith(firstPart + '\n\n' + secondPart));
+          await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: 2 });
+        }
+      }
+      assertFinal(retryEvents, 'completed');
+      assert(fixture.requests.at(-1).messages.some((m: any) => JSON.stringify(m.content).includes('重试已恢复的草稿如下')));
+      assert.equal(retryEvents.filter(e => e.type === 'user_answer_required').length, 1);
+      assert.equal((await target()).version, null);
+      const sendChapter = async (command: string, answer: number, expected: string) => {
+        const received = [];
+        for await (const event of events(await server.request(session + '/messages', 'POST', { text:
+          command + '，大纲如下本章大纲：\n\n1. 林舟从第三章接续。\n' + plan([part(1, '初稿。'), part(1, '第四章'), part(2, '交稿。'), review, deliver]) }))) {
+          received.push(event);
+          if (event.type !== 'user_answer_required') continue;
+          assert.equal((await target()).content, expected);
+          await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: answer });
+        }
+        assertFinal(received, 'completed');
+        assert.equal(received.filter(event => event.type === 'user_answer_required').length, 1);
+        return received.find(event => event.type === 'tool_end' && event.name === 'deliver_chapter');
+      };
+      await sendChapter('写第四章', 2, '');
+      assert.equal((await target()).version, null);
+      const created = await sendChapter('完成第四章', 1, '');
+      assert(created?.type === 'tool_end');
+      assert.equal(created.manuscriptView?.path, path);
+      const fresh = await target();
+      assert.equal(fresh.content, '第四章\n\n交稿。');
+      const record = (await json(session + '/writing')).requests[0];
+      assert.equal(record.context.chapterNumber, 4);
+      assert(record.context.sources.some((source: any) => source.role === 'history' && source.path.includes('第三章')));
+      assert(record.context.sources.some((source: any) => source.role === 'character' && source.path === currentCard.path));
+      assert(!record.context.sources.some((source: any) => source.path === futureCard.path));
+      assert.doesNotMatch(record.context.sources.find((source: any) => source.path === '世界观.md').content, /归元境/);
+      const retry = await json(session + '/retry', 'POST', { messageId: (await json(session)).retryMessageId }, 409);
+      assert.equal(retry.error.code, 'REVISION_CONFLICT');
+      await json(base + '/document', 'PUT', { path, baseVersion: fresh.version, content: '作者手改对白。' });
+      const rewritten = await sendChapter('重写第四章', 1, '作者手改对白。');
+      assert(rewritten?.type === 'tool_end' && rewritten.manuscriptView?.proposalId);
+      const proposal = await json(base + '/proposals/' + rewritten.manuscriptView.proposalId);
+      assert.equal(proposal.baseContent, '作者手改对白。');
+      assert.equal((await target()).content, '作者手改对白。');
+      await json(base + '/proposals/' + proposal.id + '/changes/' + proposal.changes[0].id, 'POST', { action: 'accept' });
+      assert.equal((await target()).content, fresh.content);
     });
     assert.deepEqual(fixture.errors, []);
   } finally {

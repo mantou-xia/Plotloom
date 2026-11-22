@@ -82,14 +82,17 @@ export async function createModelFixture() {
         return;
       }
       if (prompt === 'THINK') writeChunk(response, { reasoning_content: '这是模型返回的可见思考文本。' });
-      if (prompt.startsWith('WRITE:')) {
+      const writing = /^WRITE:(.+)$/m.exec(prompt);
+      if (writing) {
         // 按公开工具协议逐步执行测试计划；只替换模型决策，工具/存储/权限走生产实现。
-        const plan = JSON.parse(prompt.slice(6));
+        // 附件消息的测试控制文本在首行，后面的原始资料由生产装配器拼入。
+        const plan = JSON.parse(writing[1]);
         const start = body.messages.findLastIndex((m: any) => m.role === 'user');
         const toolResults = body.messages.slice(start + 1).filter((m: any) => m.role === 'tool');
         const step = toolResults.length;
+        const resumed = plan.resumedSteps && count > plan.waitBefore + 1;
         const next = () => {
-          const call = plan.steps[step];
+          const call = (resumed ? plan.resumedSteps : plan.steps)[step];
           if (call) writeChunk(response, { tool_calls: [{ index: 0, id: `writing-${requests.length}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } }] }, 'tool_calls');
           else {
             // 用实际工具响应里的 ID 生成标记，测试可发现模型侧和公开快照之间的失配。
@@ -99,7 +102,7 @@ export async function createModelFixture() {
           }
           finish(response);
         };
-        if (plan.waitBefore === step) {
+        if (!resumed && plan.waitBefore === step) {
           writeChunk(response, { content: '等待测试继续。' }); waiting.set(prompt, response); waitingActions.set(prompt, next);
           response.once('close', () => { waiting.delete(prompt); waitingActions.delete(prompt); });
         } else next();

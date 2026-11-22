@@ -10,6 +10,7 @@ import { ToastExample } from './toast-example.tsx';
 import { PrimaryTabsExample } from './primary-tabs-example.tsx';
 import { WorkspaceTabsExample } from './workspace-tabs-example.tsx';
 import { WorkspacePanelExample } from './workspace-panel-example.tsx';
+import { WorkspaceFrameworkExample } from './workspace-framework-example.tsx';
 import { SkillItemExample } from './skill-item-example.tsx';
 import { UserMessageExample } from './user-message-example.tsx';
 import { AttachmentExample } from './attachment-example.tsx';
@@ -31,6 +32,7 @@ import { formCatalog } from './form-catalog.ts';
 import { Tooltip } from '../tooltip/tooltip.tsx';
 import { Button } from '../button/button.tsx';
 import { Card } from '../card/card.tsx';
+import { CoverCard } from '../card/cover-card.tsx';
 import { ScrollBox } from '../scroll-box/scroll-box.tsx';
 import { AsciiOcean } from '../ascii-ocean/ascii-ocean.tsx';
 import { ColorPicker } from '../color-picker/color-picker.tsx';
@@ -86,6 +88,8 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   const click = () => { setClicks((count) => count + 1); onAction('onClick'); };
   const content = state === 'empty' ? null : Array.from({ length: state === 'overflow' ? 24 : 3 }, (_, index) => <div className="pl-example-block" key={index}>内容块 {index + 1}</div>);
   let target;
+  if (['document-editor', 'manuscript-frame', 'image-viewer-frame', 'citation-sources-frame', 'file-changes-frame'].includes(component))
+    target = <WorkspaceFrameworkExample key={component} component={component} state={state} style={style} onAction={onAction} />;
   if (component === 'action-menu') target = <ActionMenu trigger={<Button variant="ghost" iconOnly tooltip aria-label="更多操作"><Ellipsis /></Button>}>
     <ActionMenuItem icon={<Copy />} onSelect={() => onAction('复制')}>复制</ActionMenuItem>
     <ActionMenuItem icon={<Trash2 />} danger onSelect={() => onAction('删除')}>删除</ActionMenuItem>
@@ -137,6 +141,9 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   if (component === 'toast') target = <ToastExample state={state} />;
   if (component === 'dialog') target = <DialogExample key={state} state={state} title={controls.text}
     description={controls.dialogDescription} style={style} onAction={onAction} />;
+  if (component === 'cover-card') target = <CoverCard title={controls.text || '纸上风景'} style={style}
+    background="linear-gradient(155deg, #778579, #31565b 55%, #182f38)" onOpen={() => onAction('onOpen')}
+    actions={[{ id: 'copy', label: '复制', icon: <Copy />, onClick: () => onAction('复制') }]} />;
   if (component === 'card') target = <Card style={{ display: 'grid', alignContent: 'center', gap: 12, ...style }} borderRadius={controls.cardBorderRadius} material={controls.cardMaterial}
     padding={controls.padding} backgroundColor={controls.cardBackgroundColor} bordered={controls.cardBordered}>
     <strong>卡片标题</strong><div>卡片内容通过 children 传入，可在右侧切换材质与外观参数。</div>

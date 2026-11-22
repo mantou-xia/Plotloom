@@ -39,7 +39,9 @@ async page => {
   const cited = await (await page.request.get(`${origin}/api/sessions/${id}`)).json();
   assert(cited.messages.at(-1)?.citations?.length === 1, '展示通过校验的来源');
   await page.screenshot({ path: 'output/playwright/basic-agent-demo.png' });
-  await select('workspaces.create'); await run({ title: '试验台小说', root: project.path });
+  await select('workspaces.create'); await run({ title: '非空目录', root: project.path });
+  await page.waitForFunction(() => document.querySelector('#result-content').textContent.includes('WORKSPACE_NOT_EMPTY'));
+  await run({ title: '试验台小说', root: project.path + '-novel-demo' });
   await page.waitForFunction(() => document.querySelector('#result-state').textContent.includes('检查通过'));
   await select('chats.create');
   await run({ projectPath: project.path });
@@ -86,6 +88,24 @@ async page => {
   await page.waitForFunction(() => document.querySelector('#result-state').textContent.includes('检查通过'));
   await select('generation.retry'); await run({ messageId: await latest() });
   await page.waitForFunction(() => document.querySelector('#result-content').textContent.includes('REVISION_CONFLICT'));
-  return { sessionId: id, checks: ['创建项目与小说会话、无效归属', '发送与工具', '详情', '重试成功', '旧目标409', '停止',
+  await select('documents.save'); await run({ path: '世界观.md', baseVersion: null,
+    content: '# 世界观\n\n## 境界\n生效章节：1\n揭示章节：10\n\n归元境已经存在。\n' });
+  await select('writing.context');
+  for (const chapterNumber of [4, 10]) {
+    await run({ task: 'discuss', instructions: '预览当章可见设定', chapterNumber });
+    await page.waitForFunction(() => document.querySelector('#result-state').textContent.includes('检查通过'));
+    assert((await page.locator('#result-content').innerText()).includes('归元境已经存在') === (chapterNumber === 10), '试验台按章筛选世界观');
+  }
+  await run({ task: 'discuss', instructions: '错误章号', chapterNumber: 0 });
+  await page.waitForFunction(() => document.querySelector('#result-content').textContent.includes('INVALID_REQUEST'));
+  const current = await (await page.request.post(asset('document/read'), { data: { path } })).json();
+  await select('documents.finalize'); await run({ path, baseVersion: current.version });
+  await page.waitForFunction(() => document.querySelector('#result-state').textContent.includes('检查通过'));
+  await select('documents.history'); await run({ path });
+  await page.waitForFunction(() => document.querySelector('#result-state').textContent.includes('检查通过'));
+  const { revisions: [final] } = await (await page.request.post(asset('history'), { data: { path } })).json();
+  await select('documents.restore'); await run({ path, baseVersion: current.version, revisionId: final.id });
+  await page.waitForFunction(() => document.querySelector('#result-state').textContent.includes('检查通过'));
+  return { sessionId: id, checks: ['第四章与第十章世界观预览及无效章号', '创建项目与小说会话、无效归属', '发送与工具', '详情', '重试成功', '旧目标409', '停止',
     '有效与未知正文引用', '结构化创作重试与选区候选', '创作重试可停止', '旧正文版本409'] };
 }

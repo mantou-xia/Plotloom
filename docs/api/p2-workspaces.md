@@ -6,9 +6,9 @@
 
 按根 README 启动本机服务和试验台。P2 不需要模型密钥；写入当前只支持 Windows。同一服务数据目录只运行一个服务实例。
 
-先在本机创建小说目录，再登记已有绝对路径。不同工作区不能重复或嵌套，也不能与服务数据目录重叠。正式文稿是用户目录中的 UTF-8 `.md` 文件，可用外部编辑器编辑；不强制角色、章节或大纲的目录命名。相对路径使用 `/` 并与磁盘大小写一致，不允许越界、符号链接、目录联接或 Windows 别名路径。
+选择已存在的本机空文件夹创建小说。后端创建“大纲”“正文章节”“角色卡”三个目录。不同工作区不能重复或嵌套，也不能与服务数据目录重叠。正式文稿是用户目录中的 UTF-8 `.md` 文件，可用外部编辑器编辑；通用文稿接口仍按书内相对路径读写。相对路径使用 `/` 并与磁盘大小写一致，不允许越界、符号链接、目录联接或 Windows 别名路径。
 
-`<dataDir>/workspaces/<workspaceId>/state.json` 保存登记、候选和历史清单；同级 `revisions/<revisionId>.md` 保存快照。内部 JSON 不是已废弃的 JSON 正文资产兼容格式，不能替代磁盘当前稿。Pi 会话仍由 SDK JSONL 保存，P2 不关联小说聊天。
+`<dataDir>/novels/<workspaceId>/state.json` 保存登记、候选和历史清单；同级 `revisions/<revisionId>.md` 保存快照。内部 JSON 不是已废弃的 JSON 正文资产兼容格式，不能替代磁盘当前稿。Pi 会话仍由 SDK JSONL 保存，P2 不关联小说聊天。
 
 ## 2. 接口目录
 
@@ -19,10 +19,13 @@
 | GET /api/workspaces | 无 | `{workspaces}`，登记列表 |
 | POST /api/workspaces | `{title, root}` | 201，工作区 `{id,title,root,createdAt}` |
 | GET /api/workspaces/:workspaceId | 无 | 工作区；同时核对上次未决提交 |
+| PUT /api/workspaces/:workspaceId/shelf | `{pinned?,coverId?}`，至少一项 | 工作区及当前书架设置 |
 | GET /api/workspaces/:workspaceId/documents | 无 | `{paths}`，实际 Markdown 相对路径 |
+| GET /api/workspaces/:workspaceId/manuscript-stats | 无 | `{chapters,characters}`，仅统计已保存的正文章节及其中非空白的 Unicode 字符，含 Markdown 标记 |
 | POST /api/workspaces/:workspaceId/document/read | `{path}` | `{path,content,version}`，现读磁盘 |
 | PUT /api/workspaces/:workspaceId/document | `{path,baseVersion,content}` | 保存后的文档；自动创建所需父目录 |
-| POST /api/workspaces/:workspaceId/history | `{path}` | `{revisions}`，观察或提交过的历史 |
+| POST /api/workspaces/:workspaceId/history | `{path}` | `{revisions}`，作者显式留档的定稿 |
+| POST /api/workspaces/:workspaceId/finalize | `{path,baseVersion}` | 定稿 ID、路径、来源版本及留档时间 |
 | POST /api/workspaces/:workspaceId/restore | `{path,revisionId,baseVersion}` | 恢复后的文档，新增历史记录 |
 | GET /api/workspaces/:workspaceId/proposals | 无 | `{proposals}`，候选及各处状态 |
 | POST /api/workspaces/:workspaceId/proposals | `{path,baseVersion,content,selection?,references?}` | 201，保存候选但不写正式稿 |
@@ -38,7 +41,7 @@
 
 ## 3. 最小调用链
 
-在试验台选择“打开并登记工作区”，填写本机已存在目录，例如：
+在试验台选择“新建小说”，填写本机已存在的空目录，例如：
 
 ```json
 {"title":"灯塔","root":"D:/Novels/灯塔"}
@@ -58,11 +61,11 @@
 
 返回的 `changes` 有三处差异。试验台自动填入候选及第一处差异 ID；分别提交 `{"action":"accept"}` 或 `{"action":"reject"}`，处理其他位置时替换 `changeId`。最后重新读取文档，只有已采纳内容进入正式稿。
 
-版本恢复先查询 history，选择该文件的 `revisionId`，再读取当前文档，把当前 `version` 填到 restore 的 `baseVersion`。读取旧内容可以调用 export 并指定 `revisionId`；恢复不会删除之前版本。
+版本恢复先查询 history，选择该文件的 `revisionId`，再读取当前文档，把当前 `version` 填到 restore 的 `baseVersion`。读取旧内容可以调用 export 并指定 `revisionId`；恢复保留定稿清单，不新增定稿。
 
 ## 4. 版本、选区与状态
 
-- `version` 是 UTF-8 内容 SHA-256；不存在的文件返回 `version:null, content:""`。BOM 和 CRLF 作为原文保留。历史记录 `id` 与内容版本不同，恢复相同内容仍新增记录；无变化的手工保存不重复记录。
+- `version` 是 UTF-8 内容 SHA-256；不存在的文件返回 `version:null, content:""`。BOM 和 CRLF 作为原文保留。定稿 ID 与内容版本不同。自动保存、外部编辑和回退不会生成定稿记录。内部保留引用和中断恢复使用的快照。
 - 历史 `source` 为 `observed/manual/accepted/restored`；分别表示观察到的外部内容、手工保存、采纳和恢复。`createdAt` 是本应用记录时间，不是外部编辑器的保存时间；外部未被观察到的中间稿不在历史中。
 - 选区 `{start,end,text}` 为 UTF-16 半开区间 `[start,end)`，文本必须精确匹配，不能切开 emoji 的代理对。提供选区时，`content` 只表示选区替换内容；后端保留范围外原文。
 - 差异按行计算，相邻增删为一处；未变行将不同处隔开。`start/end/before/after` 对应基础稿；每处状态为 `pending/accepted/rejected`，采纳后附 `revisionId`。后端根据已采纳内容重建预期当前稿，支持前方长度变化及乱序采纳。
@@ -79,6 +82,7 @@
 | 400 INVALID_REQUEST | 检查路径、选区、请求字段和候选是否有实际修改 |
 | 404 ASSET_NOT_FOUND | 确认工作区、候选、差异或历史确实属于当前工作区 |
 | 409 REVISION_CONFLICT / REFERENCE_CONFLICT | 重新读取并核对当前稿或引用资料；保留现稿，不盲目重试旧请求 |
+| 409 WORKSPACE_NOT_EMPTY | 选择空文件夹；含隐藏文件或子目录的文件夹也视为非空 |
 | 409 WORKSPACE_OVERLAP / BACKUP_EXISTS | 使用独立工作区或新的备份目录 |
 | 409 CHANGE_RESOLVED | 查看既有决定；撤回已采纳内容走历史恢复 |
 | 409 FILE_BUSY / FILE_UNWRITABLE / WORKSPACE_UNAVAILABLE | 等待旧写者退出，或检查占用、权限及目录，然后重新读取 |
@@ -100,7 +104,7 @@
 
 1. 停止服务，先备份现有服务数据。
 2. 将备份的 manuscripts 放到希望继续使用的小说目录。
-3. 从备份 state.json 读取工作区 ID，将 metadata 恢复到 `<dataDir>/workspaces/<工作区ID>/`，保留 ID、历史和候选。
+3. 从备份 state.json 读取工作区 ID，将 metadata 恢复到 `<dataDir>/novels/<工作区ID>/`，保留 ID、历史和候选。
 4. 修改恢复后的 state.json 中 `workspace.root` 为步骤 2 的绝对路径，确保不与其他登记工作区重叠。
 5. 启动服务，用原工作区 ID 查询文档、历史和候选并核对。不要另行登记成新工作区后期待旧历史自动关联。
 

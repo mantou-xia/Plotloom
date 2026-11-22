@@ -24,8 +24,16 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
   const history = (p = path) => server.json(`/api/workspaces/${a}/history`, 'POST', { path: p });
   try {
     await t.test('登记、目录归属、同名原稿隔离和重启', async () => {
+      await writeFile(join(bookA, '.keep'), '保留原文件');
+      const rejected = await server.json('/api/workspaces', 'POST', { title: '非空', root: bookA }, 409);
+      assert.equal(rejected.error.code, 'WORKSPACE_NOT_EMPTY');
+      assert.deepEqual(await readdir(bookA), ['.keep']);
+      assert.equal(await readFile(join(bookA, '.keep'), 'utf8'), '保留原文件');
+      assert.deepEqual((await server.json('/api/workspaces')).workspaces, []);
+      await rm(join(bookA, '.keep'));
       a = (await server.json('/api/workspaces', 'POST', { title: '甲', root: bookA }, 201)).id;
       b = (await server.json('/api/workspaces', 'POST', { title: '乙', root: bookB }, 201)).id;
+      assert.deepEqual((await readdir(bookA)).sort(), ['大纲', '正文章节', '角色卡'].sort());
       assert.equal((await server.json('/api/workspaces')).workspaces.length, 2);
       assert.equal((await server.json(`/api/workspaces/${a}`)).root, bookA);
       await server.json('/api/workspaces', 'POST', { title: '重复', root: bookA }, 409);
@@ -39,6 +47,35 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       assert.equal((await read()).content, base);
       assert.equal((await read(b)).content, '另一部作品');
       assert.deepEqual((await server.json(`/api/workspaces/${a}/documents`)).paths, [path]);
+    });
+    await t.test('书架设置可独立更新并在重启后恢复', async () => {
+      const shelf = `/api/workspaces/${a}/shelf`;
+      const afterPin = await server.json(shelf, 'PUT', { pinned: true });
+      assert.equal(afterPin.pinned, true);
+      const afterCover = await server.json(shelf, 'PUT', { coverId: 'stars' });
+      assert.equal(afterCover.pinned, true);
+      assert.equal(afterCover.coverId, 'stars');
+      for (const input of [{}, { coverId: 'custom' }, { pinned: 'true' }, { root: bookB }]) {
+        const rejected = await server.json(shelf, 'PUT', input, 400);
+        assert.equal(rejected.error.code, 'INVALID_REQUEST');
+      }
+      await server.json('/api/workspaces/unknown-book/shelf', 'PUT', { pinned: true }, 404);
+      await server.close();
+      server = await startServer(env);
+      const { workspaces } = await server.json('/api/workspaces');
+      assert.deepEqual(workspaces.find((book: any) => book.id === a), afterCover);
+      assert.equal(workspaces.find((book: any) => book.id === b).pinned, undefined);
+      assert.equal((await server.json(shelf, 'PUT', { pinned: false })).coverId, 'stars');
+      assert.equal((await server.json(`/api/workspaces/${a}`)).pinned, false);
+    });
+    await t.test('只统计已保存的正文章节和非空白 Unicode 字符', async () => {
+      const stats = `/api/workspaces/${a}/manuscript-stats`;
+      assert.deepEqual(await server.json(stats), { chapters: 0, characters: 0 });
+      await save('正文章节/统计示例.md', '# 甲😀\n\t乙', null);
+      assert.deepEqual(await server.json(stats), { chapters: 1, characters: 4 });
+      await writeFile(join(bookA, '正文章节', '统计示例.md'), '新版\n');
+      assert.deepEqual(await server.json(stats), { chapters: 1, characters: 2 });
+      await server.json('/api/workspaces/unknown-book/manuscript-stats', 'GET', undefined, 404);
     });
     await t.test('过期保存、并发保存和外部修改被观察', async () => {
       const v = (await read()).version;
@@ -107,13 +144,22 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       await decide(p2, 1, 'accept', 409);
       assert.equal((await read(a, '外部.md')).content, '手工稿');
     });
-    await t.test('历史恢复创建新记录、导出原文和指定章节搜索', async () => {
-      const previous = (await history()).revisions.find((r: any) => r.version === digest(base));
-      const current = await read();
+    await t.test('仅显式定稿可恢复、导出原文和指定章节搜索', async () => {
+      assert.deepEqual((await history()).revisions, []);
+      const before = await read();
+      await save(path, base, before.version);
+      const finalPath = `/api/workspaces/${a}/finalize`;
+      const previous = await server.json(finalPath, 'POST', { path, baseVersion: digest(base) });
+      assert.equal((await server.json(finalPath, 'POST', { path, baseVersion: digest(base) })).id, previous.id);
+      const current = await save(path, '定稿后的工作稿', digest(base));
+      const existing = await server.json<Proposal>(`/api/workspaces/${a}/proposals/${proposal.id}`);
+      const oldRevision = existing.changes.find(change => change.revisionId)?.revisionId;
+      assert(oldRevision);
+      await server.json(`/api/workspaces/${a}/restore`, 'POST', { path, revisionId: oldRevision, baseVersion: current.version }, 404);
       await server.json(`/api/workspaces/${a}/restore`, 'POST', { path, revisionId: previous.id, baseVersion: 'f'.repeat(64) }, 409);
       const beforeCount = (await history()).revisions.length;
       await server.json(`/api/workspaces/${a}/restore`, 'POST', { path, revisionId: previous.id, baseVersion: current.version });
-      assert.equal((await history()).revisions.length, beforeCount + 1);
+      assert.equal((await history()).revisions.length, beforeCount);
       const exported = await server.json(`/api/workspaces/${a}/export`, 'POST', { files: [{ path }, { path, revisionId: previous.id }] });
       assert.deepEqual(exported.files.map((f: any) => f.content), [base, base]);
       const found = await server.json(`/api/workspaces/${a}/search`, 'POST', { query: '旧一😀', paths: [path] });
@@ -139,14 +185,14 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       await server.json(`/api/workspaces/${a}/search`, 'POST', { query: '' }, 400);
     });
     await t.test('崩溃窗口：未写/已写/另有改稿分别恢复，不自动覆盖', async () => {
-      const stateFile = join(data, 'workspaces', a, 'state.json');
+      const stateFile = join(data, 'novels', a, 'state.json');
       const inject = async (disk: 'before' | 'after' | 'external') => {
         const doc = await read();
         await server.close(true);
         const state = JSON.parse(await readFile(stateFile, 'utf8'));
         const revision = { id: randomUUID(), path, version: digest('待提交目标'), source: 'manual', createdAt: new Date().toISOString() };
         state.pending = { path, beforeVersion: doc.version, afterVersion: revision.version, revision };
-        await writeFile(join(data, 'workspaces', a, 'revisions', `${revision.id}.md`), '待提交目标');
+        await writeFile(join(data, 'novels', a, 'revisions', `${revision.id}.md`), '待提交目标');
         await writeFile(stateFile, JSON.stringify(state));
         if (disk !== 'before') await writeFile(join(bookA, path), disk === 'after' ? '待提交目标' : '另外的外部内容');
         server = await startServer(env);
@@ -155,7 +201,7 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       await inject('before'); await read();
       assert.equal((await server.json(`/api/workspaces/${a}/recovery`)).pending, null);
       const revision = await inject('after'); assert.equal((await read()).content, '待提交目标');
-      assert((await history()).revisions.some((r: any) => r.id === revision.id));
+      assert(!(await history()).revisions.some((r: any) => r.id === revision.id));
       await inject('external');
       await server.json(`/api/workspaces/${a}/document/read`, 'POST', { path }, 409);
       const recovery = await server.json(`/api/workspaces/${a}/recovery`);
@@ -168,7 +214,7 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       const doc = await read();
       const next = '写入进程中断验证😀'.repeat(10000);
       const request = server.request(`/api/workspaces/${a}/document`, 'PUT', { path, baseVersion: doc.version, content: next }).catch(() => null);
-      const stateFile = join(data, 'workspaces', a, 'state.json');
+      const stateFile = join(data, 'novels', a, 'state.json');
       let sawWriter = false;
       for (let i = 0; i < 200; i++) {
         const state = JSON.parse(await readFile(stateFile, 'utf8'));
@@ -199,10 +245,10 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       await server.json(`/api/workspaces/${a}/backup`, 'POST', { destination }, 409);
       const restoreData = join(root, 'restored-data');
       const { cp } = await import('node:fs/promises');
-      await mkdir(join(restoreData, 'workspaces'), { recursive: true });
-      await cp(join(destination, 'metadata'), join(restoreData, 'workspaces', a), { recursive: true });
+      await mkdir(join(restoreData, 'novels'), { recursive: true });
+      await cp(join(destination, 'metadata'), join(restoreData, 'novels', a), { recursive: true });
       state.workspace.root = join(destination, 'manuscripts');
-      await writeFile(join(restoreData, 'workspaces', a, 'state.json'), JSON.stringify(state));
+      await writeFile(join(restoreData, 'novels', a, 'state.json'), JSON.stringify(state));
       const restored = await startServer({ ...env, PLOTLOOM_DATA_DIR: restoreData });
       try {
         assert.equal((await restored.json(`/api/workspaces/${a}/proposals/${proposal.id}`)).status, 'resolved');

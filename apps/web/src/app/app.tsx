@@ -16,7 +16,7 @@ import { ChatPage } from '../features/agent/chat-page';
 import { ChatWorkspace } from '../features/workspace/chat-workspace';
 import { NewChatPage } from '../features/agent/new-chat-page';
 import { SkillsPage } from '../features/skills/skills-page';
-import { NovelsPage } from '../features/novels/novels-page';
+import { CreateNovelDialog, NovelsPage } from '../features/novels/novels-page';
 import { AppSidebar, type AppPage } from '../features/navigation/app-sidebar';
 import { CreateProjectDialog } from '../features/navigation/create-project-dialog';
 import { ProjectSwitcher } from '../features/navigation/project-switcher';
@@ -51,10 +51,21 @@ export function App() {
   const [startRevision, setStartRevision] = useState(0);
   // 默认专注聊天；每次新建时收起工作区，已有标签保留，用户仍可主动展开。
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const bookId = sessionId ? activeChat?.workspaceId ?? null : workspaceId;
+  const [bookPanels, setBookPanels] = useState<Record<string, boolean>>({});
+  const panelKey = 'plotloom:chapter-panel:' + bookId;
+  // 同一本书的草稿聊天、已保存聊天和刷新后的深链接共用面板开合偏好。
+  const panelOpen = bookId ? bookPanels[bookId] ?? sessionStorage.getItem(panelKey) === 'open' : workspaceOpen;
+  function changePanelOpen(open: boolean) {
+    if (!bookId) { setWorkspaceOpen(open); return; }
+    sessionStorage.setItem(panelKey, open ? 'open' : 'closed');
+    setBookPanels(current => ({ ...current, [bookId]: open }));
+  }
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceState, setWorkspaceState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectState, setProjectState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [creatingNovel, setCreatingNovel] = useState(false);
   const [projectDialog, setProjectDialog] = useState<'create' | 'switch' | 'create-from-switch' | null>(null);
   const [chatToDelete, setChatToDelete] = useState<ChatSummary | null>(null);
   const [saving, setSaving] = useState(false);
@@ -176,16 +187,16 @@ export function App() {
         onOpenChat={chat => updateRoute({ page: 'chat', sessionId: chat.id })}
         onNewChat={path => path === undefined && (activeChat?.workspaceId ?? workspaceId)
           ? startChat('', activeChat?.workspaceId ?? workspaceId) : startChat(path)} workspaces={workspaces} workspaceState={workspaceState}
-        onRefreshWorkspaces={refreshWorkspaces} onNewNovelChat={id => startChat('', id)} />
+        onCreateNovel={() => setCreatingNovel(true)} onRefreshWorkspaces={refreshWorkspaces} onNewNovelChat={id => startChat('', id)} />
         </div>
         {settingsSection ? <SettingsSidebar onBack={closeSettings} section={settingsSection}
           onSelect={settings => updateRoute({ settings }, 'replace')} /> : null}
       </>}>
         <div className="plotloom-app-content" data-hidden={settingsOpen} inert={settingsOpen} aria-hidden={settingsOpen || undefined}>
-          {page === 'chat' ? <ChatWorkspace open={workspaceOpen} onOpenChange={setWorkspaceOpen} sessionId={sessionId}
-            projectSession={Boolean(activeChat?.projectPath)} updatedAt={activeChat?.updatedAt}>{(openCitations, openTurnChanges) => sessionId ?
+          {page === 'chat' ? <ChatWorkspace open={panelOpen} onOpenChange={changePanelOpen} sessionId={sessionId} workspaceId={bookId}
+            projectSession={Boolean(activeChat?.projectPath)} updatedAt={activeChat?.updatedAt}>{(openCitations, openTurnChanges, openManuscript) => sessionId ?
             <ChatPage title={activeChat?.name} key={sessionId} sessionId={sessionId} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
-              onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges} /> :
+              onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges} onOpenManuscript={openManuscript} /> :
             <NewChatPage modelRevision={modelRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
               workspaceId={workspaceId} workspaceTitle={workspaces.find(workspace => workspace.id === workspaceId)?.title}
               renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName || '选择项目'}
@@ -199,14 +210,19 @@ export function App() {
           {page === 'skills' ? <SkillsPage skillRevision={skillRevision} /> : null}
           {page === 'novels' ? <NovelsPage workspaces={workspaces} state={workspaceState} workspaceId={workspaceId}
             onOpen={id => updateRoute({ sessionId: null, workspaceId: id })} onRefresh={refreshWorkspaces}
-            onRegistered={workspace => setWorkspaces(current => [...current, workspace])}
-            onSessionsChange={refreshChats} onOpenChat={id => updateRoute({ page: 'chat', sessionId: id })} /> : null}
+            onUpdate={updated => setWorkspaces(current => current.map(book => book.id === updated.id ? updated : book))}
+            onCreate={() => setCreatingNovel(true)} /> : null}
         </div>
         {settingsSection ? <SettingsPage section={settingsSection} color={theme.color} onColorChange={theme.setColor}
           archived={chats.filter(chat => chat.archived)} archiveStatus={listState} projects={projects} onBatch={applyArchiveBatch}
           onRestore={chat => void organize(chat, { archived: false })} onDelete={setChatToDelete}
           onModelsChange={() => setModelRevision(v => v + 1)} onSkillsChange={() => setSkillRevision(v => v + 1)} /> : null}
       </GlobalLayout>
+      {creatingNovel && <CreateNovelDialog onClose={() => setCreatingNovel(false)} onCreated={book => {
+        setWorkspaces(current => [...current.filter(item => item.id !== book.id), book]);
+        setCreatingNovel(false);
+        startChat('', book.id);
+      }} />}
       {chatToDelete && <Dialog open title="永久删除对话"
         onOpenChange={open => { if (!open && !saving) setChatToDelete(null); }}
         footer={<><Button variant="ghost" disabled={saving} onClick={() => setChatToDelete(null)}>取消</Button>

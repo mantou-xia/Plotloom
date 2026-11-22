@@ -10,7 +10,7 @@ import { requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
 import { modelKey } from './new-chat-page';
 
-const thinkingLabels: Record<ThinkingLevel, string> = { off: '关闭', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高' };
+import { thinkingLabels } from './thinking-levels';
 
 /** 组件保持纯 UI；这里负责公开协议转换、配置保存、附件上传及上下文刷新。 */
 export function ChatComposer({ sessionId, projectPath, busy, activity, stopping, revision, attachmentDropTarget, onSubmit, onStop, onRefresh }: {

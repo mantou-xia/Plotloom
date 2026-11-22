@@ -1,0 +1,49 @@
+.plotloom-chapter-workspace { position: relative; container-type: inline-size; display: grid; grid-template-columns: clamp(132px, 26%, 240px) minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; background: var(--pl-surface-muted); }
+.plotloom-chapter-directory { grid-area: 1 / 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.plotloom-chapter-directory .plotloom-chapter-ball { display: none; }
+.plotloom-chapter-picker { flex: 1; min-width: 0; overflow: auto; padding: 8px; }
+.plotloom-chapter-sections.pl-primary-tabs { gap: 8px; }
+.plotloom-chapter-sections > .pl-primary-tabs__scroll { align-self: stretch; position: sticky; top: -8px; z-index: 2; background: var(--pl-surface-muted); }
+.plotloom-chapter-sections .pl-primary-tabs__list { width: auto; grid-auto-columns: minmax(0, 1fr); }
+.plotloom-chapter-sections .pl-primary-tabs__tab { padding-inline: 6px; }
+.plotloom-chapter-picker ul { list-style: none; padding: 8px 0; margin: 0; }
+.plotloom-chapter-picker li button { width: 100%; justify-content: start; height: auto; min-height: 36px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
+.plotloom-chapter-picker button[aria-current] { background: var(--pl-surface); }
+/* 上下栏与纸面外侧共用父级底色，切换主题时没有色块接缝。 */
+.plotloom-chapter-paper { grid-area: 1 / 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: color-mix(in srgb, var(--pl-primary, #2563eb) 8%, var(--pl-surface-muted)); }
+.plotloom-paper-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; min-height: 36px; padding: 10px 14px; }
+.plotloom-paper-toolbar h2 { min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; }
+.pl-manuscript-actions { display: flex; flex-wrap: nowrap; gap: 2px; align-items: center; }
+.plotloom-paper-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; min-width: 0; min-height: 36px; padding: 4px 12px; }
+.plotloom-paper-footer .plotloom-novel-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; height: 36px; font-size: 12px; line-height: 1.5; gap: 4px; }
+.plotloom-paper-footer [role='status'] { max-height: 36px; overflow: auto; }
+.plotloom-paper-footer .plotloom-novel-actions { flex-wrap: nowrap; gap: 0; }
+.plotloom-paper-footer button { padding-inline: 5px; }
+.plotloom-paper-count { color: var(--pl-text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@container (max-width: 480px) {
+  .plotloom-chapter-paper { grid-column: 1 / -1; }
+  .plotloom-paper-toolbar { padding-inline-start: 52px; }
+  .plotloom-chapter-directory { position: absolute; inset: 10px auto 12px 8px; width: 36px; z-index: 3; pointer-events: none; }
+  .plotloom-chapter-directory .plotloom-chapter-ball { display: inline-flex; --pl-button-height: 36px; width: 36px; border: 0; border-radius: 50%; background: var(--pl-surface-muted); pointer-events: auto; }
+  .plotloom-chapter-directory .plotloom-chapter-picker { position: absolute; inset: 36px auto auto 0; width: min(240px, calc(100cqw - 16px)); max-height: calc(100% - 36px); box-sizing: border-box; background: var(--pl-surface-muted); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); border-radius: 8px; pointer-events: auto; }
+  .plotloom-chapter-directory[data-open='false'] .plotloom-chapter-picker { display: none; }
+}
+.plotloom-chapter-workspace .plotloom-novel-editor { flex: 1; min-height: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); align-content: stretch; gap: 0; --paper-padding: clamp(12px, 4cqw, 32px); --paper-width: 42rem; }
+.plotloom-chapter-paper :is(.plotloom-manuscript-input, .plotloom-chapter-preview) { box-sizing: border-box; width: min(100%, var(--paper-width)); height: 100%; min-height: 0; margin-inline: auto; background: var(--pl-surface); }
+.plotloom-chapter-workspace .plotloom-novel-text, .plotloom-chapter-workspace .plotloom-novel-text textarea { box-sizing: border-box; height: 100%; min-height: 0; resize: none; }
+.plotloom-chapter-paper textarea.pl-form-control, .plotloom-chapter-paper .pl-markdown { font: 15px/1.85 system-ui, "Microsoft YaHei", sans-serif; }
+.plotloom-chapter-paper textarea.pl-form-control { padding: var(--paper-padding); background: var(--pl-surface); border-radius: 0; }
+.plotloom-chapter-preview { overflow: auto; padding: var(--paper-padding); overflow-wrap: anywhere; border: 1px solid color-mix(in srgb, var(--pl-text, #202124) 58%, var(--pl-surface, #fff)); border-radius: 5px; }
+.plotloom-chapter-preview ::selection { background: color-mix(in srgb, var(--pl-primary, #2563eb) 24%, var(--pl-surface, #fff)); }
+.plotloom-chapter-preview .pl-markdown > :first-child { margin-block-start: 0; }
+@container (max-width: 360px) {
+  .plotloom-paper-toolbar { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+
+.pl-manuscript-paper, .pl-manuscript-paper.pl-primary-tabs { display: grid; flex: 1; min-width: 0; min-height: 0; gap: 0; grid-template-rows: auto minmax(0, 1fr) auto; }
+.pl-manuscript-sheet { min-height: 0; padding-inline: clamp(8px, 3cqw, 24px); }
+.pl-manuscript-sheet[hidden] { display: none; }
+.pl-manuscript-actions .pl-primary-tabs__scroll { margin: 0; padding: 2px; align-self: center; }
+.pl-manuscript-actions .pl-primary-tabs__list { grid-auto-columns: max-content; }
+.pl-manuscript-actions .pl-primary-tabs__tab { padding-inline: 7px; }
+.pl-manuscript-empty { padding: 12px; color: var(--pl-text-muted); }

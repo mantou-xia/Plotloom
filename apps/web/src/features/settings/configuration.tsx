@@ -5,6 +5,7 @@ import { ProviderAvatar, ProviderDetail } from './provider-detail';
 import { ProviderAvatarPicker } from './provider-avatar-picker';
 import { SidebarNavItem } from '@plotloom/ui/sidebar/nav-item';
 import { PROVIDER_APIS, type ModelConfig, type ModelInfo, type ProviderSettings, type ProviderWrite, type ThinkingLevel } from '@plotloom/contracts';
+import { selectThinkingLevel, thinkingLabels } from '../agent/thinking-levels';
 import type { SkillInfo } from '@plotloom/contracts/skills';
 import { SettingsSection } from '@plotloom/ui/settings-section';
 import { SettingsRow } from '@plotloom/ui/settings-row';
@@ -115,9 +116,9 @@ function DefaultModel({ models, defaults, onSaved }: { models: ModelInfo[]; defa
   return <SettingsSection title="新聊天默认配置">
     <SettingsRow title="默认模型" description="可选择已配置凭据的供应商模型。"><Select aria-label="默认模型" value={model ? selected : null} clearable={false}
       disabled={busy || !available.length} options={available.map(m => ({ value: modelKey(m), label: m.provider + ' / ' + m.name }))}
-      onValueChange={v => { if (v) { setSelected(v); if (!available.find(m => modelKey(m) === v)?.thinkingLevels.includes(thinking)) setThinking('off'); } }} /></SettingsRow>
+      onValueChange={v => { if (v) { setSelected(v); setThinking(selectThinkingLevel(available.find(m => modelKey(m) === v)?.thinkingLevels, thinking)); } }} /></SettingsRow>
     <SettingsRow title="默认思考档位"><Select aria-label="默认思考档位" value={thinking} disabled={busy || !model} clearable={false} searchable={false}
-      options={(model?.thinkingLevels ?? ['off']).map(value => ({ value, label: value === 'off' ? '关闭' : value }))}
+      options={(model?.thinkingLevels ?? ['off']).map(value => ({ value, label: thinkingLabels[value] }))}
       onValueChange={v => v && setThinking(v as ThinkingLevel)} /></SettingsRow>
     <Button size="sm" variant="secondary" disabled={!model} loading={busy} onClick={() => void save()}>保存默认配置</Button>
   </SettingsSection>;

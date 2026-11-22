@@ -59,11 +59,20 @@ function ChatTitle({ name, onSave }: { name: string; onSave: (name: string) => P
 }
 
 /** 页面以服务端快照为准；SSE 触发刷新，离开页面断开连接但不停止后台任务。 */
-export function ChatPage({ title, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges }: {
+export function ChatPage({ title, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript }: {
   onRename: (id: string, name: string) => Promise<string>;
   title?: string; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
+  onOpenManuscript: (view: NonNullable<SessionDetail['manuscriptRequest']>['view']) => boolean;
 }) {
   const [session, setSession] = useState<SessionDetail | null>(null);
+  const [openedAt] = useState(() => Date.now());
+  const manuscriptRequest = session?.manuscriptRequest;
+  useEffect(() => {
+    if (!manuscriptRequest || (manuscriptRequest.view.mode === 'discard' && Date.parse(manuscriptRequest.createdAt) < openedAt)) return;
+    const key = 'plotloom:manuscript-request:' + sessionId;
+    if (sessionStorage.getItem(key) === manuscriptRequest.id) return;
+    if (onOpenManuscript(manuscriptRequest.view)) sessionStorage.setItem(key, manuscriptRequest.id);
+  }, [sessionId, manuscriptRequest, openedAt, onOpenManuscript]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [stopping, setStopping] = useState(false);

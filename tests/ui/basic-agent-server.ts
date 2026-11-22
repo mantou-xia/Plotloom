@@ -8,6 +8,8 @@ import { createModelFixture, TEST_KEY } from '../api/fixture.ts';
 const directory = await mkdtemp(join(tmpdir(), 'plotloom-product-'));
 const project = join(directory, 'project'); await mkdir(project);
 await writeFile(join(project, 'scene.md'), '核对标记：灯塔-731。');
+// 每个建书入口单独使用一个空目录，原项目目录用于验证非空拒绝。
+for (const suffix of ['novel-page', 'novel-sidebar', 'novel-demo']) await mkdir(project + '-' + suffix);
 const fixture = await createModelFixture();
 const modelsPath = join(directory, 'models.json');
 await writeFile(modelsPath, JSON.stringify({ providers: { 'p1-test': { api: 'openai-completions', baseUrl: fixture.baseUrl,

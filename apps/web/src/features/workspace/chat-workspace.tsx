@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { FileDiff, FileText, Globe, Image, Link2 } from 'lucide-react';
+import type { ManuscriptView } from '@plotloom/contracts/workspaces';
+import { BookOpen, FileDiff, FileText, Globe, Image, Link2 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceFeature } from '@plotloom/ui/workspace-panel';
 import type { WorkspaceTab } from '@plotloom/ui/workspace-tabs';
 import { BrowserPage } from './browser-page';
@@ -7,6 +8,7 @@ import { MarkdownPage } from './markdown-page';
 import { ImagePage } from './image-page';
 import { CitationSourcesPage, type OpenCitations } from './citation-sources-page';
 import { FileChangesPage } from './file-changes-page';
+import { ChapterWorkspace } from '../novels/chapter-workspace';
 import './workspace.css';
 
 export type OpenTurnChanges = (turnId: string, writeIds: readonly string[], expandedWriteIds?: readonly string[]) => void;
@@ -18,12 +20,20 @@ const chatWorkspaceFeatures: readonly WorkspaceFeature[] = [
   { id: 'image', title: '图片预览', icon: <Image />, keywords: ['图像', '文件'], page: <ImagePage /> },
 ];
 
-export function ChatWorkspace({ children, open, onOpenChange, sessionId, projectSession, updatedAt }: {
-  children: (openCitations: OpenCitations, openTurnChanges: OpenTurnChanges) => ReactNode;
+export function ChatWorkspace({ children, open, onOpenChange, sessionId, workspaceId, projectSession, updatedAt }: {
+  children: (openCitations: OpenCitations, openTurnChanges: OpenTurnChanges, openManuscript: (view: ManuscriptView) => boolean) => ReactNode;
   open: boolean; onOpenChange: (open: boolean) => void; sessionId: string | null;
-  projectSession: boolean; updatedAt?: string;
+  workspaceId: string | null; projectSession: boolean; updatedAt?: string;
 }) {
   const [requestedTab, setRequestedTab] = useState<{ sessionId: string | null; tab: WorkspaceTab }>();
+  const [manuscript, setManuscript] = useState<ManuscriptView>();
+  function openManuscript(view: ManuscriptView) {
+    if (view.workspaceId !== workspaceId) return false;
+    setManuscript(view);
+    onOpenChange(true);
+    return true;
+  }
+  const manuscriptRequest = manuscript?.workspaceId === workspaceId ? manuscript : undefined;
   // 来自聊天的临时标签随聊天切换清除，手动打开的工作区标签继续保留。
   if (requestedTab && requestedTab.sessionId !== sessionId) setRequestedTab(undefined);
   const openCitations = useCallback<OpenCitations>((sources, selectedId) => {
@@ -41,12 +51,14 @@ export function ChatWorkspace({ children, open, onOpenChange, sessionId, project
     } });
     onOpenChange(true);
   }, [sessionId, onOpenChange]);
-  return <WorkspacePanel className="plotloom-workspace" features={[
+  return <WorkspacePanel className="plotloom-workspace" primaryFeatureId={workspaceId ? 'chapters' : undefined} primaryRequest={manuscriptRequest} features={[
+    ...(workspaceId ? [{ id: 'chapters', title: '正文章节', icon: <BookOpen />, keywords: ['小说', '文稿', '编辑'],
+      page: <ChapterWorkspace key={workspaceId} workspaceId={workspaceId} request={manuscriptRequest} /> }] : []),
     ...chatWorkspaceFeatures,
     { id: 'file-diff', title: '文件对比', icon: <FileDiff />, keywords: ['修改', '变更', 'diff'],
       page: <FileChangesPage key={sessionId} sessionId={projectSession ? sessionId : null} revision={updatedAt} /> },
   ]} open={open} onOpenChange={onOpenChange}
     requestedTab={requestedTab?.tab}>
-    {children(openCitations, openTurnChanges)}
+    {children(openCitations, openTurnChanges, openManuscript)}
   </WorkspacePanel>;
 }

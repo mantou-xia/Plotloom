@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SessionSummary } from '@plotloom/contracts';
 import type { WritingRequest, WritingResult, WritingTask } from '@plotloom/contracts/writing';
+import { chapterFromTitle, WORLDVIEW_PATH } from '@plotloom/contracts/writing';
+import { Input } from '@plotloom/ui/input';
 import type { DocumentView, Selection } from '@plotloom/contracts/workspaces';
 import { Button } from '@plotloom/ui/button';
 import { Dialog } from '@plotloom/ui/dialog';
@@ -42,6 +44,7 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
   const [outline, setOutline] = useState<string | null>(null);
   const [references, setReferences] = useState<string[]>([]);
   const [instructions, setInstructions] = useState('');
+  const [chapter, setChapter] = useState(() => String(chapterFromTitle(path.split('/').at(-1) ?? '') ?? ''));
   const [records, setRecords] = useState<WritingResult[]>([]);
   const [phase, setPhase] = useState<'preparing' | 'starting' | 'running' | null>(null);
   const [stopping, setStopping] = useState(false);
@@ -91,7 +94,9 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
   const remoteRunning = records.some(record => record.outcome === 'running');
   const inProgress = !!phase || remoteRunning;
   const canStop = phase === 'running' || remoteRunning;
-  const options = paths.filter(file => file !== path).map(file => ({ value: file, label: file }));
+  const hasWorld = paths.includes(WORLDVIEW_PATH);
+  const validChapter = !hasWorld || /^[1-9]\d{0,5}$/.test(chapter);
+  const options = paths.filter(file => file !== path && file !== WORLDVIEW_PATH).map(file => ({ value: file, label: file }));
   const validTask = task === 'chapter' ? !!outline && paths.includes(outline) :
     !!document?.version && (task !== 'rewrite' || !!selection);
   const status = inProgress ? (canStop ? '正在创作…' : '正在准备创作…') : current?.outcome === 'aborted' ? '已停止' :
@@ -101,7 +106,7 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
 
   /** 资料现读取版本，目标保留作者看到的版本。服务端继续校验目标与资料是否在发送前变化。 */
   async function generate() {
-    if (!document || disabled || inProgress || !validTask || !instructions.trim()) return;
+    if (!document || disabled || inProgress || !validTask || !validChapter || !instructions.trim()) return;
     const active = new AbortController();
     controller.current = active;
     const { signal } = active;
@@ -109,7 +114,12 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
     try {
       const outlinePath = task === 'chapter' ? outline : null;
       const referencePaths = references.filter(file => file !== outlinePath);
-      const files = await Promise.all([...referencePaths, ...(outlinePath ? [outlinePath] : [])]
+      const cardResult = chapter && /^\d+$/.test(chapter)
+        ? await requestJson<{ applicable: Array<{ path: string }> }>(base + '/character-cards?chapter=' + encodeURIComponent(chapter), 'GET', undefined, signal)
+        : { applicable: [] };
+      const cardPaths = cardResult.applicable.map(card => card.path);
+      const readPaths = [...new Set([...referencePaths, ...cardPaths, ...(outlinePath ? [outlinePath] : [])])];
+      const files = await Promise.all(readPaths
         .map(file => readManuscript(base, file, signal)));
       const versions = files.map(file => {
         if (!file.version) throw new Error('参考资料已不存在：' + file.path);
@@ -117,9 +127,10 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
       });
       const body: WritingRequest = {
         task, instructions: instructions.trim(),
+        ...(hasWorld ? { chapterNumber: Number(chapter) } : {}),
         target: { path, baseVersion: document.version, ...(task === 'rewrite' ? { selection } : {}) },
         outline: versions.find(file => file.path === outlinePath),
-        references: versions.filter(file => file.path !== outlinePath).map(file => ({ ...file, role: 'other' })),
+        references: versions.filter(file => file.path !== outlinePath).map(file => ({ ...file, role: cardPaths.includes(file.path) ? 'character' as const : 'other' as const })),
       };
       let id = sessionId;
       if (!id) {
@@ -168,6 +179,7 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
       <Button size="sm" variant="ghost" disabled={!sessionId} onClick={() => { if (sessionId) onOpenChat(sessionId); }}>打开创作聊天</Button>
     </div>
     <div className="plotloom-novel-writing-options">
+      {hasWorld && <label>世界观适用章号<Input aria-label="世界观适用章号" value={chapter} onValueChange={setChapter} disabled={inProgress} placeholder="例如 4" /></label>}
       <Select aria-label="创作任务" options={taskOptions} value={task} searchable={false} clearable={false}
         disabled={inProgress} onValueChange={value => { if (value) setTask(value as typeof task); }} />
       <Select aria-label="正式大纲" placeholder={task === 'chapter' ? '选择正式大纲' : '当前任务无需指定大纲'}
@@ -178,7 +190,7 @@ export function NovelWriting({ workspaceId, base, path, paths, document, selecti
     <Textarea aria-label="创作要求" placeholder="写下本轮创作要求" rows={3} maxLength={10000} readOnly={inProgress}
       value={instructions} onValueChange={setInstructions} />
     <div className="plotloom-novel-actions">
-      <Button disabled={disabled || !validTask || !instructions.trim() || inProgress} onClick={() => void generate()}>生成候选</Button>
+      <Button disabled={disabled || path === WORLDVIEW_PATH || !validChapter || !validTask || !instructions.trim() || inProgress} onClick={() => void generate()}>生成候选</Button>
       <Button variant="secondary" disabled={!canStop || stopping} loading={stopping} onClick={() => void stop()}>停止生成</Button>
       <Button variant="ghost" disabled={!current} onClick={() => setShowDetails(true)}>查看本轮资料与审校</Button>
     </div>

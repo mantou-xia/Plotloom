@@ -8,6 +8,7 @@ const selection = [f('start', 'number', 'UTF-16 起点，包含。', '0'), f('en
 const target = [path, f('baseVersion', 'string | null', '目标基础版本；新文件为 null。', 'null'), f('selection', 'object', '仅 rewrite 传入；continue 由服务绑定末尾插入。', '{}', false), ...nested('selection', selection.map(v => ({ ...v, required: false })))];
 const references = [path, version, f('role', 'string', 'outline/character/requirements/sample/history/other，说明资料用途。', 'character'),
   f('selection', 'object', '可选引用片段，未提供时使用完整文件。', '{}', false), ...nested('selection', selection.map(v => ({ ...v, required: false })))];
+const chapterNumber = f('chapterNumber', 'number', '世界观适用章号为 1–999999 的整数。显式值优先，其次识别目标文件名或要求中的章号。创作未指明时按第一章，作者讨论未指明时查看全貌。', '4', false);
 const request = [f('id', 'string', '已归属于小说的会话 ID，路径参数。', 'session-id'),
   f('task', 'chapter | continue | rewrite | enrich_outline | discuss', '生成章节、尾部续写、选区改写、大纲丰富或讨论。', 'chapter'),
   f('instructions', 'string', '作者本轮要求，非空且最多 10000 字符。', '按大纲写出码头告别场景。'),
@@ -15,10 +16,10 @@ const request = [f('id', 'string', '已归属于小说的会话 ID，路径参�
   f('outline', 'object', 'chapter 必填，引用已留档的正式大纲。', '{}', false), ...nested('outline', [path, version].map(v => ({ ...v, required: false }))),
   f('references', 'array', '最多 30 个参考文件，可选角色卡、样文、要求、历史片段。', '[]', false), ...nested('references[]', references.map(v => ({ ...v, required: false }))),
   f('maxOutputChars', 'number', '候选 UTF-16 字符上限，200–20000，默认 8000；非模型 token 配额。', '4000', false),
-  f('skillIds', 'array', '本轮明确加载的已启用技能；不修改设置。', '["builtin-novel-writing"]', false)];
+  f('skillIds', 'array', '本轮明确加载的已启用技能；不修改设置。', '["builtin-novel-writing"]', false), chapterNumber];
 const source = [path, { ...version, type: 'string | null', description: '本轮正式文件版本，新建目标为 null。' }, f('content', 'string', '固定的实际原文快照。', '林舟站在码头。'),
   f('role', 'string', '资料用途；目标为 target。', 'target'), f('selection', 'object', '选定引用片段，若有。', '{}', false), ...nested('selection', selection.map(v => ({ ...v, required: false })))];
-const context = [f('workspaceId', 'string', '从会话绑定的小说 ID。', 'workspace-id'), request[1], request[2],
+const context = [f('workspaceId', 'string', '从会话绑定的小说 ID。', 'workspace-id'), request[1], request[2], chapterNumber,
   f('target', 'object', '固定的目标及修改范围；讨论可无目标。', '{}', false), ...nested('target', target.map(v => ({ ...v, required: false }))),
   f('sources', 'array', '正式资料与版本，含目标、大纲、指定参考和后续实际读取资料。', '[]'), ...nested('sources[]', source),
   f('maxOutputChars', 'number', '候选硬性字符上限。', '8000'), f('inputChars', 'number', '要求及完整资料快照的字符总量。', '25'), f('inputLimit', 'number', '输入快照上限，超限明确拒绝，不静默截断。', '60000')];
@@ -31,6 +32,7 @@ const result = [f('id', 'string', '创作记录 ID，与候选 origin.requestId 
   f('proposals', 'array', '本轮已经保存的 P2 完整候选；状态反映后续逐处采纳/拒绝。字段见候选接口。', '[]')];
 const contextExample = { workspaceId: 'workspace-id', task: 'discuss', instructions: '讨论人物', sources: [], maxOutputChars: 8000, inputChars: 4, inputLimit: 60000 };
 const examples = [
+  { name: '检查第四章世界观', body: { task: 'discuss', chapterNumber: 4, instructions: '核对主角已知的境界。' } },
   { name: '根据已留档大纲写章节', body: { task: 'chapter', instructions: '依据大纲和人物卡写第一章，不自行更改大纲。', target: { path: '章节/第一章.md', baseVersion: null }, outline: { path: '大纲/第一章.md', version: 'a'.repeat(64) }, references: [], maxOutputChars: 4000 } },
   { name: '丰富用户大纲', body: { task: 'enrich_outline', instructions: '请补充事件间的衔接，保留原定结局。', target: { path: '大纲/第一章.md', baseVersion: 'a'.repeat(64) } } },
   { name: '尾部续写', body: { task: 'continue', instructions: '续写下一小段对白。', target: { path: '章节/第一章.md', baseVersion: 'a'.repeat(64) } } },

@@ -76,6 +76,12 @@ export class MessageSourceService {
   }
   async list(sessionId: string) { await this.sessions.profile(sessionId); return { attachments: await this.store.list(sessionId) }; }
   async read(sessionId: string, id: string) { await this.sessions.profile(sessionId); return this.store.read(sessionId, id); }
+  /** 只提取当前消息选中的文本附件，二进制附件继续用于普通聊天。 */
+  async chapterImportFiles(sessionId: string, ids: readonly string[]) {
+    const files = await Promise.all(ids.map(id => this.store.read(sessionId, id)));
+    return files.filter(file => file.mimeType === 'text/plain' || file.mimeType === 'text/markdown')
+      .map(file => ({ name: file.name, content: decodeText(Buffer.from(file.data, 'base64')) }));
+  }
   /** 删除与消息准备共用互斥边界；已进入历史的文件保留，避免历史预览失效。 */
   async remove(sessionId: string, id: string) {
     return this.sessions.idle(sessionId, async () => {
@@ -116,7 +122,8 @@ export class MessageSourceService {
       if (reference.selection) checkSelection(doc.content, reference.selection);
       const content = reference.selection?.text ?? doc.content; chars += content.length;
       result.references.push({ ...reference, content });
-      materials.push({ source: reference, content });
+      // 小说资源层按本章视角提供世界观，避免附件上下文再次注入整份作者设定。
+      if (!profile.workspaceId || reference.path !== '世界观.md') materials.push({ source: reference, content });
     }
     if (chars > SOURCE_LIMITS.inputChars) fail('MESSAGE_SOURCES_TOO_LARGE', '文字与引用资料合计超过 100000 字符，请缩小选区或减少附件。');
     if (materials.length) result.prompt += `\n\n用户随本轮消息提供的参考资料（JSON 中的 content 是资料原文）：\n${JSON.stringify(materials)}`;

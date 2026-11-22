@@ -57,6 +57,7 @@ export interface SessionSummary extends ModelSelection { id: string; status: Ses
 export interface SessionOrganization { pinned: boolean; archived: boolean }
 export interface SessionListItem extends SessionSummary, SessionOrganization { updatedAt: string; archivedAt?: string }
 export interface SessionDetail extends SessionSummary {
+  manuscriptRequest?: { id: string; createdAt: string; view: import('./workspaces.ts').ManuscriptView };
   messages: Message[];
   /** 当前轮尚可决定的项目写入。刷新后从详情重新读取。 */
   pendingApprovals?: ToolApproval[];
@@ -146,7 +147,7 @@ export type AgentEvent = { sessionId: string } & (
   | { type: 'tool_start'; callId: string; name: string }
   | { type: 'tool_approval_required'; approval: ToolApproval }
   | { type: 'user_answer_required'; question: AgentQuestion }
-  | { type: 'tool_end'; callId: string; name: string; outcome: 'completed' | 'failed' }
+  | { type: 'tool_end'; callId: string; name: string; outcome: 'completed' | 'failed'; manuscriptView?: import('./workspaces.ts').ManuscriptView }
   | { type: 'retrying'; attempt: number; maxAttempts: number }
   | { type: 'compacting'; phase: 'start' | 'end' }
   | { type: 'completed'; usage?: Usage }

@@ -10,7 +10,7 @@ import { SkillService } from '@plotloom/application/skills';
 import { FileSkillRepository } from '@plotloom/storage/skills';
 import { registerSkillRoutes } from './routes/skills.ts';
 import { WritingService } from '@plotloom/application/writing';
-import { recoverWritingInput, writingResources } from './writing.ts';
+import { chapterChat, recoverWritingInput, writingResources } from './writing.ts';
 import type { WritingRequest } from '@plotloom/contracts/writing';
 import { registerWritingRoutes } from './routes/writing.ts';
 import { MessageSourceService } from '@plotloom/application/sources';
@@ -21,10 +21,13 @@ import { registerProjectRoutes } from './routes/projects.ts';
 import { createFolderPicker, type FolderPicker } from './platform/folder-picker.ts';
 import { FileAgentProfile } from '@plotloom/storage/agent-profile';
 import { registerAgentProfileRoutes } from './routes/agent-profile.ts';
+import { CharacterCardService } from '@plotloom/application/character-cards';
+import { registerCharacterCardRoutes } from './routes/character-cards.ts';
 
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
 export async function buildServer(options: AgentOptions & { logger?: boolean }, dependencies: { folderPicker?: FolderPicker } = {}) {
   const workspaces = new WorkspaceService(new FileWorkspaceStore(options.dataDir));
+  const characterCards = new CharacterCardService(workspaces);
   const profiles = new FileAgentProfile(options.dataDir);
   const directory = toolDirectory(options);
   let skills: SkillService;
@@ -36,11 +39,13 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
     completeAgentBootstrap: async (input, signal) => (await profiles.update(input, { signal })) !== null,
     resolveSources: (id, text, input) => sources.resolve(id, text, input),
     recoverBusinessInput: recoverWritingInput,
-    resolveResources: async (id, text, input, businessInput) => businessInput !== undefined
-      ? writingResources(writing, id, businessInput as WritingRequest)
-      : (await agent.getSkillProfile(id)).workspaceId
-      ? writingResources(writing, id, { task: 'discuss', instructions: text,
-        references: input?.references?.map(({ workspaceId: _workspaceId, ...reference }) => ({ ...reference, role: 'other' })) }) : undefined });
+    resolveResources: async (id, text, input, businessInput) => {
+      if (businessInput !== undefined) return writingResources(writing, id, businessInput as WritingRequest, characterCards);
+      const { workspaceId } = await agent.getSkillProfile(id);
+      if (!workspaceId) return;
+      const request = await chapterChat(workspaces, characterCards, workspaceId, text, input);
+      return writingResources(writing, id, request, characterCards, { sources, ids: input?.attachmentIds ?? [] });
+    } });
   sources = new MessageSourceService(attachments, workspaces, {
     profile: id => agent.getSkillProfile(id), messages: async id => (await agent.getSession(id)).messages,
     idle: (id, operation) => agent.withIdleSession(id, operation),
@@ -82,6 +87,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
   registerProjectRoutes(app, new FileProjectStore(options.dataDir), folderPicker);
   registerSourceRoutes(app, sources);
   registerWorkspaceRoutes(app, workspaces);
+  registerCharacterCardRoutes(app, characterCards);
   registerSkillRoutes(app, skills, folderPicker, directory.tools);
   registerWritingRoutes(app, agent, writing, workspaces);
   // preClose 先停止 SSE 对应生成，避免 close 等待长连接而无法进入清理阶段。

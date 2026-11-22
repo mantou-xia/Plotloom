@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, realpath, lstat, rename, rm, writeFile, cp } from 'node:fs/promises';
+import { mkdir, rmdir, readFile, readdir, realpath, lstat, rename, rm, writeFile, cp } from 'node:fs/promises';
 import { isAbsolute, join, resolve, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -10,13 +10,14 @@ import { checkVersion, documentPath, hash, invalid, missing, proposalStatus, req
 const isMissing = (e: unknown) => (e as NodeJS.ErrnoException).code === 'ENOENT';
 const isInside = (parent: string, child: string) => { const r = relative(parent.toLowerCase(), child.toLowerCase()); return r === '' || (!r.startsWith(`..${sep}`) && r !== '..' && !isAbsolute(r)); };
 const overlaps = (a: string, b: string) => isInside(a, b) || isInside(b, a);
+const novelFolders = ['大纲', '正文章节', '角色卡'] as const;
 const ignored = new Set(['.git', 'node_modules', '.plotloom']);
 
 /** 单作者服务串行管理元数据；正式内容每次读磁盘。快照与候选状态不替代当前文件。 */
 export class FileWorkspaceStore implements WorkspaceStore {
   private readonly data: string;
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(dataDir: string) { this.data = resolve(dataDir, 'workspaces'); }
+  constructor(dataDir: string) { this.data = resolve(dataDir, 'novels'); }
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.queue.then(operation); this.queue = next.catch(() => {}); return next;
   }
@@ -37,7 +38,8 @@ export class FileWorkspaceStore implements WorkspaceStore {
     return result;
   }
   list() { return this.serial(() => this.all()); }
-  register(title: string, root: string) {
+  /** 两个入口共享串行建书流程，空目录检查包含隐藏文件，失败时仅撤回本次初始化。 */
+  create(title: string, root: string) {
     return this.serial(async () => {
       if (!title.trim() || title.length > 200 || !isAbsolute(root)) invalid('名称不能为空，工作区必须是已存在目录的绝对路径。');
       let canonical: string;
@@ -48,9 +50,23 @@ export class FileWorkspaceStore implements WorkspaceStore {
       if (overlaps(canonical, await realpath(dirname(this.data)))) invalid('工作区不能与应用内部数据目录重叠。');
       const existing = await this.all();
       if (existing.some((w) => overlaps(w.root, canonical))) throw new WorkspaceError('WORKSPACE_OVERLAP', '目录已登记或与已登记工作区嵌套，请使用独立目录。');
+      if ((await readdir(canonical)).length) throw new WorkspaceError('WORKSPACE_NOT_EMPTY', '请选择空文件夹，新建小说需要初始化目录。');
       const workspace: Workspace = { id: randomUUID(), title: title.trim(), root: canonical, createdAt: new Date().toISOString() };
-      await mkdir(join(this.directory(workspace.id), 'revisions'), { recursive: true });
-      await this.persist({ format: 1, workspace, history: {}, proposals: [], pending: null });
+      const created: string[] = [];
+      try {
+        for (const name of novelFolders) {
+          const folder = join(canonical, name);
+          await mkdir(folder);
+          created.push(folder);
+        }
+        await mkdir(join(this.directory(workspace.id), 'revisions'), { recursive: true });
+        await this.persist({ format: 1, workspace, history: {}, proposals: [], pending: null });
+      } catch (error) {
+        // rmdir 只移除空目录，保留初始化期间由作者加入的文件。
+        await Promise.allSettled(created.map(folder => rmdir(folder)));
+        await rm(this.directory(workspace.id), { recursive: true, force: true });
+        throw error;
+      }
       return workspace;
     });
   }
@@ -200,6 +216,7 @@ export class FileWorkspaceStore implements WorkspaceStore {
     const target = join(parent, destination.split(/[\\/]/).at(-1)!);
     if (overlaps(target, state.workspace.root) || overlaps(target, dirname(this.data))) invalid('备份目录不能与作品或内部数据目录重叠。');
     try { await mkdir(target); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new WorkspaceError('BACKUP_EXISTS', '备份目标已存在，请指定新目录。'); throw e; }
+    for (const name of novelFolders) await mkdir(join(target, 'manuscripts', name), { recursive: true });
     const paths = await this.files(state);
     for (const path of paths) {
       const doc = await this.read(state, path); await this.observe(state, doc);
@@ -207,7 +224,7 @@ export class FileWorkspaceStore implements WorkspaceStore {
       const output = join(target, 'manuscripts', path); await mkdir(dirname(output), { recursive: true }); await writeFile(output, doc.content, { flag: 'wx', encoding: 'utf8' });
     }
     await cp(this.directory(state.workspace.id), join(target, 'metadata'), { recursive: true, force: false, errorOnExist: true });
-    await writeFile(join(target, 'README.md'), '# Plotloom 资产备份\n\nmanuscripts 是真实 Markdown，可直接打开。metadata 保存历史快照及候选状态，恢复完整资产时停服，将 metadata 放回服务数据目录 workspaces/<工作区ID>，并将 state.json 的 workspace.root 改为恢复后的 manuscripts 绝对路径。请先备份现有服务数据。此备份不含 Pi 聊天、模型配置或凭据。\n', 'utf8');
+    await writeFile(join(target, 'README.md'), '# Plotloom 资产备份\n\nmanuscripts 是真实 Markdown，可直接打开。metadata 保存历史快照及候选状态，恢复完整资产时停服，将 metadata 放回服务数据目录 novels/<工作区ID>，并将 state.json 的 workspace.root 改为恢复后的 manuscripts 绝对路径。请先备份现有服务数据。此备份不含 Pi 聊天、模型配置或凭据。\n', 'utf8');
     return { destination: target, files: paths.length };
   }
 }

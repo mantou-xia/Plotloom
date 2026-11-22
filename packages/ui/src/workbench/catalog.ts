@@ -14,7 +14,6 @@ export interface ComponentExample {
 
 /** 产品组件的展示登记；与公开 TSX 导出做覆盖校验，新增组件时必须同步补充。 */
 export const componentCatalog: ComponentExample[] = [
-  ...formCatalog,
   { id: 'action-menu', name: 'ActionMenu', category: '基础组件', exportPath: './action-menu',
     description: '紧贴触发按钮显示一组操作，支持图标和危险操作。',
     interaction: '点击触发按钮展开，使用方向键选择，Enter 执行，Esc 或点击外部关闭。', width: 320, height: 240,
@@ -52,8 +51,25 @@ export const componentCatalog: ComponentExample[] = [
       { id: 'narrow', name: '窄容器', description: '280px 容器检查自动换行。' },
     ],
   },
+  { id: 'manuscript-frame', name: 'ManuscriptFrame', category: 'Framework', exportPath: './manuscript-frame',
+    description: '文稿目录与稿纸布局，窄时支持悬浮目录。', interaction: '选择文稿、切换编辑和预览、点击刷新，缩窄预览检查悬浮目录。',
+    width: 740, height: 520, states: [{ id: 'default', name: '文稿', description: '目录与编辑、预览示例' }] },
+  { id: 'document-editor', name: 'DocumentEditor', category: 'Framework', exportPath: './document-editor',
+    description: '长文编辑、换行、选区与撤销。', interaction: '编辑正文并撤销，或切换只读状态查看长文。',
+    width: 660, height: 420, states: [{ id: 'default', name: '编辑', description: '输入、选区及撤销' },
+      { id: 'read-only', name: '只读', description: '可阅读和复制正文' }] },
+  { id: 'image-viewer-frame', name: 'ImageViewerFrame', category: 'Framework', exportPath: './image-viewer-frame',
+    description: '显示宿主提供的图片或空态。', interaction: '切换空态与图片，调整预览宽度核对图片比例。', width: 500, height: 380,
+    states: [{ id: 'image', name: '图片', description: '适应可用宽度' }, { id: 'empty', name: '空态', description: '未提供图片' }] },
+  { id: 'citation-sources-frame', name: 'CitationSourcesFrame', category: 'Framework', exportPath: './citation-sources-frame',
+    description: '按编号列出网页引用并定位选中项。', interaction: '查看当前引用定位，打开原网页。', width: 520, height: 340,
+    states: [{ id: 'default', name: '引用列表', description: '展示两条公开来源' }] },
+  { id: 'file-changes-frame', name: 'FileChangesFrame', category: 'Framework', exportPath: './file-changes-frame',
+    description: '文件修改列表、刷新反馈和差异承载区。', interaction: '展开示例文件查看差异，点击刷新检查回调。', width: 620, height: 440,
+    states: [{ id: 'default', name: '文件差异', description: '一条可展开的修改' }] },
+  ...formCatalog,
   {
-    id: 'markdown-reader-frame', name: 'MarkdownReaderFrame', category: '布局组件', exportPath: './markdown-reader-frame',
+    id: 'markdown-reader-frame', name: 'MarkdownReaderFrame', category: 'Framework', exportPath: './markdown-reader-frame',
     description: 'Markdown 只读阅读框架：文件信息、打开操作、独立滚动正文与固定状态栏；工具栏支持自定义。',
     interaction: '修改文件名、路径、Markdown 文本和工具栏插槽；打开与重试仅演示公开回调。',
     width: 860, height: 680,
@@ -68,7 +84,7 @@ export const componentCatalog: ComponentExample[] = [
     ],
   },
   {
-    id: 'browser-frame', name: 'BrowserFrame', category: '布局组件', exportPath: './browser-frame',
+    id: 'browser-frame', name: 'BrowserFrame', category: 'Framework', exportPath: './browser-frame',
     description: '浏览器导航与内容承载框架：地址、历史、刷新/停止和状态通过 props 与回调管理，不访问网络。',
     interaction: '输入地址回车，尝试前进后退、刷新停止；示例使用本地内容模拟宿主，可替换工具栏。',
     width: 860, height: 620,
@@ -82,7 +98,7 @@ export const componentCatalog: ComponentExample[] = [
     ],
   },
   {
-    id: 'workspace-panel', name: 'WorkspacePanel', category: '布局组件', exportPath: './workspace-panel',
+    id: 'workspace-panel', name: 'WorkspacePanel', category: 'Framework', exportPath: './workspace-panel',
     description: '组合分屏、标签管理和可配置的功能入口卡片。',
     interaction: '搜索功能名称或关键词。选择卡片后在当前标签打开内容，收起面板后保留标签。',
     width: 960, height: 560,
@@ -92,7 +108,7 @@ export const componentCatalog: ComponentExample[] = [
     ],
   },
   {
-    id: 'workspace-tabs', name: 'WorkspaceTabs', category: '布局组件', exportPath: './workspace-tabs',
+    id: 'workspace-tabs', name: 'WorkspaceTabs', category: 'Framework', exportPath: './workspace-tabs',
     description: '可关闭的内容标签框架：每页独立工具栏和滚动区，切换保留页面状态。',
     interaction: '新增、关闭和方向键切换标签；输入草稿后切换验证保留；空标签、多标签和不可关闭参数通过样例展示。',
     width: 860, height: 540,
@@ -412,6 +428,13 @@ export const componentCatalog: ComponentExample[] = [
       { id: 'default', name: '操作提示', description: '使用公开工具触发各类消息；默认 3.5 秒，错误 6 秒，处理中持续显示。' },
       { id: 'queue', name: '并发队列', description: '六条消息按先后顺序展示，只有可见消息开始计时。' },
     ],
+  },
+  {
+    id: 'cover-card', name: 'CoverCard', category: '基础组件', exportPath: './cover-card',
+    description: '竖版封面卡片，支持叠加独立的透明操作按钮。',
+    interaction: '通过 title、imageSrc、background 和 onOpen 设置封面与主操作，通过 actions 提供图标、标签和回调。悬停或键盘聚焦可显示操作。',
+    width: 260, height: 364,
+    states: [{ id: 'default', name: '封面与操作', description: '悬停、使用 Tab 或在触屏上查看操作按钮。' }],
   },
   {
     id: 'card', name: 'Card', category: '基础组件', exportPath: './card',

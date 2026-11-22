@@ -3,6 +3,11 @@ import { WRITING_TOOLS } from '@plotloom/application/writing';
 import type { ToolInfo, ToolScope } from '@plotloom/contracts/skills';
 
 const descriptions: Record<string, [string, string]> = {
+  write_chapter_part: ['按段号暂存本轮章节草稿，同号重写。', 'part、content；单段最多 1500 个 UTF-16 字符'],
+  deliver_chapter: ['拼接已暂存的草稿，审校后交给作者确认。新章保存，重写生成候选。', 'partCount、reason'],
+  import_chapters: ['从本轮 UTF-8 TXT/Markdown 附件导入旧章节，作者确认后写入。', '空对象；附件从本轮消息读取'],
+  manuscript_workspace: ['操作小说正文和大纲，每次等待作者确认。', 'action；按操作填写 path、content 或 revisionId'],
+  propose_world_rule: ['提交需作者确认的世界观设定，区分生效和揭示章节。', 'subject、fact、effective、revealed；章节变化另需 evidence'],
   read: ['读取项目内 UTF-8 文本。', 'path；可选 offset、limit'],
   ls: ['列出目录中的直接文件和子目录。', '可选 path、limit；默认从项目根目录列出'],
   find: ['按文件名模式查找项目文件。', 'pattern；可选 path、limit'],
@@ -19,6 +24,7 @@ const descriptions: Record<string, [string, string]> = {
   search_documents: ['在小说文档中查找关键词与原文位置。', 'query；可选 paths'],
   review_writing: ['审校已读取资料的设定、视角及资料问题。', 'status：clear 或 needs_input；issues：含 kind、message、evidence 的问题列表'],
   propose_change: ['提出小说修改候选供用户采纳，不直接覆盖正式稿。', 'path、content、reason'],
+  save_character_card: ['保存作者确认的细化五栏角色卡阶段，按章节号和备注形成历史版本。', 'character、chapter、note、content'],
 };
 
 /** 标记实际提供能力的模块，项目文件工具由 Plotloom 实现并交给 Pi 注册。 */
@@ -55,6 +61,8 @@ export function toolDirectory(options: AgentOptions) {
         : name === 'web_fetch' ? '不执行脚本、不使用登录态；20 秒超时、2 MiB 响应上限、正文最多 30000 字符。'
         : name === 'write' || name === 'edit' ? '仅项目内文本；按会话审批模式决定是否逐次请求批准。'
         : PROJECT_TOOLS.includes(name) ? '仅可访问已选项目内受支持的文件。'
+        : name === 'import_chapters' ? '仅小说聊天且本轮带文本附件时可用。'
+        : ['write_chapter_part', 'deliver_chapter'].includes(name) ? '仅小说聊天明确发起整章写作时可用，最终交稿须作者确认。'
         : WRITING_TOOLS.includes(name) ? '仅小说聊天装配对应业务资源后可用。' : '由当前聊天工具配置决定。' };
   });
   return { tools, names, all };

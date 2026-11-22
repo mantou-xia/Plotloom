@@ -1,0 +1,49 @@
+.pl-cover-card { position: relative; min-width: 0; }
+.pl-cover-card .pl-cover-card__open {
+  --pl-button-hover: #273936;
+  --pl-button-active: #273936;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 5 / 7;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #273936;
+  color: #fff;
+}
+.pl-cover-card__open::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(12 17 25 / 65%), transparent 34%, transparent 48%, rgb(12 17 25 / 88%));
+  pointer-events: none;
+}
+.pl-cover-card__open img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pl-cover-card__title {
+  position: absolute;
+  z-index: 2;
+  inset: auto 14px 16px 15px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: clamp(16px, 1.5vw, 22px);
+  font-weight: 700;
+  line-height: 1.28;
+}
+.pl-cover-card__actions { position: absolute; z-index: 3; inset: 8px 8px auto auto; display: flex; gap: 4px; }
+.pl-cover-card__actions .plotloom-button--ghost { --pl-button-text: #fff; }
+
+/* 透明操作层保留 Tab 顺序。键盘聚焦立即显示，触屏直接显示操作入口。 */
+@media (hover: hover) and (pointer: fine) {
+  .pl-cover-card__actions { opacity: 0; pointer-events: none; }
+  .pl-cover-card:hover .pl-cover-card__actions,
+  .pl-cover-card:has(:focus-visible) .pl-cover-card__actions { opacity: 1; pointer-events: auto; }
+}

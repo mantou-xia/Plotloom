@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WorkspaceService } from '@plotloom/application';
-import type { ExportRequest, ProposalRequest, SaveDocumentRequest } from '@plotloom/contracts/workspaces';
+import { NOVEL_COVER_IDS, type ExportRequest, type NovelShelfUpdate, type ProposalRequest, type SaveDocumentRequest } from '@plotloom/contracts/workspaces';
 
 const path = { type: 'string', minLength: 1, maxLength: 500 };
 const text = { type: 'string', maxLength: 500000 };
@@ -19,12 +19,20 @@ export function registerWorkspaceRoutes(app: FastifyInstance, service: Workspace
   app.get('/api/workspaces', async () => ({ workspaces: await service.list() }));
   app.post<{ Body: { title: string; root: string } }>('/api/workspaces', {
     schema: { body: obj({ title: { type: 'string', minLength: 1, maxLength: 200, pattern: '\\S' }, root: { type: 'string', minLength: 1, maxLength: 2000 } }) },
-  }, async (req, reply) => reply.code(201).send(await service.register(req.body)));
+  }, async (req, reply) => reply.code(201).send(await service.create(req.body)));
   app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId', { schema: { params } }, (req) => service.get(req.params.workspaceId));
+  app.put<{ Params: WorkspaceParams; Body: NovelShelfUpdate }>('/api/workspaces/:workspaceId/shelf', {
+    schema: { params, body: { ...obj({ pinned: { type: 'boolean' }, coverId: { type: 'string', enum: NOVEL_COVER_IDS } }, []), minProperties: 1 } },
+  }, req => service.updateShelf(req.params.workspaceId, req.body));
   app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId/documents', { schema: { params } }, (req) => service.listDocuments(req.params.workspaceId));
+  app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId/manuscript-stats', { schema: { params } },
+    req => service.manuscriptStats(req.params.workspaceId));
   app.post<{ Params: WorkspaceParams; Body: { path: string } }>('/api/workspaces/:workspaceId/document/read', { schema: { params, body: bodyPath } }, (req) => service.read(req.params.workspaceId, req.body.path));
   app.put<{ Params: WorkspaceParams; Body: SaveDocumentRequest }>('/api/workspaces/:workspaceId/document', { schema: { params, body: documentBody } }, (req) => service.save(req.params.workspaceId, req.body));
   app.post<{ Params: WorkspaceParams; Body: { path: string } }>('/api/workspaces/:workspaceId/history', { schema: { params, body: bodyPath } }, (req) => service.history(req.params.workspaceId, req.body.path));
+  app.post<{ Params: WorkspaceParams; Body: { path: string; baseVersion: string | null } }>('/api/workspaces/:workspaceId/finalize', {
+    schema: { params, body: obj({ path, baseVersion: version }) },
+  }, req => service.finalize(req.params.workspaceId, req.body));
   app.post<{ Params: WorkspaceParams; Body: { path: string; revisionId: string; baseVersion: string | null } }>('/api/workspaces/:workspaceId/restore', {
     schema: { params, body: obj({ path, revisionId: id, baseVersion: version }) },
   }, (req) => service.restore(req.params.workspaceId, req.body));

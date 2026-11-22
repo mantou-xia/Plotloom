@@ -9,15 +9,14 @@ export interface PrimaryTabsProps {
   onValueChange: (value: string) => void;
   disabled?: boolean;
   children: ReactNode;
+  renderList?: (list: ReactNode) => ReactNode;
   className?: string;
   style?: CSSProperties;
 }
 
 /** 一级内容导航：基础库关联标签与面板并管理键盘；数据和选中值由应用维护。 */
-export function PrimaryTabs({ label, options, value, onValueChange, disabled, children, className = '', style }: PrimaryTabsProps) {
-  return <Tabs.Root value={value} onValueChange={next => { if (typeof next === 'string') onValueChange(next); }}
-    className={`pl-primary-tabs ${className}`} style={style}>
-    <div className="pl-primary-tabs__scroll">
+export function PrimaryTabs({ label, options, value, onValueChange, disabled, children, renderList, className = '', style }: PrimaryTabsProps) {
+  const list = <div className="pl-primary-tabs__scroll">
       <Tabs.List aria-label={label} activateOnFocus className="pl-primary-tabs__list" onKeyDown={event => {
         // 基础库允许方向键聚焦禁用 Tab；一级导航沿用项目约定，只在可用项之间循环。
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -34,7 +33,10 @@ export function PrimaryTabs({ label, options, value, onValueChange, disabled, ch
           className="pl-primary-tabs__tab">{option.label}</Tabs.Tab>)}
         <Tabs.Indicator className="pl-primary-tabs__indicator" />
       </Tabs.List>
-    </div>
+    </div>;
+  return <Tabs.Root value={value} onValueChange={next => { if (typeof next === 'string') onValueChange(next); }}
+    className={`pl-primary-tabs ${className}`} style={style}>
+    {renderList ? renderList(list) : list}
     {children}
   </Tabs.Root>;
 }
@@ -43,9 +45,10 @@ export interface PrimaryTabPanelProps {
   value: string;
   children: ReactNode;
   className?: string;
+  keepMounted?: boolean;
 }
 
-/** 面板内容由页面组合；仅挂载当前面板，避免隐藏内容参与布局或焦点导航。 */
-export function PrimaryTabPanel({ value, children, className = '' }: PrimaryTabPanelProps) {
-  return <Tabs.Panel value={value} className={`pl-primary-tabs__panel ${className}`}>{children}</Tabs.Panel>;
+/** 编辑器可保留输入节点，切换后恢复光标和滚动位置。 */
+export function PrimaryTabPanel({ value, children, className = '', keepMounted }: PrimaryTabPanelProps) {
+  return <Tabs.Panel value={value} keepMounted={keepMounted} className={`pl-primary-tabs__panel ${className}`}>{children}</Tabs.Panel>;
 }

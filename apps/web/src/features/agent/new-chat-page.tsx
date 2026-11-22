@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ModelConfig, ModelInfo, ProjectApprovalMode, ProjectFiles, SessionSummary, ThinkingLevel } from '@plotloom/contracts';
 import type { Attachment } from '@plotloom/contracts/sources';
+import { WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import { ATTACHMENT_TYPES, SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import { AsciiOcean } from '@plotloom/ui/ascii-ocean';
 import { chatDraft } from './chat-draft';
@@ -10,10 +11,10 @@ import { request, requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
 import { composerRequest } from './composer-request';
 import { consumeAgentStream } from './client';
+import { selectThinkingLevel, thinkingLabels } from './thinking-levels';
 import './new-chat-page.css';
 
 export const modelKey = (provider: string, model: string) => JSON.stringify([provider, model]);
-const thinkingLabels: Record<ThinkingLevel, string> = { off: '关闭', minimal: '最低', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高' };
 
 /** 模型配置属于页面，项目切换只重置草稿，不能重复请求或覆盖用户已选模型。 */
 function useNewChatModels(modelRevision: number) {
@@ -32,7 +33,7 @@ function useNewChatModels(modelRevision: number) {
       const initial = list.models.find(model => model.configured && model.provider === config.provider && model.id === config.model)
         ?? list.models.find(model => model.configured);
       setSelected(initial ? modelKey(initial.provider, initial.id) : null);
-      setThinking(initial?.thinkingLevels.includes(config.thinkingLevel) ? config.thinkingLevel : 'off');
+      setThinking(selectThinkingLevel(initial?.thinkingLevels, config.thinkingLevel));
     }).catch(error => { if (!abort.signal.aborted) { setFailed(true); notifyRequestError(error, 'new-chat-models'); } });
     return () => abort.abort();
   }, [reload, modelRevision]);
@@ -48,6 +49,16 @@ export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, wor
 }) {
   const modelState = useNewChatModels(modelRevision);
   const [pending, setPending] = useState(false);
+  const [unstartedWorld, setUnstartedWorld] = useState<string | null>(null);
+  // 以本书正式资料为准，换会话或换浏览器都能识别已确认的世界观。
+  useEffect(() => {
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    requestJson<{ paths: string[] }>('/api/workspaces/' + encodeURIComponent(workspaceId) + '/documents', 'GET', undefined, controller.signal)
+      .then(({ paths }) => { if (!controller.signal.aborted) setUnstartedWorld(paths.includes(WORLDVIEW_PATH) ? null : workspaceId); })
+      .catch(() => { if (!controller.signal.aborted) setUnstartedWorld(null); });
+    return () => controller.abort();
+  }, [workspaceId]);
   const attachmentDropTarget = useRef<HTMLElement>(null);
   const root = projectPath.trim();
   return <section ref={attachmentDropTarget} className="plotloom-work-start" aria-label="工作初始页">
@@ -57,7 +68,8 @@ export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, wor
       <div className="plotloom-work-start__heading" role="heading" aria-level={1}>
         {workspaceId ? (workspaceTitle ? <>继续创作《{workspaceTitle}》</> : '小说对话') : root ? <>你想在 {renderProjectControl(pending)} 中完成什么？</> : renderProjectControl(pending)}
       </div>
-      <p>{workspaceId || root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
+      <p>{workspaceId && unstartedWorld === workspaceId ? '故事开头，主角生活在一个怎样的世界？可以先讲一条规则，或把已有的章节发给我。'
+        : workspaceId || root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
     </div>
     <NewChatDraft draftRevision={draftRevision} projectPath={projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
       modelState={modelState} pending={pending} setPending={setPending} onStarted={onStarted} />
@@ -143,7 +155,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
         modelNames: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.id])),
         selectedModel: selected ?? '', value: thinking,
         thinkingOptions: (chosen?.thinkingLevels ?? ['off']).map(value => ({ value, label: thinkingLabels[value] })),
-        onModelChange: key => { const model = models.find(item => modelKey(item.provider, item.id) === key); setSelected(key); if (!model?.thinkingLevels.includes(thinking)) setThinking('off'); },
+        onModelChange: key => { const model = models.find(item => modelKey(item.provider, item.id) === key); setSelected(key); setThinking(selectThinkingLevel(model?.thinkingLevels, thinking)); },
         onValueChange: value => setThinking(value as ThinkingLevel),
         permissionOptions: root && !workspaceId ? 'project' : false,
         permission: projectApprovalMode === 'full_access' ? 'full_access' : 'default',

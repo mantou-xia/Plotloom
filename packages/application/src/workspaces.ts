@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { chapterFromTitle } from '@plotloom/contracts/writing';
+import type { ImportedChapter } from './chapter-import.ts';
 import { changesFor, checkSelection, checkVersion, documentPath, hash, invalid, missing, proposalStatus, renderProposal, WorkspaceError } from '@plotloom/domain';
-import type { DocumentView, ExportRequest, PendingCommit, Proposal, ProposalRequest, RecoveryView, Revision, SaveDocumentRequest, Workspace } from '@plotloom/contracts/workspaces';
+import type { DocumentView, ExportRequest, NovelShelfUpdate, PendingCommit, Proposal, ProposalRequest, RecoveryView, Reference, Revision, SaveDocumentRequest, Workspace } from '@plotloom/contracts/workspaces';
+import { countManuscriptCharacters, type NovelManuscriptStats } from '@plotloom/contracts/workspaces';
 
-export interface WorkspaceState { format: 1; workspace: Workspace; history: Record<string, Revision[]>; proposals: Proposal[]; pending: (PendingCommit & { writerPid?: number }) | null }
+export interface WorkspaceState { format: 1; workspace: Workspace; history: Record<string, Revision[]>; finalized?: Record<string, Revision[]>; proposals: Proposal[]; pending: (PendingCommit & { writerPid?: number }) | null }
 /** 存储负责路径约束、排他提交与恢复；用例负责候选和版本业务规则，HTTP/Pi 共用。 */
 export interface WorkspaceStore {
   list(): Promise<Workspace[]>;
-  register(title: string, root: string): Promise<Workspace>;
+  create(title: string, root: string): Promise<Workspace>;
   run<T>(id: string, operation: (state: WorkspaceState) => Promise<T>, recover?: boolean): Promise<T>;
   read(state: WorkspaceState, path: string): Promise<DocumentView>;
   files(state: WorkspaceState): Promise<string[]>;
@@ -22,10 +25,77 @@ export class WorkspaceService {
   private readonly store: WorkspaceStore;
   constructor(store: WorkspaceStore) { this.store = store; }
   list() { return this.store.list(); }
-  register(input: { title: string; root: string }) { return this.store.register(input.title, input.root); }
+  create(input: { title: string; root: string }) { return this.store.create(input.title, input.root); }
   get(id: string) { return this.store.run(id, async (s) => s.workspace); }
+  /** 只合并此次提交的书架设置，串行保存到登记元数据。封面与置顶可独立修改。 */
+  updateShelf(id: string, update: NovelShelfUpdate) {
+    return this.store.run(id, async state => {
+      state.workspace = { ...state.workspace, ...update };
+      await this.store.persist(state);
+      return state.workspace;
+    });
+  }
   listDocuments(id: string) { return this.store.run(id, async (s) => ({ paths: await this.store.files(s) })); }
+  /** 只统计已落盘的正文，普通刷新不会为读取创建版本快照。 */
+  manuscriptStats(id: string): Promise<NovelManuscriptStats> {
+    return this.store.run(id, async state => {
+      const stats = { chapters: 0, characters: 0 };
+      const paths = (await this.store.files(state)).filter(path => path.startsWith('正文章节/'));
+      for (const path of paths) {
+        const doc = await this.store.read(state, path);
+        if (doc.version === null) continue;
+        stats.chapters += 1;
+        stats.characters += countManuscriptCharacters(doc.content);
+      }
+      return stats;
+    });
+  }
+
+  /** 沿用初次存档时间，使编辑或定稿不会改变管理页的阶段创建顺序。 */
+  readWithCreation(id: string, path: string) {
+    return this.store.run(id, async state => {
+      const document = await this.readObserved(state, path);
+      const createdAt = state.history[path]?.find(revision => revision.version !== null)?.createdAt;
+      return { ...document, createdAt };
+    });
+  }
   read(id: string, path: string) { return this.store.run(id, (s) => this.readObserved(s, path)); }
+  peek(id: string, path: string) { return this.store.run(id, state => this.store.read(state, path)); }
+  /** 新章交稿时重查章号、目标和引用，在同一工作区队列内提交。 */
+  createWrittenChapter(id: string, number: number, path: string, content: string, references: Reference[], signal?: AbortSignal) {
+    return this.store.run(id, async state => {
+      const sibling = (await this.store.files(state)).find(file => file.startsWith('正文章节/') &&
+        chapterFromTitle(file.split('/').at(-1)!) === number);
+      if (sibling) checkVersion('exists', null);
+      const current = await this.store.read(state, path);
+      checkVersion(current.version, null);
+      for (const ref of references) checkVersion((await this.store.read(state, ref.path)).version, ref.version);
+      signal?.throwIfAborted();
+      await this.store.commit(state, current, content, 'manual');
+      return this.store.read(state, path);
+    });
+  }
+  /** 批量预检和提交共享工作区队列。已导入且内容相同的章节可安全重试。 */
+  importChapters(id: string, chapters: readonly ImportedChapter[], signal?: AbortSignal) {
+    return this.store.run(id, async state => {
+      const paths = (await this.store.files(state)).filter(path => path.startsWith('正文章节/'));
+      const toWrite: ImportedChapter[] = [];
+      for (const chapter of chapters) {
+        signal?.throwIfAborted();
+        const sameNumber = paths.find(path => path !== chapter.path && chapterFromTitle(path.split('/').at(-1)!) === chapter.number);
+        if (sameNumber) throw new WorkspaceError('CHAPTER_IMPORT_CONFLICT', `第 ${chapter.number} 章已存在于 ${sameNumber}，本次导入未覆盖原稿。`);
+        const current = await this.store.read(state, chapter.path);
+        if (current.version === null) toWrite.push(chapter);
+        else if (current.content !== chapter.content)
+          throw new WorkspaceError('CHAPTER_IMPORT_CONFLICT', `${chapter.path} 已有不同正文，本次导入未覆盖原稿。`);
+      }
+      for (const chapter of toWrite) {
+        signal?.throwIfAborted();
+        await this.store.commit(state, { path: chapter.path, version: null, content: '' }, chapter.content, 'manual');
+      }
+      return { imported: toWrite.length, unchanged: chapters.length - toWrite.length, paths: chapters.map(chapter => chapter.path) };
+    });
+  }
   /** 聊天引用固定版本；使用既有原稿快照，不以最新稿替换用户选中的历史。 */
   readVersion(id: string, path: string, version: string): Promise<DocumentView> {
     return this.store.run(id, async (state) => {
@@ -52,21 +122,39 @@ export class WorkspaceService {
     });
   }
   history(id: string, path: string) {
-    return this.store.run(id, async (s) => { await this.readObserved(s, path); return { revisions: s.history[path] ?? [] }; });
+    documentPath(path);
+    return this.store.run(id, async s => ({ revisions: s.finalized?.[path] ?? [] }));
+  }
+  /** 定稿复用已保存正文的快照；重复确认同一内容不会增加记录。 */
+  finalize(id: string, input: { path: string; baseVersion: string | null }) {
+    return this.store.run(id, async s => {
+      const current = await this.readObserved(s, input.path);
+      checkVersion(current.version, input.baseVersion);
+      if (!current.version) missing();
+      const records = (s.finalized ??= {})[input.path] ??= [];
+      const existing = records.find(item => item.version === current.version);
+      if (existing) return existing;
+      const snapshot = s.history[input.path].at(-1)!;
+      const revision = { ...snapshot, createdAt: new Date().toISOString() };
+      records.push(revision);
+      await this.store.persist(s);
+      return revision;
+    });
   }
   restore(id: string, input: { path: string; revisionId: string; baseVersion: string | null }) {
     return this.store.run(id, async (s) => {
       const current = await this.readObserved(s, input.path);
       checkVersion(current.version, input.baseVersion);
-      const revision = s.history[input.path]?.find((r) => r.id === input.revisionId) ?? missing();
+      const revision = s.finalized?.[input.path]?.find((r) => r.id === input.revisionId) ?? missing();
       if (revision.version === null) invalid('不存在的文件记录不可作为恢复来源。');
-      await this.store.commit(s, current, await this.store.snapshot(s, revision), 'restored', undefined, revision.id);
+      if (current.version !== revision.version)
+        await this.store.commit(s, current, await this.store.snapshot(s, revision), 'restored', undefined, revision.id);
       return this.store.read(s, input.path);
     });
   }
   proposals(id: string) { return this.store.run(id, async (s) => ({ proposals: s.proposals })); }
   proposal(id: string, proposalId: string) { return this.store.run(id, async (s) => s.proposals.find((p) => p.id === proposalId) ?? missing()); }
-  createProposal(id: string, input: ProposalRequest, options?: { origin: Proposal['origin']; signal?: AbortSignal }) {
+  createProposal(id: string, input: ProposalRequest, options?: { origin: Proposal['origin']; signal?: AbortSignal; chapterProposalId?: string }) {
     if (!input.content.isWellFormed()) invalid('Markdown 不能含有未配对的 UTF-16 代理字符。');
     return this.store.run(id, async (s) => {
       options?.signal?.throwIfAborted();
@@ -76,6 +164,12 @@ export class WorkspaceService {
       const references = input.references ?? [];
       if (new Set(references.map((r) => r.path)).size !== references.length || references.some((r) => r.path === input.path)) invalid('参考资料不可重复或包含候选目标文件。');
       for (const ref of references) checkVersion((await this.readObserved(s, ref.path)).version, ref.version);
+      // 交稿时可以先展示设定建议。采纳时仍要求对应章节候选已成为同版本正式稿。
+      if (options?.chapterProposalId) {
+        const chapter = s.proposals.find(p => p.id === options.chapterProposalId && p.status === 'pending') ?? missing();
+        checkVersion((await this.readObserved(s, chapter.path)).version, chapter.baseVersion);
+        references.push({ path: chapter.path, version: hash(chapter.content) });
+      }
       const selection = input.selection;
       const changes = changesFor(selection ? selection.text : base.content, input.content, selection?.start ?? 0);
       if (!changes.length) invalid('候选没有实际修改。');
@@ -131,7 +225,7 @@ export class WorkspaceService {
         documentPath(file.path);
         if (!file.revisionId) files.push(await this.readObserved(s, file.path));
         else {
-          const revision = s.history[file.path]?.find((r) => r.id === file.revisionId) ?? missing();
+          const revision = s.finalized?.[file.path]?.find((r) => r.id === file.revisionId) ?? missing();
           files.push({ path: file.path, version: revision.version, content: await this.store.snapshot(s, revision) });
         }
       }

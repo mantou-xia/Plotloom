@@ -1,10 +1,60 @@
 .plotloom-novel-muted { color: var(--pl-text-muted); }
-.plotloom-novel-library, .plotloom-novel-files ul { list-style: none; padding: 0; margin: 0; }
-.plotloom-novel-library li { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-block: 16px; border-bottom: 1px solid var(--pl-border); }
-.plotloom-novel-library h2, .plotloom-novel-library p { margin: 0; overflow-wrap: anywhere; }
-.plotloom-novel-library h2, .plotloom-novel-columns h2 { font-size: 16px; font-weight: 600; }
-.plotloom-novel-library p { color: var(--pl-text-muted); font-size: 13px; margin-top: 4px; }
-.plotloom-novel-columns { display: grid; grid-template-columns: minmax(165px, 245px) minmax(0, 1fr); gap: clamp(16px, 4%, 44px); }
+.plotloom-novel-files ul { list-style: none; padding: 0; margin: 0; }
+.plotloom-shelf-section { display: grid; gap: 16px; }
+.plotloom-shelf-section h2 { margin: 0; font-size: 19px; font-weight: 650; }
+.plotloom-shelf-empty { margin: 0; padding: 15px 16px; border-radius: 8px; background: var(--pl-surface-muted); font-size: 13px; }
+.plotloom-shelf-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.plotloom-shelf-sort { width: 136px; }
+.plotloom-shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 145px), 185px));
+  gap: clamp(14px, 2vw, 24px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plotloom-shelf-covers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 85px), 1fr)); gap: 10px; }
+.plotloom-shelf-covers .plotloom-shelf-cover-choice { position: relative; display: block; height: auto; padding: 6px; white-space: normal; }
+.plotloom-shelf-cover-choice > .plotloom-button__content { display: grid; justify-items: center; gap: 5px; }
+.plotloom-shelf-cover-choice[aria-pressed='true'] { background: var(--pl-surface-muted); color: var(--pl-text); font-weight: 700; }
+.plotloom-shelf-cover-choice img { display: block; width: 100%; aspect-ratio: 5 / 7; object-fit: cover; border-radius: 4px; }
+.plotloom-shelf-cover-choice .plotloom-shelf-cover-check { position: absolute; inset: 11px 11px auto auto; width: 20px; height: 20px; padding: 3px; border-radius: 50%; background: #16202c; color: #fff; visibility: hidden; }
+.plotloom-shelf-cover-choice[aria-pressed='true'] .plotloom-shelf-cover-check { visibility: visible; }
+@media (max-width: 560px) {
+  .plotloom-shelf-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 116px), 1fr)); }
+}
+.plotloom-novel-management {
+  display: grid;
+  grid-template-columns: clamp(282px, 27%, 380px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.plotloom-novel-directory { min-height: 0; min-width: 0; padding: 16px; background: var(--pl-surface-muted); }
+.plotloom-novel-directory-tabs.pl-primary-tabs { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; gap: 12px; }
+.plotloom-novel-directory-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.plotloom-novel-directory-header > .pl-primary-tabs__scroll { align-self: center; margin: 0; padding: 2px; }
+.plotloom-novel-directory-header .pl-primary-tabs__list { width: 100%; grid-auto-columns: minmax(0, 1fr); }
+.plotloom-novel-directory-header .pl-primary-tabs__tab { padding-inline: 4px; }
+.plotloom-novel-directory-main { min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.plotloom-novel-directory-main[hidden] { display: none; }
+.plotloom-novel-directory-main ul { display: grid; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.plotloom-novel-directory-main li { min-width: 0; }
+.plotloom-novel-directory-main .plotloom-button { width: 100%; justify-content: start; text-align: start; height: auto; min-height: 34px; white-space: normal; }
+.plotloom-novel-directory-main .plotloom-button[aria-current='true'], .plotloom-novel-directory-footer .plotloom-button[aria-pressed='true'] { background: var(--pl-surface); color: var(--pl-text); }
+.plotloom-novel-directory-main p { margin: 6px 8px; color: var(--pl-text-muted); font-size: 13px; }
+.plotloom-novel-directory-main .plotloom-novel-character-stages { padding-inline-start: 20px; }
+.plotloom-novel-character-toggle[aria-expanded='true'] svg { rotate: 90deg; }
+.plotloom-novel-stage-label { display: flex; gap: 6px; min-width: 0; align-items: center; white-space: nowrap; }
+.plotloom-novel-stage-tag { padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; background: var(--pl-surface); color: var(--pl-text-muted); }
+.plotloom-novel-directory-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--pl-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.plotloom-novel-management-editor { container-type: inline-size; display: flex; flex-direction: column; min-height: 0; min-width: 0; --paper-padding: clamp(12px, 4cqw, 32px); }
+.plotloom-novel-management-editor .plotloom-paper-toolbar { padding-inline: 14px; }
+.plotloom-novel-management-editor .pl-document-editor { --pl-document-edge: var(--pl-border); }
+.plotloom-novel-management-editor .plotloom-novel-editor { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); align-content: stretch; gap: 0; }
+.plotloom-novel-management-editor .plotloom-manuscript-input,
+.plotloom-novel-management-editor .plotloom-chapter-preview { height: 100%; min-height: 0; box-sizing: border-box; }
+.plotloom-novel-management-editor .plotloom-chapter-preview { padding: clamp(12px, 4cqw, 32px); border: 0; background: var(--pl-surface-muted); }
 .plotloom-novel-files { min-width: 0; }
 .plotloom-novel-files li { display: grid; justify-items: start; gap: 2px; margin-bottom: 4px; }
 .plotloom-novel-files li .pl-button { max-width: 100%; height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
@@ -25,10 +75,18 @@
 .plotloom-novel-writing-status { min-height: 1.5em; margin: 0; color: var(--pl-text-muted); font-size: 13px; line-height: 1.5; }
 .plotloom-novel-review { width: 800px; height: min(720px, calc(100dvh - 48px)); }
 .plotloom-novel-preview { min-height: 5em; margin: 0; padding: 12px; background: var(--pl-surface-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
-.plotloom-novel-change { display: grid; gap: 8px; padding-block: 12px; border-bottom: 1px solid var(--pl-border); }
-.plotloom-novel-change span[role='status'] { width: 4em; font-size: 13px; }
+.plotloom-character-cards { display: grid; gap: 16px; }
+.plotloom-character-card-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.plotloom-character-card-list li { display: grid; gap: 4px; }
+.plotloom-character-card-list h3, .plotloom-character-card-detail h3 { margin: 0; font-size: 15px; }
+.plotloom-character-card-list button[aria-current='true'] { background: var(--pl-surface-muted); }
+.plotloom-character-card-detail { display: grid; gap: 8px; }
+.plotloom-character-card-detail p { margin: 0; color: var(--pl-text-muted); font-size: 13px; }
 @media (max-width: 900px) {
-  .plotloom-novel-columns { grid-template-columns: minmax(125px, 155px) minmax(0, 1fr); gap: 16px; }
   .plotloom-novel-writing-options { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 650px) { .plotloom-novel-columns { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 850px) {
+  .plotloom-novel-management { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(132px, 30%) minmax(0, 1fr); }
+  .plotloom-novel-directory { padding: 8px 12px; }
+  .plotloom-novel-directory-tabs.pl-primary-tabs { gap: 4px; }
+}

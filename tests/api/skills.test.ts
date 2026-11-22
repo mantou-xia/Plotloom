@@ -7,6 +7,7 @@ import { startServer, collect, events, assertFinal } from './client.ts';
 import { createModelFixture, TEST_KEY } from './fixture.ts';
 
 const source = (name: string, text = '技能正文唯一标记甲', extra = '') => `---\nname: ${name}\ndescription: 测试对白技能\n${extra}---\n${text}\n`;
+const writingReferences = ['references/drafting.md', 'references/prose-review.md', 'references/rewrite-fidelity.md'];
 /** 独立 HTTP 服务 + 模型协议替身：只替换模型，资源管理、SDK 工具与持久化都走生产路径。 */
 test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'plotloom-skills-')); const fixture = await createModelFixture();
@@ -40,6 +41,11 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       await json(`/api/skills/${builtin.id}/file`, 'PUT', { path: 'SKILL.md', content: source('novel-writing'), baseVersion: builtin.version }, 409);
       const copy = await json(`/api/skills/${builtin.id}/copy`, 'POST', { name: 'my-writing' }, 201);
       assert.equal(copy.source, 'custom'); assert(copy.files.includes('references/character-card.md'));
+      // 自定义副本也必须带齐审稿资源和来源许可，不能只复制入口。
+      for (const path of [...writingReferences, 'NOTICE.md']) {
+        assert.equal((await json(`/api/skills/${copy.id}/file`, 'POST', { path })).content,
+          await readFile(new URL('../../packages/storage/builtin/novel-writing/' + path, import.meta.url), 'utf8'));
+      }
       assert.match((await json(`/api/skills/${copy.id}/file`, 'POST', { path: 'SKILL.md' })).content, /name: my-writing/);
       await json(`/api/skills/${copy.id}`, 'DELETE'); await json(`/api/skills/${copy.id}`, 'GET', undefined, 404);
       skill = await json('/api/skills', 'POST', { content: source('dialogue') }, 201);
@@ -116,6 +122,16 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       assert.match(JSON.stringify(fixture.requests.at(-1).messages.filter((m: any) => m.role === 'system')), /技能正文唯一标记甲/);
       await json(msg(normal.id), 'POST', { text: '显式越权', skillIds: [skill.id] }, 422);
       assertFinal(await send(chat2.id, '加载小说技能', ['builtin-novel-writing']), 'completed');
+      // 入口不预装专项参考；逐个经过真实工具读取，验证新增资源可用且仍按需加载。
+      const initialSystem = fixture.requests.at(-1).messages.filter((m: any) => m.role === 'system');
+      for (const path of writingReferences) {
+        const content = await readFile(new URL('../../packages/storage/builtin/novel-writing/' + path, import.meta.url), 'utf8');
+        assert(!initialSystem.some((m: any) => JSON.stringify(m.content).includes(JSON.stringify(content).slice(1, -1))));
+        const resource = await send(chat2.id, command('builtin-novel-writing', path));
+        assertFinal(resource, 'completed');
+        assert(resource.some(e => e.type === 'tool_end' && e.name === 'read_skill' && e.outcome === 'completed'));
+        assert(text(resource).includes(content));
+      }
       await json(setting(normal.id), 'PUT', { skillIds: ['builtin-novel-writing'] });
       assert.equal((await json(setting(normal.id))).unavailable.length, 1);
       await json(msg(normal.id), 'POST', { text: '项目聊天缺少小说工具', skillIds: ['builtin-novel-writing'] }, 422);

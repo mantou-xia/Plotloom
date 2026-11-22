@@ -1,25 +1,3 @@
 /* 始终为重开入口留出标题栏空间，避免按钮出现时遮挡聊天名称或项目路径。 */
 .plotloom-workspace .plotloom-chat__header { padding-right: 140px; }
 .plotloom-global-layout__scroll:has(> .plotloom-app-content > .plotloom-workspace) { scrollbar-width: none; }
-.plotloom-workspace__empty { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100%; padding: 36px 24px; text-align: center; box-sizing: border-box; }
-.plotloom-workspace__empty h2 { font-size: 18px; font-weight: 550; margin: 16px 0 10px; }
-.plotloom-workspace__empty p { color: var(--pl-text-muted); font-size: 14px; line-height: 1.7; }
-.plotloom-workspace__empty > svg, .plotloom-workspace__empty > span { color: var(--pl-text-muted); }
-.plotloom-workspace__empty > span { font-size: 12px; line-height: 1.7; }
-
-.plotloom-workspace__citations { flex: 1; min-height: 0; }
-.plotloom-workspace__citation-list { list-style: none; margin: 0; padding: 12px; }
-.plotloom-workspace__citation-list > li + li { margin-top: 4px; }
-.plotloom-workspace__citation-row {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px;
-  color: var(--pl-text); text-decoration: none;
-}
-.plotloom-workspace__citation-list > [aria-current='true'] > .plotloom-workspace__citation-row,
-a.plotloom-workspace__citation-row:hover { background: var(--pl-surface-muted); }
-a.plotloom-workspace__citation-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-focus); }
-.plotloom-workspace__citation-number { flex: 0 0 28px; text-align: center; color: var(--pl-text-muted); font-variant-numeric: tabular-nums; }
-.plotloom-workspace__citation-text { flex: 1; min-width: 0; display: grid; gap: 3px; font-size: 14px; line-height: 20px; }
-.plotloom-workspace__citation-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plotloom-workspace__citation-text > strong { font-weight: 550; }
-.plotloom-workspace__citation-text > span { color: var(--pl-text-muted); font-size: 12px; }
-.plotloom-workspace__citation-row > svg { flex-shrink: 0; color: var(--pl-text-muted); }

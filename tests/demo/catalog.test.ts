@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, readdir, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,7 +16,7 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 78);
+  assert.equal(routes.length, 84);
   assert(registered.includes('PUT /api/sessions/:id/organization'));
   assert(registered.includes('DELETE /api/sessions/:id'));
   for (const id of ['sessions.list', 'chats.list', 'chats.workspace-list']) {
@@ -32,7 +32,22 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
   assert.equal(routes.filter(route => route.includes('/project-writes')).length, 2);
   assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
-  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 22);
+  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 28);
+  assert(API_CATALOG.find(item => item.id === 'character-cards.list')?.response.some(field => field.name === 'cards[].createdAt'));
+  assert.equal(API_CATALOG.find(item => item.id === 'character-cards.list')?.examples.length, 0, '角色卡查询通过无请求体的 GET 发送');
+  assert.deepEqual(API_CATALOG.filter(item => item.id.startsWith('character-cards.')).map(item => item.id), ['character-cards.list', 'character-cards.create', 'character-cards.read']);
+  assert(API_CATALOG.find(item => item.id === 'character-cards.list')?.response.some(field => field.name === 'applicable[].version'));
+  const createBook = API_CATALOG.find(endpoint => endpoint.id === 'workspaces.create')!;
+  assert.deepEqual(createBook.request.map(field => field.name), ['title', 'root']);
+  assert.match(createBook.note, /WORKSPACE_NOT_EMPTY/);
+  assert.match(createBook.request[1].description, /空文件夹/);
+  const importExample = API_CATALOG.find(item => item.id === 'generation.send')?.examples.find(example => example.name === '小说聊天导入旧章节');
+  assert(importExample?.body.attachmentIds && String(importExample.body.text).includes('import_chapters'));
+  for (const id of ['writing.context', 'writing.send']) {
+    const endpoint = API_CATALOG.find(item => item.id === id)!;
+    assert(endpoint.request.some(field => field.name === 'chapterNumber'));
+    assert(endpoint.examples.some(example => example.body.chapterNumber === 4));
+  }
   assert.equal(routes.filter((route) => route.includes('/writing')).length, 3);
   assert.equal(routes.filter((route) => route.includes('/api/skills')).length, 9);
   assert.equal(routes.filter(route => route === 'GET /api/tools').length, 1);
@@ -54,6 +69,44 @@ test('测试台注册目录覆盖全部业务接口', async () => {
       assert(endpoint.request.every((field) => field.description && field.example && field.type));
       if (!endpoint.stream) assert(checkFields(endpoint.responseExample, endpoint.response).every((check) => check.passed), endpoint.id);
     }
+  } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('试验台工具目录展示小说分段暂存及交稿参数', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'plotloom-chapter-catalog-'));
+  const app = await buildServer({ dataDir: directory });
+  try {
+    const endpoint = API_CATALOG.find(item => item.id === 'tools.list')!;
+    const response = await app.inject({ method: endpoint.method, url: endpoint.path });
+    assert.equal(response.statusCode, endpoint.success);
+    const tools = response.json().tools;
+    assert.deepEqual(tools.find((t: any) => t.name === 'write_chapter_part').availableIn, ['novel']);
+    assert.equal(tools.find((t: any) => t.name === 'deliver_chapter').parameters, 'partCount、reason');
+  } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('试验台书架示例和正文统计可提交并检查响应字段', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'plotloom-shelf-catalog-'));
+  const book = join(directory, 'book');
+  await mkdir(book);
+  const app = await buildServer({ dataDir: join(directory, 'data') });
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/workspaces', payload: { title: '试验书', root: book } });
+    assert.equal(created.statusCode, 201, created.body);
+    const endpoint = API_CATALOG.find(item => item.id === 'workspaces.shelf')!;
+    const url = endpoint.path.replace(':workspaceId', created.json().id);
+    const response = await app.inject({ method: endpoint.method, url, payload: endpoint.examples[0].body });
+    assert.equal(response.statusCode, endpoint.success, response.body);
+    assert(checkFields(response.json(), endpoint.response).every(check => check.passed));
+    assert.equal(response.json().pinned, true);
+    assert.equal(response.json().coverId, 'ocean');
+    const rejected = await app.inject({ method: endpoint.method, url, payload: { coverId: 'custom' } });
+    assert.equal(rejected.statusCode, 400);
+    assert.equal(rejected.json().error.code, 'INVALID_REQUEST');
+    const stats = API_CATALOG.find(item => item.id === 'documents.manuscript-stats')!;
+    const statsResult = await app.inject({ method: stats.method, url: stats.path.replace(':workspaceId', created.json().id) });
+    assert.equal(statsResult.statusCode, stats.success, statsResult.body);
+    assert(checkFields(statsResult.json(), stats.response).every(check => check.passed));
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });
 

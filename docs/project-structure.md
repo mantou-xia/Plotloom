@@ -107,7 +107,7 @@ P3 的五个工具薄适配位于 `apps/server/src/writing.ts`，业务在 `appl
 
 application/writing 是小说业务代码，不是通用工作流执行器。没有独立 workflows/runtime 包，也不预建 runs、run_steps、run_events 表。
 
-正式文稿为用户工作区的 Markdown；内部登记、候选和历史清单在 `<dataDir>/workspaces/<id>/state.json`，历史快照在同级 `revisions/<revisionId>.md`，不能缓存另一份当前正文。Windows 提交助手位于 `packages/storage/src/commit-markdown.ps1`。具体提交与恢复见 P2 实施计划。Pi 会话仍由 SDK 独立保存，不复制消息。
+正式文稿为用户工作区的 Markdown；内部登记、候选和历史清单在 `<dataDir>/novels/<id>/state.json`，历史快照在同级 `revisions/<revisionId>.md`，不能缓存另一份当前正文。Windows 提交助手位于 `packages/storage/src/commit-markdown.ps1`。具体提交与恢复见 P2 实施计划。Pi 会话仍由 SDK 独立保存，不复制消息。
 
 ## 5. 依赖与调用
 

@@ -1,6 +1,16 @@
 /** Markdown 工作区公开协议；偏移为 UTF-16 半开区间，不含编辑器或 Pi 类型。 */
-export interface Workspace { id: string; title: string; root: string; createdAt: string }
+export const NOVEL_COVER_IDS = ['forest', 'dunes', 'ocean', 'stars'] as const;
+export type NovelCoverId = typeof NOVEL_COVER_IDS[number];
+
+export interface NovelShelfUpdate { pinned?: boolean; coverId?: NovelCoverId }
+export interface Workspace extends NovelShelfUpdate { id: string; title: string; root: string; createdAt: string }
 export interface DocumentView { path: string; content: string; version: string | null }
+export interface NovelManuscriptStats { chapters: number; characters: number }
+/** 与稿纸计数一致，按 Unicode 字符计入 Markdown 标记并忽略空白。 */
+export function countManuscriptCharacters(content: string): number {
+  return Array.from(content.replace(/\s/g, '')).length;
+}
+export interface ManuscriptView { workspaceId: string; path: string; mode: 'edit' | 'preview' | 'history' | 'refresh' | 'discard'; revisionId?: string; proposalId?: string }
 export interface Revision { id: string; path: string; version: string | null; source: 'observed' | 'manual' | 'accepted' | 'restored'; createdAt: string; restoredFrom?: string }
 export interface Selection { start: number; end: number; text: string }
 export interface Reference { path: string; version: string }

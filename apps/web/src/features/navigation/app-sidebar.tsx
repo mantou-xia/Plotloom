@@ -31,6 +31,7 @@ interface AppSidebarProps extends ChatActions {
   workspaces: Workspace[];
   workspaceState: 'loading' | 'ready' | 'error';
   onRefreshWorkspaces: () => Promise<void>;
+  onCreateNovel: () => void;
   onNewNovelChat: (id: string) => void;
   onRefresh: () => Promise<void>;
 }
@@ -38,7 +39,7 @@ interface AppSidebarProps extends ChatActions {
 /** 项目来自独立登记，小说来自工作区；空项目仍可展开或新建聊天。 */
 export function AppSidebar({ page, sessionId, chats, listState, projects: registeredProjects, projectState, currentProjectPath,
   onPageChange, onOpenChat, onOrganize, onNewChat, onChooseProject, onRefresh,
-  workspaces, workspaceState, onRefreshWorkspaces, onNewNovelChat }: AppSidebarProps) {
+  workspaces, workspaceState, onRefreshWorkspaces, onCreateNovel, onNewNovelChat }: AppSidebarProps) {
   const [sections, setSections] = useState({ pinned: true, projects: true, novels: true, recent: true });
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
@@ -77,7 +78,8 @@ export function AppSidebar({ page, sessionId, chats, listState, projects: regist
         contentState={workspaceState === 'error' ? 'error' : contentState(novels.length)}
         emptyText={workspaceState === 'loading' || listState === 'loading' ? '正在加载…' : '暂无小说'}
         errorText="小说列表加载失败，请刷新重试"
-        actions={<SidebarActionButton label="刷新小说列表" icon={<RefreshCw />} onClick={() => { void onRefreshWorkspaces(); void onRefresh(); }} />}>
+        actions={<><SidebarActionButton label="新建小说" icon={<Plus />} onClick={onCreateNovel} />
+          <SidebarActionButton label="刷新小说列表" icon={<RefreshCw />} onClick={() => { void onRefreshWorkspaces(); void onRefresh(); }} /></>}>
         {novels.map(group => <ChatGroupView key={group.id} group={group} {...shared} novel chatState={listState} onNewChat={() => onNewNovelChat(group.id)} />)}
       </SidebarSection>
       <SidebarSection label="最近" expanded={sections.recent} onExpandedChange={next => toggle('recent', next)}

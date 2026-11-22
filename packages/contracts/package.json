@@ -8,6 +8,7 @@
     "./workspaces": "./src/workspaces.ts",
     "./skills": "./src/skills.ts",
     "./writing": "./src/writing.ts",
-    "./sources": "./src/sources.ts"
+    "./sources": "./src/sources.ts",
+    "./character-cards": "./src/character-cards.ts"
   }
 }
