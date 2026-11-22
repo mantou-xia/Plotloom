@@ -17,6 +17,7 @@ import { ChatWorkspace } from '../features/workspace/chat-workspace';
 import { NewChatPage } from '../features/agent/new-chat-page';
 import { SkillsPage } from '../features/skills/skills-page';
 import { CreateNovelDialog, NovelsPage } from '../features/novels/novels-page';
+import type { ChatGroup } from '../features/navigation/sidebar-data';
 import { AppSidebar, type AppPage } from '../features/navigation/app-sidebar';
 import { CreateProjectDialog } from '../features/navigation/create-project-dialog';
 import { ProjectSwitcher } from '../features/navigation/project-switcher';
@@ -28,6 +29,7 @@ export function App() {
   const { route, updateRoute, closeSettings, clearSession } = useAppRoute();
   const { page, sessionId, workspaceId, settings: settingsSection } = route;
   const settingsOpen = settingsSection !== null;
+  const [acceptedRevision, setAcceptedRevision] = useState(0);
   const [modelRevision, setModelRevision] = useState(0);
   const [skillRevision, setSkillRevision] = useState(0);
   const settingsTrigger = useRef<HTMLElement | null>(null);
@@ -146,14 +148,16 @@ export function App() {
     finally { setSaving(false); }
   }
   /** 逐条复用公开接口，避免大批量请求占满连接；最后只刷新一次，失败项可单独重试。 */
-  async function applyArchiveBatch(targets: ChatSummary[], action: 'restore' | 'delete') {
+  async function applyArchiveBatch(targets: ChatSummary[], action: 'restore' | 'delete' | 'archive') {
     const failed: string[] = [];
     let reason = '';
     for (const chat of targets) {
       const path = '/api/sessions/' + encodeURIComponent(chat.id);
       try {
-        if (action === 'restore') await requestJson(path + '/organization', 'PUT', { archived: false });
-        else {
+        if (action !== 'delete') {
+          await requestJson(path + '/organization', 'PUT', { archived: action === 'archive' });
+          if (action === 'archive') clearSession(chat.id, chat.projectPath ?? '', chat.workspaceId);
+        } else {
           await requestJson(path, 'DELETE');
           clearSession(chat.id, chat.projectPath ?? '', chat.workspaceId);
         }
@@ -163,7 +167,11 @@ export function App() {
       }
     }
     await refreshChats();
-    if (failed.length) notifyRequestError(new Error(`已完成 ${targets.length - failed.length} 项，${failed.length} 项失败。${reason}`), 'archive-batch');
+    if (failed.length) {
+      const error = new Error(`已完成 ${targets.length - failed.length} 项，${failed.length} 项失败。${reason}`);
+      if (action === 'archive') throw error;
+      notifyRequestError(error, 'archive-batch');
+    }
     return failed;
   }
   /** 标题保存后按会话 ID 同步侧栏名称，切换对话不会串名。 */
@@ -172,6 +180,18 @@ export function App() {
     setChats(current => current.map(chat => chat.id === id ? { ...chat, name: saved.name } : chat));
     return saved.name;
   }
+  /** 只修改登记属性，书架和切换器共用服务端返回的名称，隐藏仅在侧栏分组时过滤。 */
+  async function updateGroup(group: ChatGroup, { name, ...flags }: { name?: string; pinned?: boolean; sidebarHidden?: boolean }) {
+    const id = encodeURIComponent(group.id);
+    if (group.kind === 'project') {
+      const saved = await requestJson<Project>('/api/projects/' + id, 'PUT', { ...flags, name });
+      setProjects(current => current.map(item => item.id === saved.id ? saved : item));
+    } else {
+      const saved = await requestJson<Workspace>('/api/workspaces/' + id + '/shelf', 'PUT', { ...flags, title: name });
+      setWorkspaces(current => current.map(item => item.id === saved.id ? saved : item));
+    }
+  }
+  const currentBook = workspaces.find(workspace => workspace.id === bookId);
   const projectName = projects.find(project => project.path === projectPath)?.name
     ?? (projectPath.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || projectPath);
   return (
@@ -181,7 +201,7 @@ export function App() {
       <GlobalLayout sidebar={<>
         <div hidden={settingsOpen} style={{ height: '100%' }}>
         <AppSidebar page={page} sessionId={sessionId} chats={chats} listState={listState}
-        onOrganize={organize}
+        onOrganize={organize} onGroupUpdate={updateGroup} onArchiveGroup={async targets => { await applyArchiveBatch(targets, 'archive'); }}
         projects={projects} projectState={projectState} currentProjectPath={projectPath}
         onPageChange={navigate} onRefresh={async () => { await Promise.all([refreshChats(), refreshProjects()]); }} onChooseProject={() => setProjectDialog('create')}
         onOpenChat={chat => updateRoute({ page: 'chat', sessionId: chat.id })}
@@ -194,11 +214,12 @@ export function App() {
       </>}>
         <div className="plotloom-app-content" data-hidden={settingsOpen} inert={settingsOpen} aria-hidden={settingsOpen || undefined}>
           {page === 'chat' ? <ChatWorkspace open={panelOpen} onOpenChange={changePanelOpen} sessionId={sessionId} workspaceId={bookId}
-            projectSession={Boolean(activeChat?.projectPath)} updatedAt={activeChat?.updatedAt}>{(openCitations, openTurnChanges, openManuscript) => sessionId ?
-            <ChatPage title={activeChat?.name} key={sessionId} sessionId={sessionId} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
-              onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges} onOpenManuscript={openManuscript} /> :
+            updatedAt={activeChat?.updatedAt} onAccepted={() => setAcceptedRevision(value => value + 1)}>{(openCitations, openTurnChanges, openManuscript, openDeliverable) => sessionId ?
+            <ChatPage acceptedRevision={acceptedRevision} novelRoot={currentBook?.root} title={activeChat?.name} key={sessionId} sessionId={sessionId} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
+              onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges}
+              onOpenManuscript={openManuscript} onOpenDeliverable={openDeliverable} /> :
             <NewChatPage modelRevision={modelRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
-              workspaceId={workspaceId} workspaceTitle={workspaces.find(workspace => workspace.id === workspaceId)?.title}
+              workspaceId={workspaceId} workspaceTitle={currentBook?.title} novelRoot={currentBook?.root}
               renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName || '选择项目'}
                 state={projectState} disabled={disabled} open={projectDialog === 'switch'}
                 onOpenChange={open => setProjectDialog(open ? 'switch' : null)} onRetry={() => void refreshProjects()}

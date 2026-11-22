@@ -1,4 +1,5 @@
-import type { ReactElement, ReactNode } from 'react';
+import { useCallback, useState, type ReactElement, type ReactNode } from 'react';
+import { ContextMenu } from 'deep-agent-base-ui/context-menu';
 import { Menu } from 'deep-agent-base-ui/menu';
 import './action-menu.css';
 
@@ -21,6 +22,18 @@ export function ActionMenu({ trigger, children, container, side = 'inline-end' }
       </Menu.Positioner>
     </Menu.Portal>
   </Menu.Root>;
+}
+
+/** 共用指针位置、菜单导航和视口避让，仅由外层传入业务操作。 */
+export function ContextActions({ trigger, children, label }: Pick<ActionMenuProps, 'trigger' | 'children'> & { label: string }) {
+  // 在窄屏原生模态面板中，Portal 必须位于同一 dialog，浏览器才允许点击菜单。
+  const [container, setContainer] = useState<HTMLDialogElement | null>(null);
+  const bindTrigger = useCallback((element: HTMLElement | null) => setContainer(element?.closest('dialog') ?? null), []);
+  return <ContextMenu.Root><ContextMenu.Trigger ref={bindTrigger} render={trigger} /><ContextMenu.Portal container={container ?? undefined}>
+    <ContextMenu.Positioner collisionPadding={8} className="pl-action-menu__positioner">
+      <ContextMenu.Popup className="pl-action-menu" aria-label={label}>{children}</ContextMenu.Popup>
+    </ContextMenu.Positioner>
+  </ContextMenu.Portal></ContextMenu.Root>;
 }
 
 export interface ActionMenuItemProps {

@@ -1,3 +1,4 @@
 /* 始终为重开入口留出标题栏空间，避免按钮出现时遮挡聊天名称或项目路径。 */
 .plotloom-workspace .plotloom-chat__header { padding-right: 140px; }
 .plotloom-global-layout__scroll:has(> .plotloom-app-content > .plotloom-workspace) { scrollbar-width: none; }
+.plotloom-deliverable-preview { box-sizing: border-box; display: grid; height: 100%; place-items: center; padding: 24px; text-align: center; color: var(--pl-text-muted); }

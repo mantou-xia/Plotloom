@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type MouseEventHandler } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFile, faFileExcel, faFileWord, faFilePdf, faFilePowerpoint, faFileZipper, faFileLines, faFileCode } from '@fortawesome/free-solid-svg-icons';
 import { ImageOff, X } from 'lucide-react';
@@ -10,7 +10,9 @@ export interface AttachmentCardProps {
   size?: number;
   status?: 'ready' | 'processing' | 'error';
   error?: string;
-  onOpen?: () => void;
+  onOpen?: MouseEventHandler<HTMLButtonElement>;
+  /** 可选的交互说明，例如调用方支持的组合键。 */
+  openHint?: string;
   /** 草稿才传入移除操作；与打开按钮为同级，避免嵌套交互元素。 */
   onRemove?: () => void;
   removeDisabled?: boolean;
@@ -41,7 +43,7 @@ function fileSize(size: number | undefined) {
 }
 
 /** 发送前后共用文件展示；固定高度的详情行承载处理、失败和大小，状态切换不挤动布局。 */
-export function AttachmentCard({ name, size, status = 'ready', error, onOpen, onRemove, removeDisabled,
+export function AttachmentCard({ name, size, status = 'ready', error, onOpen, openHint, onRemove, removeDisabled,
   className = '', style }: AttachmentCardProps) {
   const dot = name.lastIndexOf('.');
   const basename = dot > 0 ? name.slice(0, dot) : name;
@@ -57,7 +59,8 @@ export function AttachmentCard({ name, size, status = 'ready', error, onOpen, on
   </>;
   return <div className={`pl-attachment-card ${className}`} style={style} title={name} data-status={status}>
     <style>{attachmentStyles}</style>
-    {onOpen ? <button type="button" className="pl-attachment-card__body" aria-label={`打开 ${name}`} onClick={onOpen}>{content}</button>
+    {onOpen ? <button type="button" className="pl-attachment-card__body" aria-label={`打开 ${name}`}
+      aria-description={openHint} title={openHint} onClick={onOpen}>{content}</button>
       : <div className="pl-attachment-card__body">{content}</div>}
     {onRemove ? <button type="button" className="pl-attachment-card__remove" aria-label={`移除附件 ${name}`}
       disabled={removeDisabled || status === 'processing'} onClick={onRemove}><X size={13} aria-hidden="true" /></button> : null}

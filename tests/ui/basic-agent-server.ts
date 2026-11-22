@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -15,7 +15,9 @@ const modelsPath = join(directory, 'models.json');
 await writeFile(modelsPath, JSON.stringify({ providers: { 'p1-test': { api: 'openai-completions', baseUrl: fixture.baseUrl,
   models: [{ id: 'fixture', name: '验收模型', reasoning: true, input: ['text','image'], contextWindow: 128000, maxTokens: 4096,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
-const app = await buildServer({ dataDir: join(directory, 'data'), modelsPath, defaultModel: { provider: 'p1-test', model: 'fixture' }, apiKey: TEST_KEY });
+const app = await buildServer({ dataDir: join(directory, 'data'), modelsPath, defaultModel: { provider: 'p1-test', model: 'fixture' }, apiKey: TEST_KEY },
+  // 验证后端交给宿主的实际文件路径，避免自动验收弹出系统应用。
+  { openDeliverable: path => access(path) });
 await app.inject({ method: 'POST', url: '/api/projects', payload: { name: '验收项目', path: project } });
 await app.listen({ host: '127.0.0.1', port: 4432 });
 let submitted = '';

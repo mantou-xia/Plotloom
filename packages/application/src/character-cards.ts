@@ -102,7 +102,6 @@ export class CharacterCardService {
     const decision = await this.workspaces.cardReminder(id, key);
     if (decision === 'skipped') return { status: 'skipped' as const };
     if (!decision) {
-      if (suggestion.content !== undefined) invalid('请先询问作者是否建卡，再提交五栏草稿。');
       // 只用姓名提示可能的别称，后期人物卡的正文不进入早期章节。
       const candidates = [...new Set(cards.map(card => card.character))].filter(name =>
         name !== character && (name === possibleIdentity || name.startsWith(character[0])));
@@ -113,7 +112,8 @@ export class CharacterCardService {
       await this.workspaces.cardReminder(id, key, wantsDraft ? 'draft' : 'skipped');
       if (!wantsDraft) return { status: 'skipped' as const };
     }
-    if (!suggestion.content) return { status: 'draft_requested' as const, character, chapter,
+    // 首次调用只征求意愿，丢弃提前传来的占位文字或草稿，避免用它发起保存审批。
+    if (!decision || !suggestion.content) return { status: 'draft_requested' as const, character, chapter,
       message: '按当章证据起草五栏；未确定的信息留空或向作者核对，再用本工具传 content 请求保存。' };
     return { status: 'review' as const, heading, content: suggestion.content };
   }

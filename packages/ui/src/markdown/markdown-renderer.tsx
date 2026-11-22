@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useState, type CSSProperties, type ComponentProps, type ReactNode } from 'react';
+import { createContext, memo, useContext, useMemo, useState, type CSSProperties, type ComponentProps, type ReactNode } from 'react';
 import { Streamdown, defaultRehypePlugins, type AnimateOptions, type Components, type ExtraProps } from 'streamdown';
 import { cjk } from '@streamdown/cjk';
 import { createMathPlugin } from '@streamdown/math';
@@ -18,6 +18,8 @@ export interface MarkdownRendererProps {
   textEffect?: TextEmergenceEffect;
   /** 可接管清洗后的链接；返回 undefined 使用默认链接，返回 null 隐藏该标记。 */
   renderLink?: LinkRenderer;
+  /** 宿主可在 URL 防护前将业务链接转换为站内标记；最终地址仍经过防护。 */
+  transformLink?: (href: string) => string;
   className?: string;
   style?: CSSProperties;
 }
@@ -41,6 +43,20 @@ function EmergenceSpan({ node: _node, style, children, ...props }: ComponentProp
 }
 // 不解析模型生成的原始 HTML；保留框架的清洗与 URL 防护，再由固定组件处理围栏。
 const rehypePlugins = [defaultRehypePlugins.sanitize, defaultRehypePlugins.harden];
+type HtmlNode = { tagName?: string; properties?: { href?: unknown }; children?: HtmlNode[] };
+
+/** 只改写已通过 HTML 清洗的链接属性，图片和其他节点保留原有防护。 */
+function rewriteLinks(transform: NonNullable<MarkdownRendererProps['transformLink']>) {
+  return () => (root: HtmlNode) => {
+    function visit(node: HtmlNode) {
+      if (node.tagName === 'a' && typeof node.properties?.href === 'string') {
+        node.properties.href = transform(node.properties.href);
+      }
+      node.children?.forEach(visit);
+    }
+    visit(root);
+  };
+}
 /** 交给宿主处理经清洗的链接，普通链接继续使用统一的打开方式。 */
 function MarkdownLink({ href, children }: ComponentProps<'a'> & ExtraProps) {
   const renderLink = useContext(RenderLink);
@@ -56,11 +72,13 @@ const components: Components = {
 };
 
 /** 纯展示入口：保持流式分块模式稳定，避免完成时重挂载图表及丢失用户交互状态。 */
-export const MarkdownRenderer = memo(function MarkdownRenderer({ content, streaming = false, textEffect = 'ink', renderLink, className = '', style }: MarkdownRendererProps) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({ content, streaming = false, textEffect = 'ink', renderLink, transformLink, className = '', style }: MarkdownRendererProps) {
+  const linkPlugins = useMemo(() => transformLink ?
+    [defaultRehypePlugins.sanitize, rewriteLinks(transformLink), defaultRehypePlugins.harden] : rehypePlugins, [transformLink]);
   return <div className={`pl-markdown ${className}`} style={style} aria-busy={streaming} data-text-effect={textEffect}>
     <RenderLink.Provider value={renderLink}><Streamdown mode="streaming" isAnimating={streaming} parseIncompleteMarkdown={streaming}
       animated={textAnimations[textEffect]}
-      plugins={plugins} components={components} rehypePlugins={rehypePlugins} skipHtml controls={false}>
+      plugins={plugins} components={components} rehypePlugins={linkPlugins} skipHtml controls={false}>
       {content}
     </Streamdown></RenderLink.Provider>
   </div>;

@@ -1,13 +1,15 @@
 import { chapterText } from './chapter-text.ts';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter, on } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { chapterFromTitle } from '@plotloom/contracts/writing';
 import type { ImportedChapter } from './chapter-import.ts';
 import { changesFor, checkSelection, checkVersion, documentPath, hash, invalid, missing, proposalStatus, renderProposal, WorkspaceError } from '@plotloom/domain';
-import type { DocumentView, ExportRequest, NovelShelfUpdate, PendingCommit, Proposal, ProposalRequest, RecoveryView, Reference, Revision, SaveDocumentRequest, Workspace } from '@plotloom/contracts/workspaces';
+import type { DocumentListEntry, DocumentView, ExportRequest, NovelShelfUpdate, PendingCommit, Proposal, ProposalRequest, RecoveryView, Reference, Revision, SaveDocumentRequest, Workspace } from '@plotloom/contracts/workspaces';
 import { countManuscriptCharacters, type NovelManuscriptStats } from '@plotloom/contracts/workspaces';
 
 /** 同一工作区队列内的只读视图，用于在正式写入前重新核对作者看过的资料。 */
+export interface WorkspaceFileWrite { path: string; operation: 'create' | 'edit'; before: string; after: string }
 export interface WorkspaceDocuments {
   listDocuments(): Promise<{ paths: string[] }>;
   readWithCreation(path: string): Promise<DocumentView & { createdAt?: string }>;
@@ -21,6 +23,8 @@ export interface WorkspaceStore {
   create(title: string, root: string): Promise<Workspace>;
   run<T>(id: string, operation: (state: WorkspaceState) => Promise<T>, recover?: boolean): Promise<T>;
   read(state: WorkspaceState, path: string): Promise<DocumentView>;
+  fileLocation(state: WorkspaceState, path: string): Promise<string>;
+  listEntries(state: WorkspaceState): Promise<DocumentListEntry[]>;
   files(state: WorkspaceState): Promise<string[]>;
   persist(state: WorkspaceState): Promise<void>;
   snapshot(state: WorkspaceState, revision: Revision): Promise<string>;
@@ -33,14 +37,31 @@ export interface WorkspaceStore {
 export class WorkspaceService {
   private readonly store: WorkspaceStore;
   private readonly chapterReviews = new EventEmitter();
-  constructor(store: WorkspaceStore) { this.store = store; }
+  private readonly writeObserver = new AsyncLocalStorage<(change: WorkspaceFileWrite) => Promise<void>>();
+  /** 只有指定聊天工具的异步调用携带观察器，并行的作者保存不会串入聊天记录。 */
+  withWriteObserver<T>(observer: (change: WorkspaceFileWrite) => Promise<void>, operation: () => Promise<T>) {
+    return this.writeObserver.run(observer, operation);
+  }
+  private async commit(...args: Parameters<WorkspaceStore['commit']>) {
+    const revision = await this.store.commit(...args);
+    const [, doc, after] = args;
+    await this.writeObserver.getStore()?.({ path: doc.path, operation: doc.version ? 'edit' : 'create', before: doc.content, after });
+    return revision;
+  }
+  private readonly onAcceptedWrite?: (origin: NonNullable<Proposal['origin']>, change: WorkspaceFileWrite) => Promise<void>;
+  constructor(store: WorkspaceStore, onAcceptedWrite?: WorkspaceService['onAcceptedWrite']) {
+    this.store = store;
+    this.onAcceptedWrite = onAcceptedWrite;
+  }
   list() { return this.store.list(); }
   create(input: { title: string; root: string }) { return this.store.create(input.title, input.root); }
   get(id: string) { return this.store.run(id, async (s) => s.workspace); }
-  /** 只合并此次提交的书架设置，串行保存到登记元数据。封面与置顶可独立修改。 */
+  /** 串行合并此次提交的登记属性。侧栏隐藏只影响分组展示，仍可经书架访问原工作区。 */
   updateShelf(id: string, update: NovelShelfUpdate) {
     return this.store.run(id, async state => {
-      state.workspace = { ...state.workspace, ...update };
+      const title = update.title === undefined ? state.workspace.title : update.title.trim();
+      if (!title || title.length > 200) invalid('小说名称需要 1 至 200 个字符。');
+      state.workspace = { ...state.workspace, ...update, title };
       await this.store.persist(state);
       return state.workspace;
     });
@@ -56,6 +77,21 @@ export class WorkspaceService {
     });
   }
   listDocuments(id: string) { return this.store.run(id, async (s) => ({ paths: await this.store.files(s) })); }
+  listEntries(id: string) { return this.store.run(id, async state => ({ entries: await this.store.listEntries(state) })); }
+  /** 系统操作只接收后端解析后的普通文件，回收前在工作区队列内核对作者选中的版本。 */
+  revealDocument(id: string, path: string, reveal: (absolute: string) => Promise<void>) {
+    return this.store.run(id, async state => { await reveal(await this.store.fileLocation(state, path)); return { revealed: true }; });
+  }
+  recycleChapter(id: string, path: string, version: string, recycle: (absolute: string, version: string) => Promise<void>) {
+    if (!path.startsWith('正文章节/')) invalid('只能删除正文章节。');
+    return this.store.run(id, async state => {
+      const absolute = await this.store.fileLocation(state, path);
+      const doc = await this.readObserved(state, path);
+      checkVersion(doc.version, version);
+      await recycle(absolute, version);
+      return { recycled: true };
+    });
+  }
   /** 只统计已落盘的正文，普通刷新不会为读取创建版本快照。 */
   manuscriptStats(id: string): Promise<NovelManuscriptStats> {
     return this.store.run(id, async state => {
@@ -92,7 +128,7 @@ export class WorkspaceService {
       checkVersion(current.version, null);
       for (const ref of references) checkVersion((await this.store.read(state, ref.path)).version, ref.version);
       signal?.throwIfAborted();
-      await this.store.commit(state, current, content, 'manual');
+      await this.commit(state, current, content, 'manual');
       return this.store.read(state, path);
     });
   }
@@ -101,20 +137,25 @@ export class WorkspaceService {
     return this.store.run(id, async state => {
       const paths = (await this.store.files(state)).filter(path => path.startsWith('正文章节/'));
       const toWrite: ImportedChapter[] = [];
+      const resolvedPaths: string[] = [];
       for (const chapter of chapters) {
         signal?.throwIfAborted();
-        const sameNumber = paths.find(path => path !== chapter.path && chapterFromTitle(path.split('/').at(-1)!) === chapter.number);
-        if (sameNumber) throw new WorkspaceError('CHAPTER_IMPORT_CONFLICT', `第 ${chapter.number} 章已存在于 ${sameNumber}，本次导入未覆盖原稿。`);
-        const current = await this.store.read(state, chapter.path);
+        const matches = paths.filter(path => chapterFromTitle(path.split('/').at(-1)!) === chapter.number);
+        if (matches.length > 1)
+          throw new WorkspaceError('CHAPTER_IMPORT_CONFLICT', `第 ${chapter.number} 章存在多份正文，请先整理文件。`);
+        // 重试已按旧格式导入的原稿时，返回原路径供预览，避免生成第二份正文。
+        const path = matches[0] ?? chapter.path;
+        const current = await this.store.read(state, path);
         if (current.version === null) toWrite.push(chapter);
         else if (current.content !== chapter.content)
-          throw new WorkspaceError('CHAPTER_IMPORT_CONFLICT', `${chapter.path} 已有不同正文，本次导入未覆盖原稿。`);
+          throw new WorkspaceError('CHAPTER_IMPORT_CONFLICT', `${path} 已有不同正文，本次导入未覆盖原稿。`);
+        resolvedPaths.push(current.version === null ? chapter.path : path);
       }
       for (const chapter of toWrite) {
         signal?.throwIfAborted();
-        await this.store.commit(state, { path: chapter.path, version: null, content: '' }, chapter.content, 'manual');
+        await this.commit(state, { path: chapter.path, version: null, content: '' }, chapter.content, 'manual');
       }
-      return { imported: toWrite.length, unchanged: chapters.length - toWrite.length, paths: chapters.map(chapter => chapter.path) };
+      return { imported: toWrite.length, unchanged: chapters.length - toWrite.length, paths: resolvedPaths };
     });
   }
   /** 聊天引用固定版本；使用既有原稿快照，不以最新稿替换用户选中的历史。 */
@@ -140,7 +181,7 @@ export class WorkspaceService {
       checkVersion(current.version, input.baseVersion);
       if (validate) await validate({ listDocuments: async () => ({ paths: await this.store.files(s) }),
         readWithCreation: path => this.documentWithCreation(s, path) });
-      if (current.version !== hash(input.content)) await this.store.commit(s, current, input.content, 'manual');
+      if (current.version !== hash(input.content)) await this.commit(s, current, input.content, 'manual');
       return this.store.read(s, input.path);
     });
   }
@@ -171,7 +212,7 @@ export class WorkspaceService {
       const revision = s.finalized?.[input.path]?.find((r) => r.id === input.revisionId) ?? missing();
       if (revision.version === null) invalid('不存在的文件记录不可作为恢复来源。');
       if (current.version !== revision.version)
-        await this.store.commit(s, current, await this.store.snapshot(s, revision), 'restored', undefined, revision.id);
+        await this.commit(s, current, await this.store.snapshot(s, revision), 'restored', undefined, revision.id);
       return this.store.read(s, input.path);
     });
   }
@@ -230,7 +271,11 @@ export class WorkspaceService {
       const current = await this.readObserved(s, proposal.path);
       const anyAccepted = proposal.changes.some((c) => c.status === 'accepted');
       checkVersion(current.version, !anyAccepted && proposal.baseVersion === null ? null : hash(renderProposal(proposal)));
-      await this.store.commit(s, current, renderProposal(proposal, changeId), 'accepted', { proposalId, changeId });
+      const after = renderProposal(proposal, changeId);
+      await this.commit(s, current, after, 'accepted', { proposalId, changeId });
+      // 工作台可跨轮次或重启后采纳。工具内采纳由当前工具记录，作者手动采纳归回候选来源。
+      if (proposal.origin && !this.writeObserver.getStore())
+        await this.onAcceptedWrite?.(proposal.origin, { path: current.path, operation: current.version ? 'edit' : 'create', before: current.content, after });
       return proposal;
     }).then(proposal => {
       if (proposal.status !== 'pending' && proposal.status !== 'partial') this.chapterReviews.emit(proposalId, proposal);

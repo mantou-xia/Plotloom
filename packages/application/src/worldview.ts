@@ -5,6 +5,7 @@ export interface WorldRule {
   fact: string;
   effective: number;
   revealed: number | null;
+  impact?: string;
   evidence?: { path?: string; quote: string };
 }
 

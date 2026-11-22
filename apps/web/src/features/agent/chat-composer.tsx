@@ -77,12 +77,12 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
         await saveConfig({ provider: selected.provider, model: selected.id });
       },
       onValueChange: async value => { await saveConfig({ thinkingLevel: value as ThinkingLevel }); },
-      permissionOptions: projectPath ? 'project' : false,
+      permissionOptions: config?.projectApprovalMode ? 'project' : false,
       permission: config?.projectApprovalMode === 'full_access' ? 'full_access' : 'default',
       onPermissionChange: async value => { await saveConfig({ projectApprovalMode: value === 'full_access' ? 'full_access' : 'required' }); },
       advancedMentions: false, projectPath,
       skills: enabled?.skills.filter(skill => skill.runnable) ?? [], context: context ?? undefined,
-      onSearchFiles: projectPath ? query => requestJson<ProjectFiles>(`${path}/project-files`, 'POST', { query }) : undefined,
+      onSearchFiles: config?.projectApprovalMode ? query => requestJson<ProjectFiles>(`${path}/project-files`, 'POST', { query }) : undefined,
       maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown', attachmentDropTarget,
       onAttachmentUpload: async input => {
         if (!ATTACHMENT_TYPES.includes(input.mimeType as typeof ATTACHMENT_TYPES[number])) throw new Error('支持 PNG、JPEG、WebP、TXT 和 Markdown。');

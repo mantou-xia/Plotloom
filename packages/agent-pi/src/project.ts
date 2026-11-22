@@ -4,6 +4,19 @@ import type { ProjectFiles } from '@plotloom/contracts';
 import { AgentError } from './errors.ts';
 import { projectTarget } from './project-tools.ts';
 
+/** 聊天链接只可指向绑定目录内的普通文件，复用项目工具的链接和敏感路径检查。 */
+export async function resolveDeliverable(root: string, dataDir: string, input: string) {
+  if (!input || /^[\\/]|[:\u0000-\u001f]/u.test(input)) {
+    throw new AgentError(400, 'INVALID_REQUEST', '交付产物需要使用相对文件路径。');
+  }
+  try {
+    const { path } = projectTarget(root, await realpath(dataDir), input.replaceAll('\\', '/'));
+    const info = await stat(path);
+    if (info.isFile()) return { path, size: info.size };
+  } catch { /* 统一不可读与范围外的结果，避免泄露宿主路径。 */ }
+  throw new AgentError(404, 'DELIVERABLE_UNAVAILABLE', '文件不存在或无法访问。');
+}
+
 /** 不创建用户目录；只有显式提交的现存绝对目录能成为新会话的项目。 */
 export async function validateProjectPath(path: string): Promise<string> {
   if (!isAbsolute(path)) throw new AgentError(422, 'PROJECT_PATH_INVALID', '项目目录必须是绝对路径。');

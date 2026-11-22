@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { Book, BookOpen, Ellipsis, LayoutGrid, Plus, Settings } from 'lucide-react';
+import { ActionMenuItem } from '../action-menu/action-menu.tsx';
 import { SidebarNavItem } from '../sidebar/nav-item.tsx';
 import { SidebarSessionItem } from '../sidebar/session-item.tsx';
 import { SidebarSettingsItem } from '../sidebar/settings-item.tsx';
@@ -48,6 +49,7 @@ function AtomInteraction({ component, controls: c, style, onAction }: Omit<Param
     {childSession}
   </SidebarSection>;
   const header = { ...shared, expanded,
+    contextMenu: c.sidebarActions ? <ActionMenuItem icon={<Plus />} onSelect={() => onAction('contextMenu.onSelect')}>示例操作</ActionMenuItem> : undefined,
     collapsedIcon: !c.sidebarIcon ? null : c.sidebarGroupIcon === 'book' ? <Book /> : undefined,
     expandedIcon: !c.sidebarIcon ? null : c.sidebarGroupIcon === 'book' ? <BookOpen /> : undefined,
     onExpandedChange: (next: boolean) => { setExpanded(next); onAction(`onExpandedChange(${next})`); } };

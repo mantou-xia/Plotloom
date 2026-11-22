@@ -5,6 +5,11 @@ import type { DocumentView, Proposal, Reference, Selection } from './workspaces.
 export type WritingTask = 'chapter' | 'continue' | 'rewrite' | 'enrich_outline' | 'discuss';
 export const WORLDVIEW_PATH = '世界观.md';
 
+/** 新建正文以章号确定文件路径，章标题可以独立编辑。 */
+export function newChapterPath(chapterNumber: number): string {
+  return `正文章节/第${chapterNumber}章.md`;
+}
+
 /** 优先使用文稿标题中的“第十章”等明确章号，也接受 0004.md 这样的章节文件名。 */
 export function chapterFromTitle(title: string): number | undefined {
   const number = /第\s*([0-9零〇一二两三四五六七八九十百千]+)\s*章/.exec(title)?.[1]

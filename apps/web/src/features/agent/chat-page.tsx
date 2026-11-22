@@ -17,9 +17,10 @@ import { consumeAgentStream } from './client';
 import { request, requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
 import type { OpenCitations } from '../workspace/citation-sources-page';
+import type { OpenDeliverable } from '../workspace/deliverable-page';
 import './chat-page.css';
 
-const operationLabels = { create: '创建项目文件', overwrite: '覆盖项目文件', edit: '修改项目文件' };
+const operationLabels = { create: '创建文件', overwrite: '覆盖文件', edit: '修改文件' };
 
 /** 失焦时提交标题；失败保留草稿，用户可重新聚焦并再次离开以重试。 */
 function ChatTitle({ name, onSave }: { name: string; onSave: (name: string) => Promise<void> }) {
@@ -59,10 +60,11 @@ function ChatTitle({ name, onSave }: { name: string; onSave: (name: string) => P
 }
 
 /** 页面以服务端快照为准；SSE 触发刷新，离开页面断开连接但不停止后台任务。 */
-export function ChatPage({ title, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript }: {
+export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript, onOpenDeliverable }: {
   onRename: (id: string, name: string) => Promise<string>;
-  title?: string; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
+  title?: string; novelRoot?: string; acceptedRevision: number; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
   onOpenManuscript: (view: NonNullable<SessionDetail['manuscriptRequest']>['view']) => boolean;
+  onOpenDeliverable: OpenDeliverable;
 }) {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [openedAt] = useState(() => Date.now());
@@ -126,7 +128,7 @@ export function ChatPage({ title, sessionId, onRename, onSessionsChange, setting
     }
     void load();
     return () => { abort.abort(); clearTimeout(timer); };
-  }, [path, pending, reload, onSessionsChange, sessionId]);
+  }, [path, pending, reload, onSessionsChange, sessionId, acceptedRevision]);
 
   // 按浮层实际高度给最后一轮留出滚动空间。输入区和正文变高时，仅在用户仍靠近底部时跟随。
   useLayoutEffect(() => {
@@ -249,7 +251,7 @@ export function ChatPage({ title, sessionId, onRename, onSessionsChange, setting
         <div ref={thread} className="plotloom-chat__thread">
           {!session && !loadFailed ? <p role="status">正在加载聊天…</p> : session && !turns.length ? <p className="plotloom-chat__empty">有什么想法，开始聊聊吧。</p> : null}
           {turns.map(turn => <ChatTurn key={turn.id} turn={turn} busy={busy} onOpenCitations={onOpenCitations} onOpenTurnChanges={onOpenTurnChanges}
-            onRetry={turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
+            onOpenDeliverable={onOpenDeliverable} onRetry={turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
           {loadFailed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新查询聊天记录</Button> : null}
         </div>
       </ScrollBox>
@@ -260,7 +262,7 @@ export function ChatPage({ title, sessionId, onRename, onSessionsChange, setting
         {/* 保留编辑器和占位，切换卡片时草稿、附件及阅读视口保持原位。 */}
         <div className="plotloom-chat__composer-content" data-suspended={composerSuspended || undefined}
           inert={composerSuspended} aria-hidden={composerSuspended || undefined}>
-          <ChatComposer sessionId={sessionId} projectPath={session.projectPath} busy={busy}
+          <ChatComposer sessionId={sessionId} projectPath={session.projectPath ?? novelRoot} busy={busy}
             activity={awaitingApproval ? session.activity : pending ? 'generating' : session.activity}
             attachmentDropTarget={attachmentDropTarget} stopping={stopping} revision={controlsRevision + settingsRevision}
             onSubmit={send} onStop={() => void stop()} onRefresh={() => setReload(value => value + 1)} />
@@ -270,7 +272,7 @@ export function ChatPage({ title, sessionId, onRename, onSessionsChange, setting
             submitting={decidingId === question.id || answeredId === question.id} stopping={stopping}
             onAnswer={answer => void answerQuestion(question.id, answer)} onStop={() => void stop()} />
         </div> : awaitingApproval && approval ? <div className="plotloom-chat__composer-card">
-          <ToolApprovalCard key={approval.id} operation={operationLabels[approval.operation]}
+          <ToolApprovalCard key={approval.id} operation={approval.label ?? operationLabels[approval.operation]}
             path={approval.path} preview={approval.preview} state={approvalResult?.id === approval.id ? approvalResult.state : 'pending'}
             pendingLabel={approvals.length > 1 ? `${approvals.length} 项操作待审批` : undefined}
             submitting={decidingId === approval.id} stopping={stopping} onStop={() => void stop()}

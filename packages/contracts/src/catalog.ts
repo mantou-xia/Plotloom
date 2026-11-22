@@ -34,8 +34,9 @@ const approvalFields = (prefix: string) => [
   field(prefix + 'id', 'string', true, '本次待审批请求的唯一 ID。', '018cc233-92bc-7e51-abe9-63a0e8b3a30b'),
   field(prefix + 'turnId', 'string', true, '申请所属轮次。', 'turn-1'),
   field(prefix + 'callId', 'string', true, '关联的工具调用 ID。', 'write-1'),
-  field(prefix + 'operation', 'create | overwrite | edit', true, '创建、覆盖或编辑项目文件。', 'create'),
+  field(prefix + 'operation', 'create | overwrite | edit', true, '创建、覆盖或编辑项目或小说文件。', 'create'),
   field(prefix + 'path', 'string', true, '项目相对路径。', 'draft.md'),
+  field(prefix + 'label', 'string', false, '小说专属文件操作标题。', '保存角色卡'),
   field(prefix + 'preview', 'string', true, '原内容和新内容的有限预览，过长时显式注明省略。', '写入后…'),
   field(prefix + 'expiresAt', 'string', true, '决定可提交的截止时间（ISO 8601）。', '2026-11-20T00:00:00.000Z'),
 ];
@@ -51,6 +52,13 @@ const thinking = field('thinkingLevel', 'off | minimal | low | medium | high | x
 const optionalThinking = { ...thinking, required: false };
 const autoCompaction = field('autoCompaction', 'boolean', true, '当前会话是否启用 Pi 自动压缩，默认 true；关闭不影响手动压缩，重启和资源重建后保留。', 'true');
 const name = field('name', 'string', true, '会话名称，去除首尾空白后保存；请求为 1–120 字符且不能全空白。', '灯塔创作');
+const projectId = field('projectId', 'string', true, '路径参数，来自项目列表或创建结果。', 'project-id');
+const projectFields = [
+  field('id', 'string', true, '项目唯一标识。', 'project-id'), field('name', 'string', true, '显示名称。', '我的作品'),
+  field('path', 'string', true, '绑定的绝对目录。', 'D:/projects/story'), field('createdAt', 'string', true, '登记时间。', '2026-11-19T00:00:00.000Z'),
+  field('pinned', 'boolean', false, '在侧栏项目分类中置顶，默认关闭。', 'true'),
+  field('sidebarHidden', 'boolean', false, '仅隐藏侧栏分组，默认显示。', 'true'),
+];
 const projectPath = field('projectPath', 'string', false, '本机现存项目绝对目录。项目会话创建时规范化并固定，小说会话省略。项目文件变更需要审批。', 'D:/projects/example');
 const activity = field('activity', 'idle | generating | awaiting_approval | awaiting_answer | configuring | compacting', true, '会话活动。awaiting_approval 待审批，awaiting_answer 待回答；两者均保持 running，可处理或停止。', 'idle');
 const capabilities = [
@@ -72,7 +80,7 @@ const modelConfig = [
 const summary = [id, provider, model, status, activity, name, thinking, projectPath];
 const configExample = { provider: 'krill-ai-codex', model: 'gpt-5.6-sol', configured: true, thinkingLevel: 'off' };
 const sessionExample = { id: '019-example-session', provider: 'krill-ai-codex', model: 'gpt-5.6-sol', status: 'idle', activity: 'idle', name: '灯塔创作', thinkingLevel: 'off' };
-const projectApprovalMode = field('projectApprovalMode', 'required | full_access', false, '仅项目会话。required 为默认逐次审批；full_access 免项目文件写入审批，项目文件范围仍适用。', 'required');
+const projectApprovalMode = field('projectApprovalMode', 'required | full_access', false, '项目和小说会话。required 为默认逐次审批；full_access 免通用文件工具逐次审批。交稿、角色卡、世界观等作者决定仍单独确认。', 'required');
 const sessionConfig = [id, provider, model, thinking, autoCompaction, projectApprovalMode, field('capabilities', 'object', true, '当前模型能力。', '{}'), ...capabilities.map((item) => ({ ...item, name: `capabilities.${item.name}` }))];
 const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', autoCompaction: true, capabilities: capabilityExample };
 
@@ -102,7 +110,7 @@ const providerFields = [
 const projectWriteExample = { id: '2ac5774e-45da-474e-b34d-e8c7c960605a', path: 'README.md', operation: 'edit', createdAt: '2026-11-21T08:00:00.000Z' };
 const projectWriteFields = [
   field('id', 'string', true, '单次 Agent 写入记录 ID。', projectWriteExample.id),
-  field('path', 'string', true, '项目内相对路径，统一使用 /。', projectWriteExample.path),
+  field('path', 'string', true, '会话绑定目录内的相对路径，统一使用 /。', projectWriteExample.path),
   field('operation', 'create | overwrite | edit', true, '新建、覆盖或局部编辑。', 'edit'),
   field('createdAt', 'string', true, '写入记录时间，ISO 8601。', projectWriteExample.createdAt),
 ];
@@ -170,8 +178,7 @@ export const API_CATALOG: EndpointDoc[] = [
     description: '列出已保存的项目，包括尚无聊天的项目。',
     note: '按创建顺序倒序返回，不依赖聊天存在。会话以 projectPath 对应项目 path；不从聊天隐式生成项目。异站请求返回 403 ORIGIN_FORBIDDEN；存储读取失败返回 500。',
     request: [], examples: [], response: [field('projects', 'array', true, '项目清单，未创建时为空数组。', '[]'),
-      field('projects[].id', 'string', true, '项目唯一标识。', 'project-id'), field('projects[].name', 'string', true, '用户定义的项目名称。', '我的作品'),
-      field('projects[].path', 'string', true, '规范化后的绝对源目录。', 'D:/projects/story'), field('projects[].createdAt', 'string', true, '项目创建时间（ISO 8601）。', '2026-11-19T00:00:00.000Z')],
+      ...projectFields.map(f => ({ ...f, name: 'projects[].' + f.name }))],
     responseExample: { projects: [{ id: 'project-id', name: '我的作品', path: 'D:/projects/story', createdAt: '2026-11-19T00:00:00.000Z' }] },
   },
   {
@@ -184,6 +191,18 @@ export const API_CATALOG: EndpointDoc[] = [
     examples: [{ name: '登记已有目录（先替换实际路径）', body: { name: '我的作品', path: 'D:/projects/story' } },
       { name: '错误：空白名称', body: { name: ' ', path: 'D:/projects/story' } }, { name: '错误：相对路径', body: { name: '我的作品', path: 'relative/path' } }],
     responseExample: { id: 'project-id', name: '我的作品', path: 'D:/projects/story', createdAt: '2026-11-19T00:00:00.000Z' },
+  },
+  {
+    id: 'projects.update', module: 'projects', name: '修改项目分组', method: 'PUT', path: '/api/projects/:projectId', success: 200,
+    description: '修改项目显示名称、侧栏置顶或分组可见性。', note: '只更新提供的字段。参数无效 400，空白名称 422 PROJECT_NAME_INVALID，未知项目 404 PROJECT_NOT_FOUND。隐藏保留登记、源文件与聊天。',
+    request: [projectId, ...projectFields.filter(f => ['name', 'pinned', 'sidebarHidden'].includes(f.name)).map(f => ({ ...f, required: false }))],
+    response: projectFields, examples: [{ name: '置顶', body: { pinned: true } }, { name: '重命名', body: { name: '新名称' } }, { name: '从侧栏移除', body: { sidebarHidden: true } }],
+    responseExample: { id: 'project-id', name: '我的作品', path: 'D:/projects/story', createdAt: '2026-11-19T00:00:00.000Z', pinned: true },
+  },
+  {
+    id: 'projects.open-folder', module: 'projects', name: '打开项目文件夹', method: 'POST', path: '/api/projects/:projectId/open-folder', success: 200,
+    description: '在本机 Windows 资源管理器中打开此项目登记的目录。', note: '未知项目 404，目录失效 422，启动失败 500，非 Windows 系统 501。',
+    request: [projectId], response: [field('opened', 'boolean', true, '系统已启动资源管理器。', 'true')], examples: [{ name: '打开目录', body: {} }], responseExample: { opened: true },
   },
   {
     id: 'projects.select-folder', module: 'projects', name: '系统选择文件夹', method: 'POST', path: '/api/projects/select-folder', success: 200,
@@ -246,7 +265,7 @@ export const API_CATALOG: EndpointDoc[] = [
   {
     id: 'sessions.project-files', module: 'sessions', name: '搜索项目文件', method: 'POST', path: '/api/sessions/:id/project-files', success: 200,
     description: '按相对路径关键词搜索当前项目，为聊天 @ 引用提供文件和目录候选。',
-    note: 'query 可为空，大小写不敏感，返回最多 40 项、扫描最多 5000 项；跳过依赖目录、构建目录、隐藏与敏感名称、链接及应用数据。truncated 表示达到限额。没有项目 409 PROJECT_NOT_SELECTED；未知会话 404 SESSION_NOT_FOUND；项目不可用 422 PROJECT_PATH_INVALID；禁止访问 403 PROJECT_FILES_UNAVAILABLE；非法请求 400 INVALID_REQUEST。返回相对路径和名称，内容由 Agent 工具实际读取。',
+    note: 'query 可为空，大小写不敏感，返回最多 40 项、扫描最多 5000 项；跳过依赖目录、构建目录、隐藏与敏感名称、链接及应用数据。truncated 表示达到限额。未绑定目录 409 PROJECT_NOT_SELECTED；未知会话 404 SESSION_NOT_FOUND；项目不可用 422 PROJECT_PATH_INVALID；禁止访问 403 PROJECT_FILES_UNAVAILABLE；非法请求 400 INVALID_REQUEST。返回相对路径和名称，内容由 Agent 工具实际读取。',
     request: [id, field('query', 'string', true, '路径关键词，最多 200 字符，空字符串列出候选。', 'README')],
     response: [field('entries', 'array', true, '匹配的文件和目录。', '[]'), field('entries[].path', 'string', true, '项目相对路径。', 'README.md'),
       field('entries[].name', 'string', true, '文件或目录名。', 'README.md'), field('entries[].isDirectory', 'boolean', true, '是否目录。', 'false'),
@@ -255,9 +274,24 @@ export const API_CATALOG: EndpointDoc[] = [
     responseExample: { entries: [{ path: 'README.md', name: 'README.md', isDirectory: false }], truncated: false },
   },
   {
+    id: 'sessions.deliverable', module: 'sessions', name: '预览或打开交付产物', method: 'POST', path: '/api/sessions/:id/deliverable', success: 200,
+    description: '在会话绑定的项目或小说目录内读取交付文件预览，或显式交给本机默认应用打开。',
+    note: '预览支持不超过 8 MiB 的 UTF-8 Markdown 和常见光栅图片。其他格式返回 unsupported。外部打开适用于 Windows 上允许的文档、数据和媒体文件。400 INVALID_REQUEST 表示请求或路径格式错误；404 SESSION_NOT_FOUND / DELIVERABLE_UNAVAILABLE 表示会话或文件不可用；409 PROJECT_NOT_SELECTED 表示会话无关联目录；422 DELIVERABLE_TOO_LARGE / DELIVERABLE_UNREADABLE / DELIVERABLE_OPEN_UNSUPPORTED / DELIVERABLE_OPEN_FAILED 表示预览超限、读取失败、无法外部打开此类型或系统关联打开失败；501 DELIVERABLE_OPEN_UNAVAILABLE 表示缺少 Windows 桌面。',
+    request: [id, field('path', 'string', true, '会话绑定目录内的相对文件路径。', 'README.md'),
+      field('action', 'string', true, 'preview 读取预览；open 请求在系统默认应用中打开。', 'preview')],
+    response: [field('kind', 'string', true, '结果类型，取 markdown、image、unsupported 或 opened。', 'markdown'),
+      field('content', 'string', false, 'kind 为 markdown 时返回 UTF-8 文档内容。', '# 项目说明'),
+      field('src', 'string', false, 'kind 为 image 时返回 Base64 图像地址。', 'data:image/png;base64,iVBORw0KGgo=')],
+    examples: [{ name: '预览项目文档', body: { path: 'README.md', action: 'preview' } },
+      { name: '预览小说章节', body: { path: '正文章节/第四章.md', action: 'preview' } },
+      { name: '外部打开文件', body: { path: 'README.md', action: 'open' } },
+      { name: '文件不存在', body: { path: '不存在.md', action: 'preview' } }],
+    responseExample: { kind: 'markdown', content: '# 项目说明' },
+  },
+  {
     id: 'sessions.project-writes', module: 'sessions', name: '列出 Agent 文件写入', method: 'GET', path: '/api/sessions/:id/project-writes', success: 200,
-    description: '查询当前项目会话成功写入的文件记录，按写入顺序排列。',
-    note: '同一文件连续写入时生成独立记录。待审批、拒绝、取消及未执行的写入不出现。旧会话从开始记录起可查询；无记录返回空数组。未知会话返回 404 SESSION_NOT_FOUND，小说会话返回 409 PROJECT_NOT_SELECTED，参数非法返回 400 INVALID_REQUEST。',
+    description: '查询当前项目或小说会话成功写入的文件记录，按写入顺序排列。',
+    note: '同一文件连续写入时生成独立记录。待审批、拒绝、取消及未执行的写入不出现。旧会话从开始记录起可查询；无记录返回空数组。未知会话返回 404 SESSION_NOT_FOUND，未绑定目录返回 409 PROJECT_NOT_SELECTED，参数非法返回 400 INVALID_REQUEST。',
     request: [id], examples: [],
     response: [field('changes', 'array', true, '成功写入记录的摘要列表。', '[]'),
       ...projectWriteFields.map(value => ({ ...value, name: 'changes[].' + value.name }))],
@@ -266,7 +300,7 @@ export const API_CATALOG: EndpointDoc[] = [
   {
     id: 'sessions.project-write-diff', module: 'sessions', name: '读取单次文件对比', method: 'GET', path: '/api/sessions/:id/project-writes/:writeId', success: 200,
     description: '对比当前会话一条写入记录的修改前后内容，不读取文件当前版本。',
-    note: '未知会话返回 404 SESSION_NOT_FOUND，未知或其他会话的记录返回 404 PROJECT_WRITE_NOT_FOUND，小说会话返回 409 PROJECT_NOT_SELECTED，非法参数返回 400 INVALID_REQUEST，计算超时返回 422 PROJECT_DIFF_TOO_COMPLEX。',
+    note: '未知会话返回 404 SESSION_NOT_FOUND，未知或其他会话的记录返回 404 PROJECT_WRITE_NOT_FOUND，未绑定目录返回 409 PROJECT_NOT_SELECTED，非法参数返回 400 INVALID_REQUEST，计算超时返回 422 PROJECT_DIFF_TOO_COMPLEX。',
     request: [id, field('writeId', 'string', true, '从当前会话的文件写入列表获取。', projectWriteExample.id)], examples: [],
     response: [...projectWriteFields,
       field('added', 'number', true, '新增行总数。', '1'), field('removed', 'number', true, '删除行总数。', '1'),
@@ -355,7 +389,7 @@ export const API_CATALOG: EndpointDoc[] = [
   {
     id: 'sessions.set-config', module: 'sessions', name: '修改会话配置', method: 'PUT', path: '/api/sessions/:id/config', success: 200,
     description: '修改并保存当前会话的模型、思考强度、自动压缩或项目审批模式。',
-    note: '至少传一个配置项，provider/model 必须成对。autoCompaction 和 projectApprovalMode 可独立修改。小说会话提交审批模式返回 409 PROJECT_NOT_SELECTED。非法参数返回 400 INVALID_REQUEST；会话不存在返回 404 SESSION_NOT_FOUND；忙碌或待审批时返回 409 SESSION_BUSY。模型或档位错误返回 422。关闭自动压缩仍可手动压缩。',
+    note: '至少传一个配置项，provider/model 必须成对。autoCompaction 和 projectApprovalMode 可独立修改。两类会话共用文件审批设置。非法参数返回 400 INVALID_REQUEST；会话不存在返回 404 SESSION_NOT_FOUND；忙碌或待审批时返回 409 SESSION_BUSY。模型或档位错误返回 422。关闭自动压缩仍可手动压缩。',
     request: [id, { ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...autoCompaction, required: false }, projectApprovalMode], response: sessionConfig,
     examples: [{ name: '调整思考档位', body: { thinkingLevel: 'low' } }, { name: '切换模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } },
       { name: '关闭自动压缩', body: { autoCompaction: false } }, { name: '开启自动压缩', body: { autoCompaction: true } },
@@ -368,7 +402,7 @@ export const API_CATALOG: EndpointDoc[] = [
   },
   {
     id: 'sessions.tools', module: 'sessions', name: '读取会话工具', method: 'GET', path: '/api/sessions/:id/tools', success: 200,
-    description: '查询注册工具、参数结构与当前启用情况。', note: 'parameters 是公开 JSON Schema；供查询使用。普通、项目和小说会话均提供 browser、web_fetch。项目文件工具限制在所选项目内，写入变更需要审批。未知会话返回 404 SESSION_NOT_FOUND。',
+    description: '查询注册工具、参数结构与当前启用情况。', note: 'parameters 是公开 JSON Schema；供查询使用。普通、项目和小说会话均提供 browser、web_fetch。文件工具限制在所选项目或小说目录内，写入变更需要审批。未知会话返回 404 SESSION_NOT_FOUND。',
     request: [id], examples: [], response: [id, field('tools', 'array', true, '会话注册工具。', '[]'),
       field('tools[].name', 'string', true, '调用工具的标识。', 'read'), field('tools[].description', 'string', true, '工具职责和使用说明。', '读取项目文本文件'),
       field('tools[].parameters', 'object', true, '工具参数 JSON Schema。', '{"type":"object"}'), field('tools[].active', 'boolean', true, '当前是否启用。', 'true')],
@@ -408,7 +442,7 @@ export const API_CATALOG: EndpointDoc[] = [
   {
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
     description: '向指定会话提交一条消息，并实时接收文本、工具调用和最终状态。后端每轮按本机时区提供当前日期，内部日期上下文追加于历史末尾，不改写系统提示和旧消息，也不展示为用户正文。',
-    note: '同一会话一次只处理一条请求。全局人设待设置时，Agent 可在对话中引导，通过 user_answer_required 请求确认保存或结束引导；确认前不会写入。小说聊天自动获得当前书籍读取、搜索、审校与候选工具，生成记录可从 writing 查询；项目聊天使用项目工具。新章节及精确选区请用内容创作接口。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
+    note: '同一会话一次只处理一条请求。全局人设待设置时，Agent 可在对话中引导，通过 user_answer_required 请求确认保存或结束引导；确认前不会写入。小说聊天自动获得当前书籍读取、搜索、审校与候选工具，生成记录可从 writing 查询。项目与小说共用目录内的文件工具；小说写入审批使用 tool_approval_required。小说聊天导入旧稿或交付新章时，新增正文使用正文章节/第4章.md 这样的阿拉伯数字章号路径；已存在的章节保留原路径。精确选区请用内容创作接口。技能从本次请求开始固定；skillIds 可显式加载已启用技能，不改变启用设置。不可用技能返回 422。断开订阅不会停止生成；要终止模型，请调用停止接口。',
     request: [id, field('text', 'string', false, '最多 100000 字符；文字、附件或文档引用至少有一项有效内容，纯附件/引用可省略。请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]'), ...SOURCE_REQUEST_FIELDS],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
     examples: [
@@ -419,8 +453,10 @@ export const API_CATALOG: EndpointDoc[] = [
       { name: '显式使用已启用技能', body: { text: '请按所选技能处理这段对白。', skillIds: ['替换为已启用技能ID'] } },
       { name: '发送当前聊天附件', body: { text: '请根据附件整理线索。', attachmentIds: ['替换为附件ID'] } },
       { name: '小说聊天导入旧章节', body: { text: '请调用 import_chapters 导入本轮旧稿附件并让我确认。', attachmentIds: ['替换为TXT或Markdown附件ID'] } },
+      { name: '小说聊天写新章', body: { text: '写第四章：林舟抵达码头，发现渡船提前离开。' } },
       { name: '提醒为关键人物建卡', body: { text: '请核对本聊天已交付的章节，若有影响后续剧情且缺卡的人物，请引用原句提醒我建卡。先核对称呼，等我选择后再起草。' } },
       { name: '交稿后复核角色变化', body: { text: '请复核本聊天刚交付的第四章。逐一对照出场角色的适用卡片，引用证据段提出变化；如有变化请逐项让我确认。' } },
+      { name: '新章交付后核对重大世界观变化', body: { text: '写第二十三章：旧航海时代终结，潮门永久封闭导致全海岸从此无法通航。请交稿，引用正式章稿说明对后续剧情的持续影响，并请我确认世界观建议。' } },
       { name: '聊天导出第四章 TXT', body: { text: '请将本书第四章最新保存的正文导出为 TXT。' } },
       { name: '分段起草第四章并确认整章', body: { text: '完成第四章，大纲如下：林舟抵达码头，从前一章的约定展开。分段暂存，整章写完后交给我确认。' } },
       { name: '访问浏览器并引用网页', body: { text: '使用 browser 打开 https://example.com，读取页面标题与正文，简要总结并在结论旁引用网页来源。' } },
@@ -483,7 +519,7 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
   { name: 'text_delta', description: '追加一段模型原文；网页引用标记可能跨增量，最终校验结果见会话详情的 citations。', fields: [field('delta', 'string', true, '本次增量，需要顺序追加。', '灯塔')] },
   { name: 'thinking_delta', description: '追加模型实际返回的可见思考文本，与正文分开展示。', fields: [field('delta', 'string', true, '只含文本；没有该事件不代表未进行推理。', '先整理线索')] },
   { name: 'tool_start', description: 'SDK 开始处理工具调用；写入可能进入待审批。', fields: [field('callId', 'string', true, '工具调用 ID。', 'read-1'), field('name', 'string', true, '工具名称。', 'read')] },
-  { name: 'tool_approval_required', description: '项目文件变更等待一次性审批；停止会取消等待。', fields: approvalFields('approval.') },
+  { name: 'tool_approval_required', description: '项目或小说文件变更等待一次性审批；停止会取消等待。', fields: approvalFields('approval.') },
   { name: 'user_answer_required', description: 'Agent 等待用户回答，消息流保持开启；提交答案、跳过或停止可结束等待。', fields: questionFields('question.') },
   { name: 'tool_end', description: '工具执行结束，完整结果由会话查询读取。', fields: [field('callId', 'string', true, '关联开始事件。', 'read-1'), field('name', 'string', true, '工具名称。', 'read'), field('outcome', 'completed | failed', true, '工具执行结果。', 'completed'),
     field('manuscriptView', 'object', false, '作者确认后的右侧文稿操作，含 workspaceId、path、mode（edit、preview、history、refresh、discard 或 export_txt）；可含 revisionId 或 proposalId。刷新时 path 为空。export_txt 指示客户端下载已保存的单章，view.downloadId 是本次下载的去重标识。', '{}')] },

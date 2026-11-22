@@ -2,8 +2,9 @@
 export const NOVEL_COVER_IDS = ['forest', 'dunes', 'ocean', 'stars'] as const;
 export type NovelCoverId = typeof NOVEL_COVER_IDS[number];
 
-export interface NovelShelfUpdate { pinned?: boolean; coverId?: NovelCoverId }
+export interface NovelShelfUpdate { pinned?: boolean; coverId?: NovelCoverId; title?: string; sidebarHidden?: boolean }
 export interface Workspace extends NovelShelfUpdate { id: string; title: string; root: string; createdAt: string }
+export interface DocumentListEntry { path: string; modifiedAt: string; excerpt: string }
 export interface DocumentView { path: string; content: string; version: string | null }
 export interface NovelManuscriptStats { chapters: number; characters: number }
 /** 与稿纸计数一致，按 Unicode 字符计入 Markdown 标记并忽略空白。 */

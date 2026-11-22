@@ -8,7 +8,7 @@
 .plotloom-chapter-sections .pl-primary-tabs__tab { padding-inline: 6px; }
 .plotloom-chapter-picker ul { list-style: none; padding: 8px 0; margin: 0; }
 .plotloom-chapter-picker li button { width: 100%; justify-content: start; height: auto; min-height: 36px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
-.plotloom-chapter-picker button[aria-current] { background: var(--pl-surface); }
+.plotloom-chapter-picker .plotloom-button[aria-current] { background: var(--pl-surface); }
 /* 上下栏与纸面外侧共用父级底色，切换主题时没有色块接缝。 */
 .plotloom-chapter-paper { grid-area: 1 / 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: color-mix(in srgb, var(--pl-primary, #2563eb) 8%, var(--pl-surface-muted)); }
 .plotloom-paper-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; min-height: 36px; padding: 10px 14px; }

@@ -14,6 +14,9 @@ export interface ComponentExample {
 
 /** 产品组件的展示登记；与公开 TSX 导出做覆盖校验，新增组件时必须同步补充。 */
 export const componentCatalog: ComponentExample[] = [
+  { id: 'document-list-item', name: 'DocumentListItem', category: '基础组件', exportPath: './document-list-item',
+    description: '展示文稿类别、日期、标题、扩展名与两行摘要。', interaction: '点击选中，右键展开传入的操作。',
+    width: 320, height: 180, states: [{ id: 'default', name: '普通', description: '文稿列表项。' }, { id: 'selected', name: '已选中', description: '加深底色。' }] },
   { id: 'action-menu', name: 'ActionMenu', category: '基础组件', exportPath: './action-menu',
     description: '紧贴触发按钮显示一组操作，支持图标和危险操作。',
     interaction: '点击触发按钮展开，使用方向键选择，Enter 执行，Esc 或点击外部关闭。', width: 320, height: 240,
@@ -281,7 +284,7 @@ export const componentCatalog: ComponentExample[] = [
   },
   {
     id: 'tool-approval-card', name: 'ToolApprovalCard', category: 'AI 对话组件', exportPath: './tool-approval-card',
-    description: '展示操作、目标路径、变更预览与审批状态。',
+    description: '展示项目或小说文件操作、目标路径和变更预览。长预览限高滚动，底部保留决定按钮。',
     interaction: '允许一次或拒绝会原位更新状态，尺寸和按钮位置保持稳定。',
     width: 560, height: 340,
     states: [
@@ -291,6 +294,7 @@ export const componentCatalog: ComponentExample[] = [
       { id: 'denied', name: '已拒绝', description: '保留审批结果。' },
       { id: 'expired', name: '已过期', description: '过期请求不可操作。' },
       { id: 'cancelled', name: '已取消', description: '请求随当前任务结束。' },
+      { id: 'long', name: '长预览', description: '滚动正文并检查底部操作。' },
     ],
   },
   {
@@ -567,7 +571,7 @@ export const componentCatalog: ComponentExample[] = [
   "name": "SidebarGroupHeader",
   "category": "侧栏组件",
   "exportPath": "./sidebar/group-header",
-  "description": "分组标题使用开合文件夹表达展开状态，无额外箭头；支持业务传入两套图标，右侧可切换书籍示例。",
+  "description": "分组标题使用开合文件夹表达展开状态，支持自定义图标。启用操作区后，右键标题可试用 contextMenu。",
   "interaction": "右侧修改公开参数，悬停、点击和键盘聚焦检查实际反馈；点击结果显示在回调记录。",
   "width": 400,
   "height": 320,
@@ -599,7 +603,7 @@ export const componentCatalog: ComponentExample[] = [
   "name": "SidebarGroup",
   "category": "侧栏组件",
   "exportPath": "./sidebar/group",
-  "description": "可折叠分组支持开合图标；内容缩进仅作用于条目内部，子项 hover 和点击覆盖整行。",
+  "description": "可折叠分组支持开合图标；内容缩进仅作用于条目内部，子项 hover 和点击覆盖整行。启用操作区后可右键标题打开菜单。",
   "interaction": "右侧修改公开参数，悬停、点击和键盘聚焦检查实际反馈；点击结果显示在回调记录。",
   "width": 400,
   "height": 320,

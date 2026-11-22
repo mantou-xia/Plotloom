@@ -34,7 +34,7 @@ export default async function verifyChapterWorkspace(page) {
   await writeFile(join(root, '大纲', '不属于章节.md'), '大纲');
   await chapters.locator('.plotloom-paper-toolbar').getByRole('button', { name: '刷新文稿' }).click();
   await chapters.getByRole('button', { name: '第三章.md' }).waitFor();
-  assert.deepEqual(await chapters.getByRole('listitem').allTextContents(), ['第一章.md', '第三章.md']);
+  assert.deepEqual(await chapters.locator('.pl-document-list-item').evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), ['第一章.md', '第三章.md']);
   const outlineTab = chapters.getByRole('tab', { name: '大纲' });
   const textTab = chapters.getByRole('tab', { name: '正文' });
   await outlineTab.click();
@@ -115,6 +115,12 @@ export default async function verifyChapterWorkspace(page) {
   assert.equal((await paper.boundingBox()).width, width);
   await pick('第三章.md');
   await directory.waitFor({ state: 'hidden' });
+  await ball.press('Enter');
+  await directory.waitFor();
+  await directory.getByRole('button', { name: '第一章.md', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '删除章节' }).click();
+  await page.getByRole('dialog', { name: '删除章节' }).getByRole('button', { name: '取消' }).click();
+  assert.match(await readFile(join(root, '正文章节', '第一章.md'), 'utf8'), /开篇/);
   await ball.press('Enter');
   await directory.waitFor();
   await ball.press('Escape');

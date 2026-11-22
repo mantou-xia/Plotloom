@@ -38,15 +38,13 @@
 .plotloom-novel-directory-header .pl-primary-tabs__tab { padding-inline: 4px; }
 .plotloom-novel-directory-main { min-height: 0; overflow: auto; scrollbar-gutter: stable; }
 .plotloom-novel-directory-main[hidden] { display: none; }
-.plotloom-novel-directory-main ul { display: grid; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.plotloom-novel-directory-main ul { display: grid; gap: 0; list-style: none; margin: 0; padding: 0; }
 .plotloom-novel-directory-main li { min-width: 0; }
 .plotloom-novel-directory-main .plotloom-button { width: 100%; justify-content: start; text-align: start; height: auto; min-height: 34px; white-space: normal; }
 .plotloom-novel-directory-main .plotloom-button[aria-current='true'], .plotloom-novel-directory-footer .plotloom-button[aria-pressed='true'] { background: var(--pl-surface); color: var(--pl-text); }
 .plotloom-novel-directory-main p { margin: 6px 8px; color: var(--pl-text-muted); font-size: 13px; }
 .plotloom-novel-directory-main .plotloom-novel-character-stages { padding-inline-start: 20px; }
 .plotloom-novel-character-toggle[aria-expanded='true'] svg { rotate: 90deg; }
-.plotloom-novel-stage-label { display: flex; gap: 6px; min-width: 0; align-items: center; white-space: nowrap; }
-.plotloom-novel-stage-tag { padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; background: var(--pl-surface); color: var(--pl-text-muted); }
 .plotloom-novel-directory-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--pl-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .plotloom-novel-management-editor { container-type: inline-size; display: flex; flex-direction: column; min-height: 0; min-width: 0; --paper-padding: clamp(12px, 4cqw, 32px); }
 .plotloom-novel-management-editor .plotloom-paper-toolbar { padding-inline: 14px; }

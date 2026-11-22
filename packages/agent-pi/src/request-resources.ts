@@ -1,6 +1,7 @@
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import type { Outcome } from '@plotloom/contracts';
+import type { FileApprovalTarget, Outcome } from '@plotloom/contracts';
+import type { Approval, FileToolScope } from './project-tools.ts';
 import type { QuestionWaiter } from './agent-question.ts';
 
 /** 宿主提供通用工具形状；SDK 适配不导入具体业务模块。 */
@@ -9,20 +10,23 @@ export interface BusinessTool {
   confirmable?: boolean;
   sequential?: boolean;
   confirmationOptions?: [string, string];
-  execute(input: any, signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>): Promise<unknown>;
+  execute(input: any, signal?: AbortSignal, confirm?: (question: string, target?: FileApprovalTarget) => Promise<boolean>): Promise<unknown>;
 }
 export interface RequestResources {
+  fileScope?: FileToolScope;
   replayInput?: unknown;
   persistReplayInput?: boolean;
   key: string; systemPrompt: string; tools: BusinessTool[];
   start?(): Promise<void>; finish?(outcome: Outcome): Promise<void>;
 }
-export function adaptBusinessTool(tool: BusinessTool, ask: QuestionWaiter) {
+export function adaptBusinessTool(tool: BusinessTool, ask: QuestionWaiter, approve: Approval) {
   return defineTool({ name: tool.name, label: tool.name, description: tool.description,
     parameters: Type.Unsafe<Record<string, unknown>>(tool.parameters),
     ...(tool.confirmable || tool.sequential ? { executionMode: 'sequential' as const } : {}),
     async execute(callId, input, signal) {
-      const confirm = async (question: string) => {
+      const confirm = async (question: string, target?: FileApprovalTarget) => {
+        // 文件决定沿用一次性审批 ID、超时和停止语义，普通交互仍可自填或跳过。
+        if (target) return await approve(callId, { ...target, preview: question }, signal, true) === 'approve';
         const answer = await ask({ callId, question, options: tool.confirmationOptions ?? ['确认保存', '暂不保存'] }, signal);
         return answer.kind === 'option' && answer.index === 1;
       };

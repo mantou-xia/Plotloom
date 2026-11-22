@@ -11,15 +11,20 @@
 .plotloom-chat__thread { max-width: 800px; margin: auto; padding-block-end: var(--chat-bottom-height, 0px); }
 .plotloom-chat__turn { padding: 12px 0; overflow-wrap: anywhere; }
 .plotloom-chat__response { margin-top: 24px; }
+.plotloom-chat__deliverables { margin-block: 12px 8px; }
+.plotloom-chat__deliverable-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.plotloom-chat__deliverable-list > div { max-width: 100%; }
 .plotloom-chat__file-summary { margin-block: 12px 8px; }
 .plotloom-chat__bottom {
   position: absolute; z-index: 1; inset: auto 0 0; padding: 0 24px 24px;
   width: 100%; max-width: 848px; box-sizing: border-box; margin-inline: auto; pointer-events: none;
 }
 .plotloom-chat__bottom:empty { display: none; }
-.plotloom-chat__composer-slot { position: relative; pointer-events: auto; }
+.plotloom-chat__composer-slot { position: relative; display: grid; pointer-events: auto; }
+/* 两层底部对齐。输入框保留原高度作为下限，审批变长时向上扩展，底部测量仍计入阅读区留白。 */
+.plotloom-chat__composer-slot > * { grid-area: 1 / 1; min-width: 0; }
 .plotloom-chat__composer-content[data-suspended] { visibility: hidden; opacity: 0; }
-.plotloom-chat__composer-card { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.plotloom-chat__composer-card { display: flex; flex-direction: column; max-height: min(65dvh, 640px); align-self: stretch; }
 .plotloom-chat__composer-card > * { flex: 1; min-height: 0; }
 .plotloom-chat__config-status { height: 32px; display: flex; align-items: center; font-size: 13px; color: var(--pl-text-muted); }
 .plotloom-chat__attachment img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin-top: 8px; }

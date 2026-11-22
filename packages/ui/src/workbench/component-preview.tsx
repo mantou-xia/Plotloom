@@ -1,6 +1,7 @@
 import { lazy, Suspense, useRef, useState } from 'react';
 import { BoxModelOverlay } from './box-model-overlay.tsx';
 import { ArrowRight, Copy, Ellipsis, Plus, Trash2 } from 'lucide-react';
+import { DocumentListItem } from '../document-list/document-list-item.tsx';
 import { ActionMenu, ActionMenuItem } from '../action-menu/action-menu.tsx';
 import { ButtonGallery } from './button-gallery.tsx';
 import { SidebarAtomExample } from './sidebar-atom-example.tsx';
@@ -124,6 +125,9 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
     files={state === 'multiple' ? exampleChangedFiles : exampleChangedFiles.slice(0, 1)} onViewChanges={() => onAction('查看变更')} onOpenFile={path => onAction(`打开 ${path}`)} /></div>;
   if (component === 'file-diff') target = <div style={style}><FileDiff key={state}
     blocks={state === 'added' ? [exampleDiff[2]] : exampleDiff} label="场景文件对比" /></div>;
+  if (component === 'document-list-item') target = <DocumentListItem title="第二章" extension=".md" category="正文" date="11月22日"
+    excerpt="雨停后，码头上的灯依次亮起。" selected={state === 'selected'} onSelect={() => onAction('选中文稿')}
+    actions={<ActionMenuItem onSelect={() => onAction('定位文稿')}>定位文稿</ActionMenuItem>} />;
   if (component === 'tool-approval-card') target = <ToolApprovalExample key={state} state={state} style={style} onAction={onAction} />;
   if (component === 'question-card') target = <QuestionCard key={state} style={style} question="这篇故事想采用哪个叙事视角？"
     options={['第一人称', '第三人称限制视角', '第三人称全知视角']} submitting={state === 'submitting'} stopping={state === 'stopping'}

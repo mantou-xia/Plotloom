@@ -18,7 +18,7 @@ async page => {
   const card = page.locator('.pl-question-card');
   const confirm = card.getByRole('radio', { name: /确认保存人设/ });
   await confirm.waitFor();
-  assert((await card.locator('legend').innerText()).includes('给建议前先核对正文版本。'), '确认卡显示实际写入内容');
+  assert((await card.getByRole('heading').innerText()).includes('给建议前先核对正文版本。'), '确认卡显示实际写入内容');
   assert((await profile()).setup === 'pending', '确认前没有写入');
   await page.reload();
   await confirm.waitFor();

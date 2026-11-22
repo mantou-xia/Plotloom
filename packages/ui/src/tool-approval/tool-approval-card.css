@@ -1,6 +1,8 @@
 .pl-tool-approval {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  max-height: min(65dvh, 640px);
   min-width: 0;
   max-width: 100%;
   padding: 12px 16px;
@@ -15,11 +17,10 @@
 }
 .pl-tool-approval__header h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .pl-tool-approval__header svg { flex: none; color: var(--pl-primary-text, #1d4ed8); }
-.pl-tool-approval__path { display: block; margin-top: 6px; overflow-wrap: anywhere; font-size: 12px; }
+.pl-tool-approval__path { display: block; max-height: 3.2em; overflow: auto; margin-top: 6px; overflow-wrap: anywhere; font-size: 12px; }
 .pl-tool-approval__preview {
-  flex: 1 1 72px;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: 180px;
   overflow: auto;
   margin: 8px 0;
   padding: 6px 12px;
@@ -30,6 +31,6 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.pl-tool-approval__footer { justify-content: space-between; font-size: 12px; color: var(--pl-text-muted, #60636b); }
+.pl-tool-approval__footer { flex: none; justify-content: space-between; font-size: 12px; color: var(--pl-text-muted, #60636b); }
 .pl-tool-approval__footer > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-tool-approval__actions { flex: none; }

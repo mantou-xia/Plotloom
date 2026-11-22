@@ -16,7 +16,12 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 85);
+  assert.equal(routes.length, 92);
+  for (const id of ['documents.entries', 'documents.reveal', 'documents.recycle-chapter']) {
+    const doc = API_CATALOG.find(item => item.id === id)!;
+    assert(doc.request.some(field => field.name === 'workspaceId' && field.required));
+    if (doc.method === 'POST') assert(doc.examples.some(example => typeof example.body.path === 'string'));
+  }
   assert(registered.includes('PUT /api/sessions/:id/organization'));
   assert(registered.includes('DELETE /api/sessions/:id'));
   for (const id of ['sessions.list', 'chats.list', 'chats.workspace-list']) {
@@ -27,12 +32,12 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.equal(routes.filter(route => route.endsWith('/retry')).length, 1);
   assert.equal(routes.filter(route => route.endsWith('/tool-approvals/:approvalId')).length, 1);
   assert.equal(routes.filter(route => route.endsWith('/questions/:questionId/answer')).length, 1);
-  assert.equal(routes.filter(route => route.includes('/api/projects')).length, 3);
+  assert.equal(routes.filter(route => route.includes('/api/projects')).length, 5);
   assert.equal(routes.filter(route => route.includes('/project-directories')).length, 0);
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
   assert.equal(routes.filter(route => route.includes('/project-writes')).length, 2);
   assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
-  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 29);
+  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 33);
   assert(API_CATALOG.find(item => item.id === 'character-cards.list')?.response.some(field => field.name === 'cards[].createdAt'));
   assert.equal(API_CATALOG.find(item => item.id === 'character-cards.list')?.examples.length, 0, '角色卡查询通过无请求体的 GET 发送');
   assert.deepEqual(API_CATALOG.filter(item => item.id.startsWith('character-cards.')).map(item => item.id), ['character-cards.list', 'character-cards.create', 'character-cards.read']);
@@ -47,6 +52,9 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.match(createBook.request[1].description, /空文件夹/);
   const importExample = API_CATALOG.find(item => item.id === 'generation.send')?.examples.find(example => example.name === '小说聊天导入旧章节');
   assert(importExample?.body.attachmentIds && String(importExample.body.text).includes('import_chapters'));
+  const generation = API_CATALOG.find(item => item.id === 'generation.send')!;
+  assert.match(generation.note, /正文章节\/第4章\.md/);
+  assert(generation.examples.some(example => example.name === '小说聊天写新章' && String(example.body.text).startsWith('写第四章：')));
   for (const id of ['writing.context', 'writing.send']) {
     const endpoint = API_CATALOG.find(item => item.id === id)!;
     assert(endpoint.request.some(field => field.name === 'chapterNumber'));
@@ -91,6 +99,7 @@ test('试验台工具目录展示小说分段暂存及交稿参数', async () =>
     const reminder = tools.find((t: any) => t.name === 'suggest_character_card');
     assert.deepEqual(reminder.availableIn, ['novel']);
     assert.match(reminder.parameters, /character、chapter、reason、evidence/);
+    assert.match(reminder.description, /首次调用会忽略 content/);
     assert(API_CATALOG.find(item => item.id === 'generation.send')?.examples.some(example => example.name === '提醒为关键人物建卡'));
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });

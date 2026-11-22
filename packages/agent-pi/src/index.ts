@@ -25,8 +25,8 @@ import type { SessionSkillProfile } from '@plotloom/contracts/skills';
 import type { MessageSources, MessageSourceSnapshot } from '@plotloom/contracts/sources';
 import { createSkillTool, skillPrompt, type SkillSnapshot } from './skills.ts';
 import { adaptBusinessTool, type RequestResources } from './request-resources.ts';
-import { findProjectFiles, validateProjectPath } from './project.ts';
-import { createProjectTools } from './project-tools.ts';
+import { findProjectFiles, resolveDeliverable, validateProjectPath } from './project.ts';
+import { createProjectTools, type Approval, type WrittenProjectFile } from './project-tools.ts';
 import { compareProjectFile, PROJECT_FILE_WRITE, summarizeProjectWrites, type ProjectWriteSnapshot } from './project-diff.ts';
 import { ToolApprovals } from './tool-approvals.ts';
 import { AgentQuestions, createAskUserTool, type QuestionWaiter } from './agent-question.ts';
@@ -49,6 +49,7 @@ export interface AgentOptions {
   resolveSkills?: (sessionId: string, explicit: string[]) => Promise<SkillSnapshot[]>;
   resolveAgentProfile?: () => Promise<AgentProfile>;
   completeAgentBootstrap?: (input: AgentProfileUpdate, signal?: AbortSignal) => Promise<boolean>;
+  resolveNovelRoot?: (workspaceId: string) => Promise<string>;
   resolveResources?: (sessionId: string, text: string, sources?: MessageSources, businessInput?: unknown) => Promise<RequestResources | undefined>;
   recoverBusinessInput?: (request: SubmitMessageRequest, entries: ReadonlyMap<string, unknown>) => unknown;
   resolveSources?: (sessionId: string, text: string, sources: MessageSources) => Promise<MessageSourceSnapshot & { prompt: string; images: Array<{ mimeType: string; data: string }> }>;
@@ -239,16 +240,28 @@ export class AgentService {
     return entry?.type === 'custom' ? (entry.data as { path: string }).path : undefined;
   }
 
+  /** 老小说通过已保存的工作区 ID 解析根目录，绝不使用旧会话的默认 cwd。 */
+  private async fileRoot(manager: SessionManager) {
+    const workspaceId = this.skillProfile(manager).workspaceId;
+    return workspaceId ? this.options.resolveNovelRoot?.(workspaceId) : this.projectPath(manager);
+  }
   async projectFiles(id: string, query: string) {
-    const root = this.projectPath((await this.getRecord(id)).manager);
+    const root = await this.fileRoot((await this.getRecord(id)).manager);
     if (!root) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目目录，请新建项目聊天。');
     return findProjectFiles(root, query, this.options.dataDir);
+  }
+
+  /** 预览与宿主打开共用会话固定的目录范围，客户端只提供相对路径。 */
+  async resolveDeliverable(id: string, path: string) {
+    const root = await this.fileRoot((await this.getRecord(id)).manager);
+    if (!root) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目或小说目录。');
+    return resolveDeliverable(root, this.options.dataDir, path);
   }
 
   /** 用会话和记录 ID 查询保存的快照，磁盘当前内容不影响以前的对比。 */
   private async projectWrites(id: string) {
     const { manager } = await this.getRecord(id);
-    if (!this.projectPath(manager)) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目目录。');
+    if (!this.projectPath(manager) && !this.skillProfile(manager).workspaceId) throw new AgentError(409, 'PROJECT_NOT_SELECTED', '当前聊天未绑定项目目录。');
     return manager.getEntries().flatMap(entry => {
       if (entry.type !== 'custom' || entry.customType !== PROJECT_FILE_WRITE) return [];
       const { id, path, operation, before, after } = entry.data as ProjectWriteSnapshot;
@@ -388,10 +401,13 @@ export class AgentService {
       if (entry.type !== 'custom') continue;
       if (entry.customType === TURN_START) turnId = entry.id;
       else if (entry.customType === TURN_END) turnId = undefined;
-      else if (entry.customType === PROJECT_FILE_WRITE && turnId && finishedTurns.has(turnId) && !summaries.has(turnId)) {
-        const writes = writesByTurn.get(turnId) ?? [];
-        writes.push(entry.data as ProjectWriteSnapshot);
-        writesByTurn.set(turnId, writes);
+      else if (entry.customType === PROJECT_FILE_WRITE) {
+        const change = entry.data as ProjectWriteSnapshot & { turnId?: string | null };
+        const owner = change.turnId === undefined ? turnId : change.turnId;
+        if (!owner || !finishedTurns.has(owner) || summaries.has(owner)) continue;
+        const writes = writesByTurn.get(owner) ?? [];
+        writes.push(change);
+        writesByTurn.set(owner, writes);
       }
     }
     for (const [turn, writes] of writesByTurn) summaries.set(turn, { turnId: turn, files: summarizeProjectWrites(writes) });
@@ -412,7 +428,7 @@ export class AgentService {
     const manuscript = record.manager.getEntries().findLast(entry => entry.type === 'custom' && entry.customType === 'plotloom-manuscript-view');
     const manuscriptData = manuscript?.type === 'custom' ? manuscript.data as Omit<NonNullable<SessionDetail['manuscriptRequest']>, 'id'> : undefined;
     const manuscriptRequest = manuscript && manuscriptData ? { id: manuscript.id, ...manuscriptData } : undefined;
-    const fileChanges = this.projectPath(record.manager) ? this.finishedFileChanges(record, messages) : [];
+    const fileChanges = this.finishedFileChanges(record, messages);
     return { ...this.summary(record), messages, ...(fileChanges.length ? { fileChanges } : {}), ...(pendingApprovals?.length ? { pendingApprovals } : {}),
       ...(pendingQuestion ? { pendingQuestion } : {}), ...(manuscriptRequest ? { manuscriptRequest } : {}),
       ...(request && user && user.turnId === latest?.id ? { retryMessageId: user.id } : {}) };
@@ -458,7 +474,7 @@ export class AgentService {
     const record = await this.getRecord(id);
     return { id, ...record.selection, thinkingLevel: this.summary(record).thinkingLevel,
       autoCompaction: this.autoCompaction(record),
-      ...(this.projectPath(record.manager) ? { projectApprovalMode: this.projectApprovalMode(record) } : {}),
+      ...(this.projectPath(record.manager) || this.skillProfile(record.manager).workspaceId ? { projectApprovalMode: this.projectApprovalMode(record) } : {}),
       capabilities: this.capabilities(this.registeredModel(record.selection)) };
   }
 
@@ -474,6 +490,20 @@ export class AgentService {
     return entry?.type === 'custom' ? (entry.data as { enabled: boolean }).enabled : true;
   }
 
+  /** 专属工具正式写入记到当前轮；候选后来才采纳时，按创作请求 ID 找回原轮。 */
+  async recordFileWrite(id: string, change: WrittenProjectFile, sourceRequestId?: string) {
+    const record = await this.getRecord(id).catch(error => {
+      if (sourceRequestId && error instanceof AgentError && error.code === 'SESSION_NOT_FOUND') return undefined;
+      throw error;
+    });
+    if (!record) return;
+    const source = sourceRequestId && record.manager.getBranch().find(entry => entry.type === 'custom' && entry.customType === TURN_START
+      && (entry.data as { resourceKey?: string })?.resourceKey === sourceRequestId);
+    // 旧候选没有轮次标识，只记入本会话清单，避免归到采纳时恰好运行的另一轮。
+    const turnId = sourceRequestId ? (source ? source.id : null) : record.activeTurn;
+    record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { ...change, id: crypto.randomUUID(), turnId });
+    if (turnId) record.fileChanges?.delete(turnId);
+  }
   /** 业务状态复用 SDK 元数据；仅供后端装配调用，不暴露任意元数据写入 HTTP 接口。 */
   async appendMetadata(id: string, kind: string, data: unknown): Promise<void> {
     (await this.getRecord(id)).manager.appendCustomEntry(kind, data);
@@ -487,8 +517,8 @@ export class AgentService {
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'configuring');
     try {
-      if (request.projectApprovalMode !== undefined && !this.projectPath(record.manager))
-        throw new AgentError(409, 'PROJECT_NOT_SELECTED', '只有项目会话可以调整文件审批模式。');
+      if (request.projectApprovalMode !== undefined && !this.projectPath(record.manager) && !this.skillProfile(record.manager).workspaceId)
+        throw new AgentError(409, 'PROJECT_NOT_SELECTED', '只有绑定目录的会话可以调整文件审批模式。');
       if (request.provider !== undefined || request.model !== undefined || request.thinkingLevel !== undefined) {
         const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : record.selection;
         const model = await this.requireModel(selection);
@@ -590,28 +620,31 @@ export class AgentService {
       // 查询上下文、统计和工具不发模型请求，因此不要求凭据；生成和压缩另行验证。
       const runtime = this.runtime;
       const model = this.registeredModel(execution?.model ?? record.selection);
-      const projectPath = this.projectPath(record.manager);
+      const projectPath = await this.fileRoot(record.manager);
       if (projectPath && await validateProjectPath(projectPath) !== projectPath)
         throw new AgentError(422, 'PROJECT_PATH_INVALID', '项目目录已变化，请重新选择项目。');
       const id = record.manager.getSessionId();
       // 项目文件工具使用受控定义。联网工具下方统一注册，继续沿用各自的会话隔离和访问规则。
+      const approve: Approval = async (callId, request, signal, requireDecision = false) => {
+        if (!record.activeTurn || !record.emit || record.stopRequested) return 'cancelled';
+        const turnId = record.activeTurn;
+        const emit = record.emit;
+        // 模式受会话锁保护；文件工具仍负责复核目标及取消信号。
+        if (this.projectApprovalMode(record) === 'full_access' && !requireDecision) {
+          record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation,
+            path: request.path, decision: 'full_access' });
+          return 'approve';
+        }
+        const approvals = record.approvals ??= new ToolApprovals();
+        const decision = await approvals.wait({ ...request, turnId, callId }, signal, approval =>
+          emit({ type: 'tool_approval_required', sessionId: id, approval }));
+        record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation, path: request.path, decision });
+        return decision;
+      };
+      const novel = Boolean(this.skillProfile(record.manager).workspaceId);
       const tools = projectPath
-        ? createProjectTools(projectPath, await validateProjectPath(this.options.dataDir), async (callId, request, signal) => {
-          if (!record.activeTurn || !record.emit || record.stopRequested) return 'cancelled';
-          const turnId = record.activeTurn;
-          const emit = record.emit;
-          // 模式受会话锁保护；文件工具仍负责复核目标及取消信号。
-          if (this.projectApprovalMode(record) === 'full_access') {
-            record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation,
-              path: request.path, decision: 'full_access' });
-            return 'approve';
-          }
-          const approvals = record.approvals ??= new ToolApprovals();
-          const decision = await approvals.wait({ ...request, turnId, callId }, signal, approval =>
-            emit({ type: 'tool_approval_required', sessionId: id, approval }));
-          record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation, path: request.path, decision });
-          return decision;
-        }, change => { record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { id: crypto.randomUUID(), ...change }); })
+        ? createProjectTools(projectPath, await validateProjectPath(this.options.dataDir), approve,
+          change => record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { id: crypto.randomUUID(), ...change }), record.resources?.fileScope)
         : this.options.tools ?? [];
       const ask: QuestionWaiter = async (question, signal) => {
         const emit = record.emit;
@@ -619,10 +652,12 @@ export class AgentService {
         const questions = record.questions ??= new AgentQuestions();
         return questions.wait(question, signal, pending => emit({ type: 'user_answer_required', sessionId: id, question: pending }));
       };
-      const customTools = [...tools, this.browsers.tool(id), createWebFetchTool(), createAskUserTool(ask),
+      // 小说原有的宿主扩展继续注册；同名文件工具始终使用受目录和审批约束的实现。
+      const extraTools = novel && projectPath ? this.options.tools?.filter(tool => !tools.some(existing => existing.name === tool.name)) ?? [] : [];
+      const customTools = [...tools, ...extraTools, this.browsers.tool(id), createWebFetchTool(), createAskUserTool(ask),
         ...(record.bootstrap && this.options.completeAgentBootstrap ? [createAgentProfileTool(ask, this.options.completeAgentBootstrap)] : []),
-        ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(tool => adaptBusinessTool(tool, ask)) ?? [])];
-      const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, mode: projectPath ? 'project' : 'novel', writingPrompt: record.resources?.systemPrompt,
+        ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(tool => adaptBusinessTool(tool, ask, approve)) ?? [])];
+      const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, mode: novel ? 'novel' : 'project', writingPrompt: record.resources?.systemPrompt,
         skillPrompt: skillPrompt(record.skills ?? []), persona: record.persona, bootstrap: record.bootstrap });
       const { session } = await createAgentSession({
         cwd: projectPath ?? this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: runtime, model,
@@ -733,6 +768,7 @@ export class AgentService {
       }
       record.activeTurn = record.manager.appendCustomEntry(TURN_START, {
         request: { text, skillIds: explicitSkills, ...sources },
+        ...(resources ? { resourceKey: resources.key } : {}),
         persona,
         ...(bootstrap ? { bootstrap } : {}),
         ...(businessInput !== undefined || resources?.persistReplayInput ? { businessInput: resources?.replayInput ?? businessInput, execution: execution ?? { model: currentModel, autoCompaction, skills: versions } } : {}),

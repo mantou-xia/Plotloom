@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { checkSelection, checkVersion, documentPath, hash, invalid, WorkspaceError } from '@plotloom/domain';
-import type { Outcome } from '@plotloom/contracts';
+import type { FileApprovalTarget, Outcome } from '@plotloom/contracts';
 import type { SessionSkillProfile } from '@plotloom/contracts/skills';
 import type { WritingContext, WritingRecord, WritingRequest, WritingResult, WritingReview, WritingSource } from '@plotloom/contracts/writing';
-import type { WorkspaceService } from './workspaces.ts';
+import type { WorkspaceService, WorkspaceFileWrite } from './workspaces.ts';
 import { chapterFromTitle, WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import { planChapterImport, type ChapterImportFile } from './chapter-import.ts';
 import type { Proposal } from '@plotloom/contracts/workspaces';
@@ -20,7 +20,9 @@ const CHAPTER_PART_ENTRY = 'plotloom-chapter-draft-part';
 export const CHAPTER_PART_LIMIT = 1500;
 interface ChapterPart { draftId: string; part: number; content: string }
 export const WRITING_TOOLS = ['list_documents', 'read_document', 'search_documents', 'review_writing', 'propose_change', 'propose_world_rule', 'propose_character_change', 'suggest_character_card', 'save_character_card', 'manuscript_workspace', 'import_chapters', 'write_chapter_part', 'deliver_chapter'];
+type ConfirmOperation = (preview: string, target?: FileApprovalTarget) => Promise<boolean>;
 export interface WritingSessions {
+  recordWrite(id: string, change: WorkspaceFileWrite): Promise<void>;
   profile(id: string): Promise<SessionSkillProfile>;
   append(id: string, kind: string, data: unknown): Promise<void>;
   entries(id: string, kind: string): Promise<unknown[]>;
@@ -35,6 +37,10 @@ export class WritingService {
   private readonly characterCards: CharacterCardService;
   constructor(workspaces: WorkspaceService, sessions: WritingSessions, characterCards: CharacterCardService) {
     this.workspaces = workspaces; this.sessions = sessions; this.characterCards = characterCards;
+  }
+  /** 专属写作工具的正式提交和通用文件工具共用会话对比记录。 */
+  trackWrites<T>(sessionId: string, operation: () => Promise<T>) {
+    return this.workspaces.withWriteObserver(change => this.sessions.recordWrite(sessionId, change), operation);
   }
   private async workspace(id: string) {
     const { workspaceId } = await this.sessions.profile(id);
@@ -125,6 +131,18 @@ export class WritingService {
       record.review = null; await persist(); return source;
     };
     return {
+      // 通用读取和搜索也遵守本章资料视图；正式创作目标仍由审校、候选和版本核对流程提交。
+      fileScope: {
+        visible: visiblePath,
+        read: (path: string, raw: string) => path.toLowerCase() === WORLDVIEW_PATH.toLowerCase()
+          ? context.sources.find(source => source.path === WORLDVIEW_PATH)?.content ?? '' : raw,
+        writable: (path: string) => {
+          const world = path.toLowerCase() === WORLDVIEW_PATH.toLowerCase();
+          if (world && context.chapterNumber) return false;
+          const managed = world || ['正文章节/', '角色卡/', '大纲/'].some(prefix => path.startsWith(prefix));
+          return !(managed && (input.chatChapter || context.target));
+        },
+      },
       record, start: persist, draftId, restoredParts: [...parts],
       /** 暂存单段到会话日志；严格连续编号，同号替换，确认前不写正式正文。 */
       writePart: async (part: number, content: string, signal?: AbortSignal) => {
@@ -144,10 +162,10 @@ export class WritingService {
         return { part, savedParts: parts.length, chars };
       },
       /** 确认卡展示实际将写入的章节，模型没有正文及目标路径参数可改。 */
-      importChapters: async (signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>) => {
+      importChapters: async (signal?: AbortSignal, confirm?: ConfirmOperation) => {
         const chapters = planChapterImport(importFiles);
         const list = chapters.map(chapter => chapter.title).join('\n');
-        if (!await confirm?.(`将以下 ${chapters.length} 章导入本书「正文章节」？\n${list}\n正文保留原文，已有不同正文的章节不会被覆盖。`)) return { status: 'declined' };
+        if (!await confirm?.(`将以下 ${chapters.length} 章导入本书「正文章节」？\n${list}\n正文保留原文，已有不同正文的章节不会被覆盖。`, { path: '正文章节/', operation: 'create', label: '导入章节' })) return { status: 'declined' };
         signal?.throwIfAborted();
         const result = await this.workspaces.importChapters(context.workspaceId, chapters, signal);
         return { ...result, view: { workspaceId: context.workspaceId, path: result.paths[0], mode: 'preview' } };
@@ -157,7 +175,7 @@ export class WritingService {
       read: capture,
       /** 面板工具每次只执行作者确认的动作，使用同一套正式文件及定稿用例。 */
       manuscript: async (input: { action: string; path?: string; content?: string; revisionId?: string }, signal?: AbortSignal,
-        confirm?: (question: string) => Promise<boolean>) => {
+        confirm?: ConfirmOperation) => {
         const { action, path, content, revisionId } = input;
         if (path && !visiblePath(path)) invalid('文稿不在本章适用范围。');
         if (path && !(path.startsWith('正文章节/') || path.startsWith('大纲/'))) invalid('请选择本书正文章节或大纲。');
@@ -173,7 +191,7 @@ export class WritingService {
           export_txt: '下载本章最新保存稿为 TXT', finalize: '留档为定稿', restore: '回退到指定定稿', discard: '丢弃浏览器中这篇文稿的未保存草稿' };
         if (!labels[action]) invalid('文稿操作无效。');
         if (!await confirm?.(labels[action] + (path ? ' · ' + path : '') + (revisionId ? '\n定稿 ID：' + revisionId : '')
-          + (action === 'edit' ? '\n拟提交全文：\n' + content : ''))) return { status: 'declined' };
+          + (action === 'edit' ? '\n拟提交全文：\n' + content : ''), path && ['finalize', 'restore', 'edit'].includes(action) ? { path, operation: 'edit', label: labels[action] } : undefined)) return { status: 'declined' };
         signal?.throwIfAborted();
         const id = context.workspaceId;
         if (!path) {
@@ -240,7 +258,7 @@ export class WritingService {
         return chapterProposal;
       },
       /** 仅聊天整章流程可以新建正文，真正提交依赖本次作者确认。 */
-      deliver: async (partCount: number, reason: string, signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>) => {
+      deliver: async (partCount: number, reason: string, signal?: AbortSignal, confirm?: ConfirmOperation) => {
         const target = context.target;
         if (!input.chatChapter || !target || delivered || blocked || record.review?.status !== 'clear')
           fail('WRITING_REVIEW_REQUIRED', '请先完成本章审校，每轮只交付一次。');
@@ -248,7 +266,7 @@ export class WritingService {
         const content = parts.join('\n\n');
         delivered = true;
         const mode = target.baseVersion === null ? '新建正文' : '提交重写候选';
-        if (!await confirm?.(`${mode} · ${target.path}\n${content}`)) return { status: 'declined' };
+        if (!await confirm?.(`${mode} · ${target.path}\n${content}`, { path: target.path, operation: target.baseVersion ? 'edit' : 'create', label: mode })) return { status: 'declined' };
         signal?.throwIfAborted();
         const references = context.sources.filter(s => s.path !== target.path && s.version !== null)
           .map(s => ({ path: s.path, version: s.version! }));
@@ -266,7 +284,7 @@ export class WritingService {
         return { status: 'candidate', proposalId: chapterProposal.id, view: { ...view, proposalId: chapterProposal.id } };
       },
       /** 交稿后的角色变化逐项确认，绑定章节正文和旧角色卡版本，避免手改后误写新阶段。 */
-      proposeCharacterChange: async (change: CharacterCardChangeRequest | MissingCardSuggestion, signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>) => {
+      proposeCharacterChange: async (change: CharacterCardChangeRequest | MissingCardSuggestion, signal?: AbortSignal, confirm?: ConfirmOperation) => {
         signal?.throwIfAborted();
         const path = change.evidence.path;
         const character = change.character.trim();
@@ -320,7 +338,7 @@ export class WritingService {
             + `对应情节（${path}）：\n${paragraph}\n\n`
             + `建议变化（${change.note || '无备注'}）：\n${content}\n\n接受后将从第 ${change.chapter} 章开始引用新阶段。`;
         }
-        if (!await confirm?.(question)) {
+        if (!await confirm?.(question, { path: '角色卡/' + change.character, operation: 'create', label: '保存角色卡新阶段' })) {
           signal?.throwIfAborted();
           if (missing) await this.workspaces.cardReminder(context.workspaceId, reminderKey, 'skipped');
           decided.add(key);
@@ -336,7 +354,7 @@ export class WritingService {
           throw error;
         }
       },
-      proposeRule: async (rule: WorldRule, signal?: AbortSignal, confirm?: (question: string) => Promise<boolean>) => {
+      proposeRule: async (rule: WorldRule, signal?: AbortSignal, confirm?: ConfirmOperation) => {
         signal?.throwIfAborted();
         if (blocked) fail('WRITING_NEEDS_INPUT', '请先澄清本轮冲突。');
         const evidence = rule.evidence;
@@ -349,17 +367,28 @@ export class WritingService {
         if (world.content.includes(section)) invalid('该设定已经保存。');
         if (context.task !== 'discuss' && !evidence?.path) invalid('章节变化须提供对应情节原文。');
         if (context.target && evidence?.path !== context.target.path) invalid('请引用本轮目标章节的原文。');
+        const chapterEvidence = evidence?.path && !oral;
+        const impact = rule.impact?.trim();
+        if (chapterEvidence && !impact) invalid('请说明该设定为何重要，以及对后续剧情的持续影响。');
+        if (input.chatChapter && !deliveredChapter) invalid('请先交付本章，再根据交稿内容提出世界观建议。');
         const draft = chapterProposal && chapterProposal.path === evidence?.path ? chapterProposal : undefined;
-        const source = evidence?.path && !oral && !draft ? await capture(evidence.path, signal) : undefined;
+        // 新章保存后仍保留开写时的资料快照；世界观取证单独绑定刚交付的正式版本。
+        let source: Pick<WritingSource, 'path' | 'version' | 'content'> | undefined;
+        if (evidence?.path && !oral && !draft) {
+          if (deliveredChapter?.path === evidence.path) {
+            source = await this.workspaces.peek(context.workspaceId, evidence.path);
+            checkVersion(source.version, deliveredChapter.version);
+          } else source = await capture(evidence.path, signal);
+        }
         if (evidence && !oral && (evidence.path === WORLDVIEW_PATH || !(draft?.content ?? source?.content)?.includes(evidence.quote))) invalid('设定变化的依据必须来自本章候选或已读正式文稿。');
         const result = await this.workspaces.createProposal(context.workspaceId, { path: WORLDVIEW_PATH, baseVersion: world.version,
           content: (world.content || '# 世界观') + '\n\n' + section + '\n',
           references: source?.version ? [{ path: source.path, version: source.version }] : [] },
-          { origin: { sessionId, requestId: record.id, reason: draft ? '请先采纳对应章节，再核对世界观变化。' : '请核对本条世界观设定。' },
+          { origin: { sessionId, requestId: record.id, reason: [draft ? '请先采纳对应章节，再核对世界观变化。' : '请核对本条世界观设定。', impact].filter(Boolean).join('\n') },
             signal, chapterProposalId: draft?.id });
         // 工具响应不回传整份作者档案，否则会将以后章节的设定带进当前会话。
         if (draft || !confirm) return { proposalId: result.id, section, status: 'pending', message: '请在小说工作台先采纳对应章节，再单独审阅世界观建议。' };
-        const accepted = await confirm('将这条设定保存到本书的《世界观》？\n' + section);
+        const accepted = await confirm('将这条设定保存到本书的《世界观》？\n' + section + (impact ? '\n\n对后续剧情的影响：' + impact : ''), { path: WORLDVIEW_PATH, operation: world.version ? 'edit' : 'create', label: '保存世界观设定' });
         signal?.throwIfAborted();
         for (const change of result.changes) await this.workspaces.decide(context.workspaceId, result.id, change.id, accepted ? 'accept' : 'reject');
         if (accepted) expectedWorldVersion = hash(result.content);
@@ -394,7 +423,7 @@ export function writingPrompt(context: WritingContext, chatChapter?: boolean): s
     + (context.sources.some(s => s.path === WORLDVIEW_PATH) ? '沿用已确认的世界观，不重复首次引导。' :
       '本书尚无正式世界观。作者聊设定时，从其题材出发追问一个与开篇有关的问题。作者可先交旧稿或稍后再谈。')
     + '作者给出具体设定后，简短复述，用 propose_world_rule 提出供作者采纳的设定。区分生效章节和主角得知章节；尚未决定何时揭示可传 null。仅作者采纳才正式生效。'
-    + '章节交稿后如确有规则变化或新发现，用 propose_world_rule 引用本章原句提出建议，说明原因。已有主题沿用原名称。'
+    + '世界观默认在初始化时整理，交稿后默认沿用。只在大阶段交替且世界规则发生持续变化，或正文明确揭示了尚未记录、会约束后续剧情的重要背景时提出建议。阶段结束本身、普通情节推进、角色变化、局部见闻、已记录规则的重述均不发起建议。重要背景补充仍按原生效章和实际揭示章记录。调用 propose_world_rule 时引用交付原句，并用 impact 写明对后续剧情的持续影响。已有主题沿用原名称，由作者决定是否采纳。'
     + '角色卡资料按当前章节引用。整理角色时，性格特点必须分为表征、内在和描写，愿景必须分为明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。建卡或作者确认后补录角色卡时使用 save_character_card。整章交稿后如发现角色变化，每次只处理一个角色，提取简短关键词（例如黑化、失去双亲、获得神力），用 propose_character_change 展示原阶段、对应情节和细化后的五栏建议，作者确认后才保存；不能把建议直接当作正式角色卡。重写候选在作者采纳后可于后续对话中复核。工具返回 needs_review 时，依据返回的最新正文重新判断，仍有变化则重新提出并等待确认。无变化时简要说明原因。交稿时也检查对后续剧情有影响却缺卡的人物，包含有稳定称呼的无名人物。仅被提及或路过的人略过。核对已知别名，身份不确定先问作者。用 suggest_character_card 提醒，跳过后仅在出现新的重要情节时再提。'
     + '作者要求操作右侧工作区（打开、预览、修改、定稿、回退等）时，使用 manuscript_workspace，并等作者确认。单章 TXT 导出使用 export_txt，按本书章节清单确定 path。下载由客户端完成。作者拒绝或跳过时不得换工具绕过。'
     + (context.chapterNumber ? `当前写第${context.chapterNumber}章。主角对白与内心只使用本章已知的信息，即使前次聊天讨论过后期设定。\n` : '\n')

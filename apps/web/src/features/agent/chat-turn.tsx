@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { CITATION_LINK_PREFIX } from '@plotloom/contracts';
 import { UserMessageBubble } from '@plotloom/ui/user-message-bubble';
 import { AgentActivityHeader } from '@plotloom/ui/agent-activity-header';
@@ -6,6 +6,7 @@ import { ExecutionTimeline } from '@plotloom/ui/execution-timeline';
 import { MarkdownRenderer } from '@plotloom/ui/markdown';
 import { MessageActions } from '@plotloom/ui/message-actions';
 import { FileChangeSummary } from '@plotloom/ui/file-change-summary';
+import { AttachmentCard } from '@plotloom/ui/attachment-card';
 import type { OpenTurnChanges } from '../workspace/chat-workspace';
 import { MessageStatus } from '@plotloom/ui/message-status';
 import { CitationMarker } from '@plotloom/ui/citation-marker';
@@ -14,6 +15,8 @@ import { AttachmentPreview } from './attachment-preview';
 import type { ChatTurn as Turn } from './chat-turns';
 import { notifyRequestError } from '../../utils/feedback';
 import type { OpenCitations } from '../workspace/citation-sources-page';
+import type { OpenDeliverable } from '../workspace/deliverable-page';
+import { deliverableLinks } from './deliverable-links';
 
 /** 过程说明可能包含未完成的回答增量；先隐藏保留标记，等待最终校验。 */
 function hidePendingCitation(href: string) {
@@ -21,19 +24,26 @@ function hidePendingCitation(href: string) {
 }
 
 /** 单轮业务组合：来源、重试目标来自公开契约，通用组件不感知会话或后端。 */
-export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChanges }: {
+export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChanges, onOpenDeliverable }: {
   turn: Turn; onRetry?: () => Promise<void>; busy: boolean; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
+  onOpenDeliverable: OpenDeliverable;
 }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const citations = turn.citations;
   const fileChanges = turn.fileChanges;
-  /** 仅渲染后端校验的正文标记；无效标记省略，普通 Markdown 链接照常渲染。 */
-  const renderCitation = useCallback((href: string) => {
+  const deliverables = useMemo(() => deliverableLinks(turn.answer), [turn.answer]);
+  /** 文件链接与卡片共用工作区入口，引用标记继续由后端校验记录解析。 */
+  const renderLink = useCallback((href: string, children: ReactNode) => {
+    const file = deliverables.resolve(href);
+    if (file) return <a href={href} title={file.path + '（Shift + 左键在外部打开）'} onClick={event => {
+      event.preventDefault();
+      onOpenDeliverable(file, event.shiftKey && event.detail > 0);
+    }}>{children}</a>;
     if (!href.startsWith(CITATION_LINK_PREFIX)) return undefined;
     const source = citations.get(href.slice(CITATION_LINK_PREFIX.length));
     return source ? <CitationMarker index={source.index} sourceTitle={source.title}
       onActivate={() => onOpenCitations(citations, source.id)} /> : null;
-  }, [citations, onOpenCitations]);
+  }, [citations, deliverables, onOpenCitations, onOpenDeliverable]);
   /** 文件行和整体入口共用当前轮次范围，只改变初始展开的写入记录。 */
   function viewChanges(path?: string) {
     if (!fileChanges) return;
@@ -58,7 +68,14 @@ export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChang
         <ExecutionTimeline items={turn.process} streaming={working} phase={turn.phase} elapsedSeconds={turn.user?.elapsedSeconds}
           height={192} renderMessageLink={hidePendingCitation} />
       </AgentActivityHeader>
-      {turn.answer ? <MarkdownRenderer content={turn.answer} renderLink={renderCitation} /> : null}
+      {turn.answer ? <MarkdownRenderer content={turn.answer} renderLink={renderLink} transformLink={deliverables.transform} /> : null}
+      {deliverables.files.length ? <section className="plotloom-chat__deliverables" aria-label="交付产物">
+        <div className="plotloom-chat__deliverable-list">
+          {deliverables.files.map(file => <AttachmentCard key={file.path} name={file.name}
+            openHint={file.path + '（Shift + 左键在外部打开）'}
+            onOpen={event => onOpenDeliverable(file, event.shiftKey && event.detail > 0)} />)}
+        </div>
+      </section> : null}
       {fileChanges?.length ? <div className="plotloom-chat__file-summary">
         <FileChangeSummary files={fileChanges} onViewChanges={viewChanges} onOpenFile={viewChanges} />
       </div> : null}

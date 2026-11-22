@@ -73,7 +73,7 @@ export function FileChangesPage({ sessionId, revision, writeIds, selection = noS
       {changes?.length ? <ul>{changes.map(change => <FileChange key={change.id} change={change} endpoint={endpoint}
         open={expansion.openIds.has(change.id)} onToggle={() => toggleWrite(change.id)} rowRef={change.id === selectedId ? selectedRow : undefined} />)}</ul>
         : <p className="plotloom-file-changes__empty" role={error ? 'alert' : 'status'}>
-          {!sessionId ? '打开项目聊天后查看 Agent 的文件修改。' : error || (changes ? (writeIds ? '本轮暂无可查看的文件记录。' : '这个聊天还没有成功写入的文件。') : '正在读取文件修改记录…')}
+          {!sessionId ? '打开聊天后查看 Agent 的文件修改。' : error || (changes ? (writeIds ? '本轮暂无可查看的文件记录。' : '这个聊天还没有成功写入的文件。') : '正在读取文件修改记录…')}
         </p>}
   </FileChangesFrame>;
 }

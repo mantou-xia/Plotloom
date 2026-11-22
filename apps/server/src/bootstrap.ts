@@ -2,6 +2,8 @@ import Fastify, { type FastifyError } from 'fastify';
 import { AgentService, AgentError, publicError, type AgentOptions } from '@plotloom/agent-pi';
 import { toolDirectory } from './tool-directory.ts';
 import { registerRoutes } from './routes/agent.ts';
+import { registerDeliverableRoutes } from './routes/deliverables.ts';
+import { openDeliverableExternally } from './platform/open-deliverable.ts';
 import { registerWorkspaceRoutes } from './routes/workspaces.ts';
 import { WorkspaceService } from '@plotloom/application';
 import { FileWorkspaceStore } from '@plotloom/storage';
@@ -18,6 +20,7 @@ import { FileAttachmentStore } from '@plotloom/storage/sources';
 import { registerSourceRoutes } from './routes/sources.ts';
 import { FileProjectStore } from '@plotloom/storage/projects';
 import { registerProjectRoutes } from './routes/projects.ts';
+import { openRegisteredFolder } from './platform/open-folder.ts';
 import { createFolderPicker, type FolderPicker } from './platform/folder-picker.ts';
 import { FileAgentProfile } from '@plotloom/storage/agent-profile';
 import { registerAgentProfileRoutes } from './routes/agent-profile.ts';
@@ -25,8 +28,11 @@ import { CharacterCardService } from '@plotloom/application/character-cards';
 import { registerCharacterCardRoutes } from './routes/character-cards.ts';
 
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
-export async function buildServer(options: AgentOptions & { logger?: boolean }, dependencies: { folderPicker?: FolderPicker } = {}) {
-  const workspaces = new WorkspaceService(new FileWorkspaceStore(options.dataDir));
+export async function buildServer(options: AgentOptions & { logger?: boolean }, dependencies: {
+  folderPicker?: FolderPicker; openFolder?: typeof openRegisteredFolder; openDeliverable?: typeof openDeliverableExternally;
+} = {}) {
+  const workspaces: WorkspaceService = new WorkspaceService(new FileWorkspaceStore(options.dataDir),
+    (origin, change) => agent.recordFileWrite(origin.sessionId, change, origin.requestId));
   const characterCards = new CharacterCardService(workspaces);
   const profiles = new FileAgentProfile(options.dataDir);
   const directory = toolDirectory(options);
@@ -35,6 +41,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
   let sources: MessageSourceService;
   const attachments = new FileAttachmentStore(options.dataDir);
   const agent = await AgentService.create({ ...options, removeAttachments: id => attachments.removeSession(id), resolveSkills: (id, explicit) => skills.snapshot(id, explicit),
+    resolveNovelRoot: async id => (await workspaces.get(id)).root,
     resolveAgentProfile: () => profiles.read(),
     completeAgentBootstrap: async (input, signal) => (await profiles.update(input, { signal })) !== null,
     resolveSources: (id, text, input) => sources.resolve(id, text, input),
@@ -51,6 +58,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
     idle: (id, operation) => agent.withIdleSession(id, operation),
   });
   writing = new WritingService(workspaces, { profile: id => agent.getSkillProfile(id),
+    recordWrite: (id, change) => agent.recordFileWrite(id, change),
     append: (id, kind, data) => agent.appendMetadata(id, kind, data), entries: (id, kind) => agent.metadata(id, kind),
     active: async id => (await agent.getSession(id)).activity === 'generating' }, characterCards);
   skills = new SkillService(new FileSkillRepository(options.dataDir), {
@@ -81,12 +89,15 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
     }
   });
   registerRoutes(app, agent);
+  registerDeliverableRoutes(app, (id, path) => agent.resolveDeliverable(id, path),
+    dependencies.openDeliverable ?? openDeliverableExternally);
   registerAgentProfileRoutes(app, profiles);
   // 项目与技能共享原生选择器，防止并发打开多个系统窗口。
   const folderPicker = dependencies.folderPicker ?? createFolderPicker();
-  registerProjectRoutes(app, new FileProjectStore(options.dataDir), folderPicker);
+  const openFolder = dependencies.openFolder ?? openRegisteredFolder;
+  registerProjectRoutes(app, new FileProjectStore(options.dataDir), folderPicker, openFolder);
   registerSourceRoutes(app, sources);
-  registerWorkspaceRoutes(app, workspaces);
+  registerWorkspaceRoutes(app, workspaces, openFolder);
   registerCharacterCardRoutes(app, characterCards);
   registerSkillRoutes(app, skills, folderPicker, directory.tools);
   registerWritingRoutes(app, agent, writing, workspaces);

@@ -6,6 +6,12 @@ import { Type } from 'typebox';
 import type { ToolApproval } from '@plotloom/contracts';
 import type { ApprovalOutcome } from './tool-approvals.ts';
 
+/** 专项任务可提供本轮资料视图，通用读写仍使用同一目录约束和一次性审批。 */
+export interface FileToolScope {
+  visible(path: string): boolean;
+  read(path: string, content: string): string;
+  writable(path: string): boolean;
+}
 export const PROJECT_TOOLS = ['read', 'grep', 'find', 'ls', 'edit', 'write'];
 const maxFileBytes = 256 * 1024;
 const ignoredDirectory = new Set(['node_modules', 'dist', 'build']);
@@ -13,7 +19,7 @@ const filePath = Type.String({ minLength: 1, maxLength: 1024 });
 const content = Type.String({ maxLength: maxFileBytes });
 const limit = Type.Optional(Type.Integer({ minimum: 1, maximum: 200 }));
 export type WrittenProjectFile = Pick<ToolApproval, 'path' | 'operation'> & { before: string; after: string };
-type Approval = (callId: string, request: Pick<ToolApproval, 'operation' | 'path' | 'preview'>, signal?: AbortSignal) => Promise<ApprovalOutcome>;
+export type Approval = (callId: string, request: Pick<ToolApproval, 'operation' | 'path' | 'preview' | 'label'>, signal?: AbortSignal, requireDecision?: boolean) => Promise<ApprovalOutcome>;
 const rejected = { deny: '用户拒绝', cancelled: '请求取消', expired: '审批过期' };
 
 function contains(root: string, path: string) {
@@ -78,10 +84,12 @@ const result = (text: string) => ({ content: [{ type: 'text' as const, text }], 
 const excerpt = (text: string) => text.length > 1600 ? text.slice(0, 1600) + '\n（其余内容已省略）' : text;
 
 /** 写入预览取自授权时点。获批后重新校验路径和内容，拒绝在变更后的文件上复用决定。 */
-export function createProjectTools(root: string, privateRoot: string, approve: Approval, recordWrite: (change: WrittenProjectFile) => void) {
+export function createProjectTools(root: string, privateRoot: string, approve: Approval, recordWrite: (change: WrittenProjectFile) => void, scope?: FileToolScope) {
   async function mutate(callId: string, input: string, proposed: (old: string | undefined) => string, editPreview: string | undefined, signal?: AbortSignal) {
     const edit = editPreview !== undefined;
     const target = projectTarget(root, privateRoot, input, !edit);
+    const relativePath = target.tail.replaceAll('\\', '/');
+    if (scope && (!scope.visible(relativePath) || !scope.writable(relativePath))) throw new Error('请通过本轮写作流程提交这份文稿。');
     const parent = lstatSync(dirname(target.path));
     const file = lstatSync(target.path, { throwIfNoEntry: false });
     const before = file ? readText(target.path) : undefined;
@@ -117,12 +125,18 @@ export function createProjectTools(root: string, privateRoot: string, approve: A
     return result('已写入 ' + target.tail);
   }
 
+  function readVisible(entry: { path: string; tail: string }) {
+    const path = entry.tail.replaceAll('\\', '/');
+    if (scope && !scope.visible(path)) throw new Error('资料不在本轮可读范围。');
+    const content = readText(entry.path);
+    return scope ? scope.read(path, content) : content;
+  }
   const directory = (input?: string) => projectTarget(root, privateRoot, input ?? '.').path;
   return [
     defineTool({ name: 'read', label: '读取项目文件', description: '读取项目内 UTF-8 文本。', parameters: Type.Object({
       path: filePath, offset: Type.Optional(Type.Integer({ minimum: 1 })), limit,
     }), async execute(_id, input) {
-      const lines = readText(projectTarget(root, privateRoot, input.path).path).split('\n');
+      const lines = readVisible(projectTarget(root, privateRoot, input.path)).split('\n');
       const offset = (input.offset ?? 1) - 1;
       return result(lines.slice(offset, offset + (input.limit ?? 200)).join('\n').slice(0, 30000));
     } }),
@@ -130,6 +144,7 @@ export function createProjectTools(root: string, privateRoot: string, approve: A
       async execute(_id, input) {
         const entries = [];
         for (const entry of walk(root, privateRoot, directory(input.path), false)) {
+          if (scope && !scope.visible(entry.tail.replaceAll('\\', '/'))) continue;
           entries.push(entry.tail + (entry.directory ? '/' : ''));
           if (entries.length >= (input.limit ?? 100)) break;
         }
@@ -140,6 +155,7 @@ export function createProjectTools(root: string, privateRoot: string, approve: A
         const entries = [];
         for (const entry of walk(root, privateRoot, directory(input.path), true)) {
           const path = entry.tail.replaceAll('\\', '/');
+          if (scope && !scope.visible(path)) continue;
           if (!entry.directory && (matchesGlob(path, input.pattern) || matchesGlob(path.split('/').at(-1)!, input.pattern))) entries.push(path);
           if (entries.length >= (input.limit ?? 100)) break;
         }
@@ -155,7 +171,7 @@ export function createProjectTools(root: string, privateRoot: string, approve: A
       for (const entry of files) {
         if (entry.directory || (input.glob && !matchesGlob(entry.tail.replaceAll('\\', '/'), input.glob))) continue;
         let text;
-        try { text = readText(entry.path); } catch { continue; }
+        try { text = readVisible(entry); } catch { continue; }
         for (const [index, line] of text.split('\n').entries()) {
           if ((input.ignoreCase ? line.toLowerCase() : line).includes(pattern)) matches.push(`${entry.tail}:${index + 1}: ${line.slice(0, 300)}`);
           if (matches.length >= (input.limit ?? 60)) return result(matches.join('\n'));

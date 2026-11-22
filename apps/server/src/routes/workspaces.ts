@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { WorkspaceService } from '@plotloom/application';
 import { NOVEL_COVER_IDS, type ExportRequest, type NovelShelfUpdate, type ProposalRequest, type SaveDocumentRequest } from '@plotloom/contracts/workspaces';
 
+import { revealManuscript, recycleManuscript } from '../platform/manuscript-files.ts';
+
 const path = { type: 'string', minLength: 1, maxLength: 500 };
 const text = { type: 'string', maxLength: 500000 };
 const id = { type: 'string', pattern: '^[a-zA-Z0-9-]{1,80}$' };
@@ -15,16 +17,24 @@ type WorkspaceParams = { workspaceId: string };
 type ProposalParams = WorkspaceParams & { proposalId: string };
 
 /** HTTP 仅校验协议并调用用例；任何界面均可通过这些接口独立操作 Markdown 资产。 */
-export function registerWorkspaceRoutes(app: FastifyInstance, service: WorkspaceService): void {
+export function registerWorkspaceRoutes(app: FastifyInstance, service: WorkspaceService, openFolder: (path: string) => Promise<{ opened: boolean }>): void {
   app.get('/api/workspaces', async () => ({ workspaces: await service.list() }));
   app.post<{ Body: { title: string; root: string } }>('/api/workspaces', {
     schema: { body: obj({ title: { type: 'string', minLength: 1, maxLength: 200, pattern: '\\S' }, root: { type: 'string', minLength: 1, maxLength: 2000 } }) },
   }, async (req, reply) => reply.code(201).send(await service.create(req.body)));
   app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId', { schema: { params } }, (req) => service.get(req.params.workspaceId));
+  app.post<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId/open-folder', { schema: { params, body: obj({}) } },
+    async req => openFolder((await service.get(req.params.workspaceId)).root));
   app.put<{ Params: WorkspaceParams; Body: NovelShelfUpdate }>('/api/workspaces/:workspaceId/shelf', {
-    schema: { params, body: { ...obj({ pinned: { type: 'boolean' }, coverId: { type: 'string', enum: NOVEL_COVER_IDS } }, []), minProperties: 1 } },
+    schema: { params, body: { ...obj({ title: { type: 'string', minLength: 1, maxLength: 200, pattern: '\\S' }, sidebarHidden: { type: 'boolean' }, pinned: { type: 'boolean' }, coverId: { type: 'string', enum: NOVEL_COVER_IDS } }, []), minProperties: 1 } },
   }, req => service.updateShelf(req.params.workspaceId, req.body));
   app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId/documents', { schema: { params } }, (req) => service.listDocuments(req.params.workspaceId));
+  app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId/document-entries', { schema: { params } }, req => service.listEntries(req.params.workspaceId));
+  app.post<{ Params: WorkspaceParams; Body: { path: string } }>('/api/workspaces/:workspaceId/document/reveal', { schema: { params, body: bodyPath } },
+    req => service.revealDocument(req.params.workspaceId, req.body.path, revealManuscript));
+  app.post<{ Params: WorkspaceParams; Body: { path: string; baseVersion: string } }>('/api/workspaces/:workspaceId/chapter/recycle', {
+    schema: { params, body: obj({ path, baseVersion: { type: 'string', pattern: '^[a-f0-9]{64}$' } }) },
+  }, req => service.recycleChapter(req.params.workspaceId, req.body.path, req.body.baseVersion, recycleManuscript));
   app.get<{ Params: WorkspaceParams }>('/api/workspaces/:workspaceId/manuscript-stats', { schema: { params } },
     req => service.manuscriptStats(req.params.workspaceId));
   app.post<{ Params: WorkspaceParams; Body: { path: string } }>('/api/workspaces/:workspaceId/document/read', { schema: { params, body: bodyPath } }, (req) => service.read(req.params.workspaceId, req.body.path));

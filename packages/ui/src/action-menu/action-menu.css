@@ -22,6 +22,8 @@
   cursor: pointer;
   outline: none;
 }
+.pl-action-menu [role='separator'] { height: 1px; margin: 4px 0; background: var(--pl-border, #ddd); }
+.pl-action-menu__item[data-disabled] { color: var(--pl-text-muted); cursor: default; opacity: .6; }
 .pl-action-menu__item > span { display: inline-flex; flex: 0 0 auto; }
 .pl-action-menu__item svg { width: 16px; height: 16px; }
 .pl-action-menu__item[data-highlighted] { background: var(--pl-surface-muted, #f6f6f7); }

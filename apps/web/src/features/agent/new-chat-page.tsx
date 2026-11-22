@@ -41,10 +41,10 @@ function useNewChatModels(modelRevision: number) {
 }
 
 /** 页面、背景与编辑器持续挂载；草稿版本只更新数据，不再重建任何可见控件。 */
-export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, workspaceId, workspaceTitle, onStarted, renderProjectControl }: {
+export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, workspaceId, workspaceTitle, novelRoot, onStarted, renderProjectControl }: {
   modelRevision?: number;
   draftRevision: number; projectPath: string;
-  workspaceId: string | null; workspaceTitle?: string;
+  workspaceId: string | null; workspaceTitle?: string; novelRoot?: string;
   onStarted: (session: SessionSummary) => void; renderProjectControl: (disabled: boolean) => ReactNode;
 }) {
   const modelState = useNewChatModels(modelRevision);
@@ -71,7 +71,7 @@ export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, wor
       <p>{workspaceId && unstartedWorld === workspaceId ? '故事开头，主角生活在一个怎样的世界？可以先讲一条规则，或把已有的章节发给我。'
         : workspaceId || root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
     </div>
-    <NewChatDraft draftRevision={draftRevision} projectPath={projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
+    <NewChatDraft draftRevision={draftRevision} projectPath={workspaceId ? novelRoot ?? '' : projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
       modelState={modelState} pending={pending} setPending={setPending} onStarted={onStarted} />
   </section>;
 }
@@ -127,7 +127,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
         const path = '/api/sessions/' + encodeURIComponent(session.id);
         // 附件可能已提前创建会话，发送前以当前草稿权限保存配置。
         await requestJson(path + '/config', 'PUT', { provider: chosen!.provider, model: chosen!.id, thinkingLevel: thinking,
-          ...(workspaceId ? {} : { projectApprovalMode }) });
+          projectApprovalMode });
         if (!mounted.current) return;
         const abort = new AbortController();
         stream.current = abort;
@@ -157,11 +157,11 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
         thinkingOptions: (chosen?.thinkingLevels ?? ['off']).map(value => ({ value, label: thinkingLabels[value] })),
         onModelChange: key => { const model = models.find(item => modelKey(item.provider, item.id) === key); setSelected(key); setThinking(selectThinkingLevel(model?.thinkingLevels, thinking)); },
         onValueChange: value => setThinking(value as ThinkingLevel),
-        permissionOptions: root && !workspaceId ? 'project' : false,
+        permissionOptions: root || workspaceId ? 'project' : false,
         permission: projectApprovalMode === 'full_access' ? 'full_access' : 'default',
         onPermissionChange: value => setApproval({ draftRevision, draftKey, mode: value === 'full_access' ? 'full_access' : 'required' }),
         advancedMentions: false, projectPath: root || undefined, skills: [],
-        onSearchFiles: root ? async query => { const session = await ensureSession(); return requestJson<ProjectFiles>('/api/sessions/' + encodeURIComponent(session.id) + '/project-files', 'POST', { query }); } : undefined,
+        onSearchFiles: root || workspaceId ? async query => { const session = await ensureSession(); return requestJson<ProjectFiles>('/api/sessions/' + encodeURIComponent(session.id) + '/project-files', 'POST', { query }); } : undefined,
         maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown', attachmentDropTarget,
         onAttachmentUpload: async input => {
           if (!ATTACHMENT_TYPES.includes(input.mimeType as typeof ATTACHMENT_TYPES[number])) throw new Error('支持 PNG、JPEG、WebP、TXT 和 Markdown。');

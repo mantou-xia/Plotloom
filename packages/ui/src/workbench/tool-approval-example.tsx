@@ -7,9 +7,9 @@ export function ToolApprovalExample({ state, style, onAction }: {
   style: CSSProperties;
   onAction: (action: string) => void;
 }) {
-  const [status, setStatus] = useState<ToolApprovalState>(state === 'default' || state === 'submitting' ? 'pending' : state as ToolApprovalState);
+  const [status, setStatus] = useState<ToolApprovalState>(state === 'default' || state === 'long' || state === 'submitting' ? 'pending' : state as ToolApprovalState);
   return <ToolApprovalCard style={style} operation="修改项目文件" path="draft/第一章.md"
-    preview={'− 雨停了，她推开门。\n+ 雨势渐歇，她轻轻推开门。'}
+    preview={state === 'long' ? '雨势渐歇，渡船靠岸。\n'.repeat(90) : '− 雨停了，她推开门。\n+ 雨势渐歇，她轻轻推开门。'}
     state={status} submitting={state === 'submitting'} onDecision={decision => {
       setStatus(decision === 'approve' ? 'approved' : 'denied');
       onAction(decision === 'approve' ? '允许一次' : '拒绝');

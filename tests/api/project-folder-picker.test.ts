@@ -12,7 +12,8 @@ test('文件夹选择返回路径/取消，HTTP 断连与服务关闭通知选�
   let started: () => void = () => {};
   let closed = false;
   const app = fastify();
-  registerProjectRoutes(app, { list: async () => [], create: async () => { throw new Error('unused'); } }, {
+  const unused = async (): Promise<never> => { throw new Error('选择器测试不应调用项目操作'); };
+  registerProjectRoutes(app, { list: async () => [], create: unused, update: unused, get: unused }, {
     select: async nextSignal => {
       signal = nextSignal; started();
       if (mode === 'selected') return { path: 'D:\\项目' };
@@ -20,7 +21,7 @@ test('文件夹选择返回路径/取消，HTTP 断连与服务关闭通知选�
       return new Promise(resolve => nextSignal.addEventListener('abort', () => resolve({ path: null }), { once: true }));
     },
     close: () => { closed = true; },
-  });
+  }, unused);
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   const select = (requestSignal?: AbortSignal) => fetch(address + '/api/projects/select-folder', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: requestSignal,

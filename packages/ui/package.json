@@ -40,6 +40,7 @@
     "./markdown-reader-frame": "./src/workspace-frames/markdown-reader-frame.tsx",
     "./browser-frame": "./src/workspace-frames/browser-frame.tsx",
     "./manuscript-frame": "./src/workspace-frames/manuscript-frame.tsx",
+    "./document-list-item": "./src/document-list/document-list-item.tsx",
     "./document-editor": "./src/document-editor/document-editor.tsx",
     "./image-viewer-frame": "./src/workspace-frames/image-viewer-frame.tsx",
     "./citation-sources-frame": "./src/workspace-frames/citation-sources-frame.tsx",

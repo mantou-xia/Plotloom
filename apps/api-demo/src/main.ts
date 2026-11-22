@@ -14,7 +14,7 @@ interface Run {
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
 let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('sessions.create')!;
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
-const assetParameters: Record<string, string> = Object.fromEntries(['workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
+const assetParameters: Record<string, string> = Object.fromEntries(['projectId', 'workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
 function setAssetParameter(name: string, value: string) {
   assetParameters[name] = value; sessionStorage.setItem(`plotloom.demo.${name}`, value);
   const input = byId<HTMLInputElement>(`path-${name}`); if (input) input.value = value;
@@ -257,6 +257,7 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
         if (endpoint.id === 'attachments.upload' && targetSession === sessionId && typeof run.body.id === 'string') setAssetParameter('attachmentId', run.body.id);
         if (endpoint.id === 'skills.import-folder' && isObject(run.body.skill) && typeof run.body.skill.id === 'string') setAssetParameter('skillId', run.body.skill.id);
         if (['skills.create', 'skills.copy'].includes(endpoint.id) && typeof run.body.id === 'string') setAssetParameter('skillId', run.body.id);
+        if (endpoint.id === 'projects.create' && typeof run.body.id === 'string') setAssetParameter('projectId', run.body.id);
         if (endpoint.id === 'workspaces.create' && typeof run.body.id === 'string') setAssetParameter('workspaceId', run.body.id);
         if (endpoint.id === 'proposals.create' && typeof run.body.id === 'string') {
           setAssetParameter('proposalId', run.body.id);

@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import type { NovelManuscriptStats, Workspace } from '@plotloom/contracts/workspaces';
+import { useEffect, useState } from 'react';
+import type { DocumentListEntry, NovelManuscriptStats, Workspace } from '@plotloom/contracts/workspaces';
 import type { CharacterCardListResponse, CharacterCardStage } from '@plotloom/contracts/character-cards';
 import { WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import { ArrowLeft, ChevronRight, Globe2, RefreshCw } from 'lucide-react';
 import { Button } from '@plotloom/ui/button';
+import { useManuscriptDirectory } from './manuscript-directory';
 import { PrimaryTabPanel, PrimaryTabs } from '@plotloom/ui/primary-tabs';
 import { ManuscriptPaper } from '@plotloom/ui/manuscript-frame';
 import { requestJson } from '../../utils/http';
@@ -18,7 +19,7 @@ const sections = [
 ] as const;
 const characters = sections[2].value;
 const number = new Intl.NumberFormat('zh-CN');
-type Library = { paths: string[]; cards: CharacterCardStage[] };
+type Library = { entries: Map<string, DocumentListEntry>; cards: CharacterCardStage[] };
 
 /** 目录和编辑器分别滚动。选中文稿的草稿、版本与保存继续由共用编辑器管理。 */
 export function NovelWorkbench({ workspace, onBack }: { workspace: Workspace; onBack: () => void }) {
@@ -45,11 +46,11 @@ export function NovelWorkbench({ workspace, onBack }: { workspace: Workspace; on
         notifyRequestError(cause, 'novel-stats');
       });
     void Promise.all([
-      requestJson<{ paths: string[] }>(base + '/documents', 'GET', undefined, signal),
+      requestJson<{ entries: DocumentListEntry[] }>(base + '/document-entries', 'GET', undefined, signal),
       requestJson<CharacterCardListResponse>(base + '/character-cards', 'GET', undefined, signal),
     ]).then(([files, stages]) => {
       if (signal.aborted) return;
-      setLibrary({ paths: files.paths, cards: stages.cards });
+      setLibrary({ entries: new Map(files.entries.map(entry => [entry.path, entry])), cards: stages.cards });
       setFailed(false);
     }).catch(cause => {
       if (signal.aborted) return;
@@ -59,7 +60,7 @@ export function NovelWorkbench({ workspace, onBack }: { workspace: Workspace; on
     return () => controller.abort();
   }, [base, revision]);
 
-  const paths = library?.paths ?? [];
+  const paths = [...(library?.entries.keys() ?? [])];
   const listed = paths.filter(file => file.startsWith(section)).sort(compareChapters);
   const groups = Map.groupBy(library?.cards.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || b.path.localeCompare(a.path)) ?? [],
     card => card.character);
@@ -81,9 +82,12 @@ export function NovelWorkbench({ workspace, onBack }: { workspace: Workspace; on
   function toggleGroup(name: string, openGroup: boolean) {
     setExpanded(current => ({ ...current, [name]: !openGroup }));
   }
-  function row(file: string, label: ReactNode) {
-    return <Button size="sm" variant="ghost" aria-current={selected === file ? 'true' : undefined}
-      onClick={() => open(file)}>{label}</Button>;
+  const directory = useManuscriptDirectory(base, removed => {
+    if (path === removed) open('');
+    refresh();
+  });
+  function row(file: string, label: string, category: string, note?: string) {
+    return directory.row({ path: file, title: label, category, selected: selected === file, onSelect: () => open(file), entry: library?.entries.get(file), note });
   }
   return <section className="plotloom-novel-management" aria-label={workspace.title}>
     <aside className="plotloom-novel-directory" aria-label="小说文稿">
@@ -101,13 +105,11 @@ export function NovelWorkbench({ workspace, onBack }: { workspace: Workspace; on
                 <Button size="sm" variant="ghost" className="plotloom-novel-character-toggle" aria-expanded={isOpen}
                   startIcon={<ChevronRight />} onClick={() => toggleGroup(name, isOpen)}>{name}</Button>
                 {isOpen && <ul className="plotloom-novel-character-stages">{cards.map(card => <li key={card.path}>
-                  {row(card.path, <span className="plotloom-novel-stage-label">第 {card.chapter} 章起
-                    {card.note && <span className="plotloom-novel-stage-tag" title={card.note}>{card.note}</span>}
-                  </span>)}
+                  {row(card.path, '第 ' + card.chapter + ' 章起', name, card.note)}
                 </li>)}</ul>}
               </li>;
             })}</ul> : <p role="status">{failed ? '读取失败，请刷新重试。' : library ? '暂无角色卡' : '正在读取…'}</p>
-          ) : listed.length ? <ul>{listed.map(file => <li key={file}>{row(file, file.slice(section.length).replace(/\.md$/i, ''))}</li>)}</ul>
+          ) : listed.length ? <ul>{listed.map(file => <li key={file}>{row(file, file.slice(section.length).replace(/\.md$/i, ''), item.label)}</li>)}</ul>
             : <p role="status">{failed ? '读取失败，请刷新重试。' : library ? '暂无' + item.label : '正在读取…'}</p>)}
         </PrimaryTabPanel>)}
         <footer className="plotloom-novel-directory-footer">
@@ -119,6 +121,7 @@ export function NovelWorkbench({ workspace, onBack }: { workspace: Workspace; on
         </footer>
       </PrimaryTabs>
     </aside>
+    {directory.dialog}
     <div className="plotloom-novel-management-editor">
       {selected ? <ManuscriptEditor key={selected} workspaceId={workspace.id} base={base} path={selected}
         title={title} reload={editorRevision} onSaved={refreshLibrary} /> :

@@ -1,4 +1,4 @@
-import { mkdir, rmdir, readFile, readdir, realpath, lstat, rename, rm, writeFile, cp } from 'node:fs/promises';
+import { open, mkdir, rmdir, readFile, readdir, realpath, lstat, rename, rm, writeFile, cp } from 'node:fs/promises';
 import { isAbsolute, join, resolve, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -109,6 +109,29 @@ export class FileWorkspaceStore implements WorkspaceStore {
       }
       return current;
     } catch (e) { if (isMissing(e)) throw new WorkspaceError('WORKSPACE_UNAVAILABLE', '工作区目录不可用，请检查本机目录。', 409); throw e; }
+  }
+  async fileLocation(state: WorkspaceState, path: string) {
+    const absolute = await this.target(state, path);
+    try { if (!(await lstat(absolute)).isFile()) missing(); }
+    catch (error) { if (isMissing(error)) missing(); throw error; }
+    return absolute;
+  }
+  /** 只读文件开头供目录预览，大目录不传整书正文，也不为列表读取创建历史快照。 */
+  async listEntries(state: WorkspaceState) {
+    const entries = [];
+    for (const path of await this.files(state)) {
+      const absolute = await this.target(state, path);
+      const file = await open(absolute, 'r').catch(e => { if (!isMissing(e)) throw e; });
+      if (!file) continue;
+      try {
+        const info = await file.stat();
+        const buffer = Buffer.alloc(2048);
+        const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+        const excerpt = buffer.subarray(0, bytesRead).toString('utf8').replace(/<!--[^]*?(?:-->|$)/g, '').replace(/^#{1,6}\s+.*$/gm, '').trim().replace(/\s+/g, ' ').slice(0, 160);
+        entries.push({ path, modifiedAt: info.mtime.toISOString(), excerpt });
+      } finally { await file.close(); }
+    }
+    return entries;
   }
   async read(state: WorkspaceState, path: string): Promise<DocumentView> {
     const target = await this.target(state, path);

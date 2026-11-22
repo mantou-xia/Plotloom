@@ -25,7 +25,7 @@ test('交稿后提醒缺卡，跳过按情节记住，起草和写入分别确�
     for (const [name, chapter] of [['周伯安', 1], ['阿青', 9]]) {
       await api.json(base + '/character-cards', 'POST', { character: name, chapter, content: '原有资料' }, 201);
     }
-    const path = '正文章节/第四章.md';
+    const path = '正文章节/第4章.md';
     const key = '周掌柜接过钥匙，答应守门。';
     const letter = '阿青接下送信的差事。';
     const later = '周掌柜把账簿托付给林舟。';
@@ -53,7 +53,7 @@ test('交稿后提醒缺卡，跳过按情节记住，起草和写入分别确�
     }
     const first = await run([{ name: 'write_chapter_part', args: { part: 1, content: [key, letter, later].join('\n\n') } },
       { name: 'review_writing', args: { status: 'clear', issues: [] } }, { name: 'deliver_chapter', args: { partCount: 1, reason: '交稿' } },
-      offer('周掌柜', key), offer('周伯安', key)], ['yes', 'no'], '写第四章：托付。\n');
+      offer('周掌柜', key, '是否为周掌柜建立角色卡？'), offer('周伯安', key)], ['yes', 'no'], '写第四章：托付。\n');
     assert.match(first.questions[1], /周伯安/);
     assert.equal((await cards('周掌柜')).length, 0);
     await api.close(); api = await startServer(env);
@@ -63,10 +63,13 @@ test('交稿后提醒缺卡，跳过按情节记住，起草和写入分别确�
     assert.equal((await cards('阿青')).length, 1);
     await run([offer('阿青', letter, draft)], ['yes']);
     assert.deepEqual((await cards('阿青')).map((card: any) => card.chapter), [4, 9]);
-    const bypass = await run([offer('周掌柜', later, draft)], []);
-    assert(bypass.received.some(e => e.type === 'tool_end' && e.outcome === 'failed'));
-    await run([offer('周掌柜', later)], ['stop']);
-    await run([offer('周掌柜', later), offer('周掌柜', later, draft)], ['yes', 'yes']);
+    await run([offer('周掌柜', later, draft)], ['stop']);
+    const premature = await run([offer('周掌柜', later, draft)], ['yes']);
+    assert(premature.received.some(e => e.type === 'tool_end' && e.name === 'suggest_character_card' && e.outcome === 'completed'));
+    assert(!premature.received.some(e => e.type === 'tool_approval_required'));
+    assert.doesNotMatch(premature.questions[0], /## 性格特点/);
+    assert.equal((await cards('周掌柜')).length, 0);
+    await run([offer('周掌柜', later, draft)], ['yes']);
     assert.deepEqual((await cards('周掌柜')).map((card: any) => card.evidence.quote), [later]);
     await run([offer('周掌柜', later)], []);
     // 候选送出后由独立接口完成审阅，聊天仍在同一轮等待，作者不需要再发一次复核消息。

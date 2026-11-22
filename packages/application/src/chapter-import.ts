@@ -1,4 +1,4 @@
-import { chapterFromTitle } from '@plotloom/contracts/writing';
+import { chapterFromTitle, newChapterPath } from '@plotloom/contracts/writing';
 import { invalid, WorkspaceError } from '@plotloom/domain';
 
 export interface ChapterImportFile { name: string; content: string }
@@ -25,9 +25,8 @@ export function planChapterImport(files: readonly ChapterImportFile[]): Imported
       if (!body.trim()) throw new WorkspaceError('CHAPTER_IMPORT_AMBIGUOUS', `${title} 没有正文，请先核对原稿。`, 422);
       if (chapters.length === 30) invalid('每次最多导入 30 章，请分批提交。');
       numbers.add(number);
-      const safeTitle = title.replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').trim();
       const newline = heading[0].endsWith('\r') ? '\r\n' : '\n';
-      chapters.push({ number, title, path: `正文章节/${safeTitle}.md`,
+      chapters.push({ number, title, path: newChapterPath(number),
         content: '# ' + title + newline + newline + body });
     }
   }

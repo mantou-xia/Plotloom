@@ -68,7 +68,10 @@ export interface SessionDetail extends SessionSummary {
   /** 可重放的最新用户消息。旧记录缺少请求快照时省略；忙时客户端应禁用操作。 */
   retryMessageId?: string;
 }
+export type FileApprovalTarget = Pick<ToolApproval, 'path' | 'operation' | 'label'>;
 export interface ToolApproval {
+  /** 小说专属操作的标题，例如导入章节或提交重写候选。 */
+  label?: string;
   id: string;
   turnId: string;
   callId: string;
@@ -92,6 +95,13 @@ export interface RetryMessageRequest { messageId: string }
 export interface CreateSessionRequest { provider?: string; model?: string; thinkingLevel?: ThinkingLevel; name?: string }
 /** 项目目录随会话创建固定；小说通过工作区入口创建。 */
 export interface CreateProjectSessionRequest extends CreateSessionRequest { projectPath: string }
+
+/** 文件路径相对于当前会话的项目或小说目录。 */
+export interface DeliverableRequest { path: string; action: 'preview' | 'open' }
+export type DeliverableResult =
+  | { kind: 'markdown'; content: string }
+  | { kind: 'image'; src: string }
+  | { kind: 'unsupported' | 'opened' };
 export interface ProjectFiles { entries: Array<{ path: string; name: string; isDirectory: boolean }>; truncated: boolean }
 /** 一次成功的 Agent 文件写入。同一路径的多次写入各有独立记录。 */
 export interface ProjectFileChange {
@@ -121,7 +131,8 @@ export interface ProjectFileDiff extends ProjectFileChange {
   blocks: ProjectDiffBlock[];
 }
 /** 项目独立于聊天持久化；目录规范化且唯一，现有会话通过 projectPath 关联。 */
-export interface Project { id: string; name: string; path: string; createdAt: string }
+export interface Project { id: string; name: string; path: string; createdAt: string; pinned?: boolean; sidebarHidden?: boolean }
+export type ProjectUpdate = Partial<Pick<Project, 'name' | 'pinned' | 'sidebarHidden'>>;
 export interface CreateProjectRequest { name: string; path: string }
 /** 系统选择器取消属于正常结果，不创建项目，也不覆盖调用方之前选择的目录。 */
 export interface ProjectFolderSelection { path: string | null }

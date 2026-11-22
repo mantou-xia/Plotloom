@@ -29,16 +29,14 @@ export function QuestionCard({ question, options, onAnswer, onStop, submitting, 
     if (selected !== undefined) onAnswer({ kind: 'option', index: selected + 1 });
     else if (value) onAnswer({ kind: 'custom', text: value });
   }}>
-    <div className="pl-question-card__body">
-      <fieldset disabled={disabled}>
-        <legend id={id}><MessageCircleQuestionMark size={16} aria-hidden="true" />{question}</legend>
-        {options.map((option, index) => <label className="pl-question-card__option" key={index}>
-          <input type="radio" name={id} checked={selected === index} onChange={() => { setSelected(index); setText(''); }} />
-          <span className="pl-question-card__number" aria-hidden="true">{index + 1}</span>
-          <span>{option}</span>
-        </label>)}
-      </fieldset>
-    </div>
+    <h3 className="pl-question-card__body" id={id} tabIndex={0}><MessageCircleQuestionMark size={16} aria-hidden="true" />{question}</h3>
+    <fieldset disabled={disabled} aria-labelledby={id}>
+      {options.map((option, index) => <label className="pl-question-card__option" key={index}>
+        <input type="radio" name={id} checked={selected === index} onChange={() => { setSelected(index); setText(''); }} />
+        <span className="pl-question-card__number" aria-hidden="true">{index + 1}</span>
+        <span>{option}</span>
+      </label>)}
+    </fieldset>
     <footer className="pl-question-card__footer">
       <Input className="pl-question-card__input" size="sm" aria-label="自填回答" placeholder="或自行撰写回复"
         startIcon={<Pencil size={14} />} value={text} maxLength={2000} disabled={disabled} onValueChange={next => {

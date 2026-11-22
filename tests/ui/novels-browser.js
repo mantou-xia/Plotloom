@@ -39,9 +39,8 @@ async page => {
       const created = page.waitForResponse(response => response.url().endsWith('/workspaces/' + id + '/sessions') && response.request().method() === 'POST');
       await button('发送').click();
       assert((await (await created).json()).workspaceId === id, '首次发送创建属于该书的会话');
-      const question = page.getByRole('form', { name: /保存到本书的《世界观》/ });
-      await question.getByRole('radio', { name: /确认保存/ }).check();
-      await question.getByRole('button', { name: '发送' }).click();
+      const approval = page.getByRole('region', { name: '保存世界观设定' });
+      await approval.getByRole('button', { name: '允许一次' }).click();
       await page.waitForFunction(async book => {
         const doc = await fetch('/api/workspaces/' + book + '/document/read', { method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '世界观.md' }) });
@@ -103,7 +102,8 @@ async page => {
   await tab('角色卡').click();
   await button(character).click();
   const stages = page.getByRole('tabpanel', { name: '角色卡' }).locator('.plotloom-novel-character-stages button');
-  assert((await stages.allTextContents()).join('|').includes('初遇|第 8 章起'), '阶段按创建时间倒序');
+  assert((await stages.nth(0).getAttribute('aria-label')) === '第 2 章起' && (await stages.nth(1).getAttribute('aria-label')) === '第 8 章起', '阶段按创建时间倒序');
+  assert((await stages.nth(0).innerText()).includes('初遇'), '阶段条目显示变化备注');
   await stages.first().click();
   await page.getByRole('heading', { name: character + ' · 第 2 章起' }).waitFor();
   await button('世界观').click();

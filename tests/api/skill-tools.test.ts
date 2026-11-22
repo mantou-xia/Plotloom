@@ -53,13 +53,13 @@ test('核心工具目录、全局技能准入与网页抓取', { timeout: 90000 
       assert.equal(byName.get('read_skill')?.provider, 'Plotloom 技能系统');
       assert.equal(byName.get('propose_change')?.provider, 'Plotloom 小说工作区');
       assert(!byName.has('read_fixture'));
-      assert.deepEqual(byName.get('write')?.availableIn, ['project']);
+      assert.deepEqual(byName.get('write')?.availableIn, ['project', 'novel']);
       for (const name of ['browser', 'web_fetch']) assert.deepEqual(byName.get(name)?.availableIn, ['project', 'novel']);
       assert(!byName.has('web_search'));
       assert((await json(settings)).effectiveSkillIds.includes(skill.id));
       const projectSkill = await json('/api/skills', 'POST', { content: '---\nname: project-reader\ndescription: 读取项目\nallowed-tools: read\n---\n按需读取项目文件。' }, 201);
-      assert.deepEqual(projectSkill.availableIn, ['project']);
-      assert(!(await json(settings)).effectiveSkillIds.includes(projectSkill.id));
+      assert.deepEqual(projectSkill.availableIn, ['project', 'novel']);
+      assert((await json(settings)).effectiveSkillIds.includes(projectSkill.id));
       const projectChat = await json('/api/sessions', 'POST', { projectPath: project }, 201);
       assert((await json(`/api/sessions/${projectChat.id}/skills`)).effectiveSkillIds.includes(projectSkill.id));
       assert((await json(`/api/sessions/${projectChat.id}/skills`)).effectiveSkillIds.includes(skill.id));
@@ -67,6 +67,7 @@ test('核心工具目录、全局技能准入与网页抓取', { timeout: 90000 
       assert(active.every((tool: any) => byName.has(tool.name)));
     });
     await t.test('全局关闭保留当前快照，下一轮和显式覆盖不能绕过；重启持久化', async () => {
+      await json(settings, 'PUT', { skillIds: [skill.id] });
       const prompt = 'WAIT_SKILL:' + JSON.stringify({ skillId: skill.id, path: 'SKILL.md' });
       const result = [];
       for await (const event of events(await server.request(`/api/sessions/${chat.id}/messages`, 'POST', { text: prompt }))) {

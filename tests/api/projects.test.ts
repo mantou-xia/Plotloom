@@ -40,11 +40,28 @@ test('项目 Agent 文件、权限、历史与停止闭环', { timeout: 120000 }
       const novelPath = `/api/workspaces/${workspace.id}/sessions`;
       await server.json(novelPath, 'POST', { projectPath: book }, 400);
       const novel = await server.json(novelPath, 'POST', {}, 201);
+      await writeFile(join(book, '正文章节', '第四章.md'), '# 第四章');
+      assert.deepEqual(await server.json('/api/sessions/' + novel.id + '/deliverable', 'POST',
+        { path: '正文章节/第四章.md', action: 'preview' }), { kind: 'markdown', content: '# 第四章' });
       const toolNames = (await server.json(path('/tools'))).tools.filter((v: any) => v.active).map((v: any) => v.name);
       assert.deepEqual(new Set(toolNames), new Set(['read', 'write', 'edit', 'grep', 'find', 'ls', 'browser', 'web_fetch', 'ask_user']));
-      assert(!(await server.json(`/api/sessions/${novel.id}/tools`)).tools.some((v: any) => v.name === 'write' && v.active));
-      assert.equal((await server.json(`/api/sessions/${novel.id}/project-files`, 'POST', { query: '' }, 409)).error.code, 'PROJECT_NOT_SELECTED');
-      assert.equal((await server.json(`/api/sessions/${novel.id}/project-writes`, 'GET', undefined, 409)).error.code, 'PROJECT_NOT_SELECTED');
+      assert((await server.json(`/api/sessions/${novel.id}/tools`)).tools.some((v: any) => v.name === 'write' && v.active));
+      assert((await server.json(`/api/sessions/${novel.id}/project-files`, 'POST', { query: '第四章' })).entries.some((entry: { path: string }) => entry.path === '正文章节/第四章.md'));
+      const novelSession = '/api/sessions/' + novel.id;
+      assert.deepEqual((await server.json(novelSession + '/project-writes')).changes, []);
+      const response = await server.request(novelSession + '/messages', 'POST', { text: 'WRITE:' + JSON.stringify({
+        steps: [{ name: 'write', args: { path: '写作笔记.txt', content: '线索' } }], finalText: '已保存',
+      }) });
+      const received = [];
+      for await (const event of events(response)) {
+        received.push(event);
+        if (event.type === 'tool_approval_required') await server.json(novelSession + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'approve' });
+      }
+      assertFinal(received, 'completed');
+      const [change] = (await server.json(novelSession + '/project-writes')).changes;
+      assert.equal(change.path, '写作笔记.txt');
+      assert.equal((await server.json(novelSession + '/project-writes/' + change.id)).added, 1);
+      assert.equal((await server.json(novelSession)).fileChanges[0].files[0].path, change.path);
       await server.json(path('/config'), 'PUT', { projectPath: other }, 400);
       await server.close();
       const sessionsDir = join(env.PLOTLOOM_DATA_DIR, 'sessions');
@@ -87,6 +104,23 @@ test('项目 Agent 文件、权限、历史与停止闭环', { timeout: 120000 }
       assert.deepEqual((await server.json(path('/project-files'), 'POST', { query: 'ignored' })).entries, []);
       await server.json(path('/project-files'), 'POST', { query: 1 }, 400);
       await server.json('/api/sessions/unknown/project-files', 'POST', { query: '' }, 404);
+    });
+    await t.test('交付产物预览限于当前项目，未知格式与不可访问文件分别反馈', async () => {
+      const endpoint = path('/deliverable');
+      const preview = (path: string, status = 200) => server.json(endpoint, 'POST', { path, action: 'preview' }, status);
+      assert.deepEqual(await preview('README.md'), { kind: 'markdown', content: '项目原文-731' });
+      const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aR6kAAAAASUVORK5CYII=', 'base64');
+      await writeFile(join(project, '封面.png'), image);
+      assert.deepEqual(await preview('封面.png'), { kind: 'image', src: 'data:image/png;base64,' + image.toString('base64') });
+      await writeFile(join(project, '输出.xlsx'), 'spreadsheet');
+      assert.deepEqual(await preview('输出.xlsx'), { kind: 'unsupported' });
+      await writeFile(join(other, 'outside.md'), '# Other');
+      for (const input of ['不存在.md', '../other/outside.md', 'node_modules']) {
+        assert.equal((await preview(input, 404)).error.code, 'DELIVERABLE_UNAVAILABLE');
+      }
+      assert.equal((await preview(join(other, 'outside.md'), 400)).error.code, 'INVALID_REQUEST');
+      await writeFile(join(project, '脚本.cmd'), '');
+      assert.equal((await server.json(endpoint, 'POST', { path: '脚本.cmd', action: 'open' }, 422)).error.code, 'DELIVERABLE_OPEN_UNSUPPORTED');
     });
     await t.test('项目读取、搜索和审批后的修改真正作用于绑定目录', async () => {
       const steps = [

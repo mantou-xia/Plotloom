@@ -5,7 +5,7 @@ import type { MessageSources } from '@plotloom/contracts/sources';
 import type { SubmitMessageRequest } from '@plotloom/contracts';
 import type { WritingRecord, WritingRequest } from '@plotloom/contracts/writing';
 import { checkVersion, invalid } from '@plotloom/domain';
-import { chapterFromTitle, WORLDVIEW_PATH } from '@plotloom/contracts/writing';
+import { chapterFromTitle, newChapterPath, WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import type { MessageSourceService } from '@plotloom/application/sources';
 import type { CharacterCardService } from '@plotloom/application/character-cards';
 
@@ -29,7 +29,7 @@ export async function chapterChat(workspaces: WorkspaceService, cards: Character
     .map(path => ({ path, number: chapterFromTitle(path.split('/').at(-1)!) }));
   const matches = chapters.filter(item => item.number === chapterNumber);
   if (matches.length > 1) invalid('本书有多份同章号正文，请先整理目标章节。');
-  const path = matches[0]?.path ?? `正文章节/${command[1]}.md`;
+  const path = matches[0]?.path ?? newChapterPath(chapterNumber);
   const previous = chapters.filter(item => item.number !== undefined && item.number < chapterNumber)
     .sort((a, b) => b.number! - a.number!).slice(0, 3);
   const applicable = (await cards.list(id, chapterNumber)).applicable;
@@ -83,11 +83,12 @@ export async function writingResources(service: WritingService, sessionId: strin
   const run = await service.prepare(sessionId, input, files);
   const worldviewVersion = run.record.context.sources.find(source => source.path === WORLDVIEW_PATH)?.version ?? null;
   if (input.worldviewVersion !== undefined) checkVersion(worldviewVersion, input.worldviewVersion);
-  const tool = (name: string, description: string, parameters: Record<string, unknown>, execute: BusinessTool['execute']): BusinessTool => ({ name, description, parameters, execute });
+  const tool = (name: string, description: string, parameters: Record<string, unknown>, execute: BusinessTool['execute']): BusinessTool => ({ name, description, parameters,
+    execute: (value, signal, confirm) => service.trackWrites(sessionId, () => execute(value, signal, confirm)) });
   const importPrompt = files.length ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。' : '';
   const chapterPrompt = input.chatChapter ? '\n作者的本轮消息就是大纲。依据前文和当章资料按自然段分批调用 write_chapter_part，每批建议 500–1000 字，章标题只写一次。收到暂存成功后再写下一批。全部暂存后调用 review_writing 审校，再用 deliver_chapter 提交总段数和理由，等待作者确认。交稿确认后先说明本章人物有无阶段变化；如确有变化，每次只用 propose_character_change 提交一个角色，必须引用本章交稿原句。'
     + (run.restoredParts.length ? '\n重试已恢复的草稿如下（按段号从 1 排列）。从最后一段接着写；已写完则直接审校交稿。\n' + JSON.stringify(run.restoredParts) : '') : '';
-  return { key: run.record.id, replayInput: { ...input, worldviewVersion, chapterDraftId: run.draftId }, persistReplayInput: input.chatChapter,
+  return { key: run.record.id, fileScope: run.fileScope, replayInput: { ...input, worldviewVersion, chapterDraftId: run.draftId }, persistReplayInput: input.chatChapter,
     systemPrompt: writingPrompt(run.record.context, input.chatChapter) + importPrompt + chapterPrompt, start: run.start, finish: run.finish, tools: [
     ...(input.chatChapter ? [{ ...tool('write_chapter_part', '暂存本章一段正文。段号从 1 连续递增，同号替换，段间自动插入空行。', objectSchema({
       part: { type: 'integer', minimum: 1 }, content: { ...text, maxLength: CHAPTER_PART_LIMIT },
@@ -96,24 +97,26 @@ export async function writingResources(service: WritingService, sessionId: strin
       partCount: { type: 'integer', minimum: 1 }, reason: text,
     }), (value, signal, confirm) => run.deliver(value.partCount, value.reason, signal, confirm)), confirmable: true }] : []),
     ...(files.length ? [{ ...tool('import_chapters', '将本轮 TXT/Markdown 附件按独立章标题分章。作者确认后才写入，保护已有正文。', objectSchema({}),
-      (_input, signal, confirm) => run.importChapters(signal, confirm)), confirmable: true, confirmationOptions: ['确认导入', '取消导入'] as [string, string] }] : []),
+      (_input, signal, confirm) => run.importChapters(signal, confirm)), confirmable: true }] : []),
     { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲，每次等待确认。list/refresh 列出或刷新目录；open/preview 打开文稿；edit 提交整篇候选；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿；export_txt 下载单章最新保存稿为纯文本。', objectSchema({
       action: { enum: ['list', 'refresh', 'open', 'preview', 'edit', 'finalize', 'history', 'read_final', 'restore', 'discard', 'export_txt'] },
       path: pathSchema, content: { type: 'string', maxLength: 8000 }, revisionId: { type: 'string', maxLength: 80 },
     }, ['action']), (input, signal, confirm) => run.manuscript(input, signal, confirm)), confirmable: true, confirmationOptions: ['确认操作', '取消操作'] },
-    { ...tool('propose_world_rule', '提交一条世界设定。effective 是规则生效章，revealed 是主角得知章或 null。作者直接讲的设定可省略 evidence，或只给 quote 引用本轮原话。只在引用实际章节文件时给出 path。同主题沿用原名称。', objectSchema({
+    { ...tool('propose_world_rule', '提交一条世界设定。effective 是规则生效章，revealed 是主角得知章或 null。作者直接讲的设定可省略 evidence，或只给 quote 引用本轮原话。章节取证时，只提持续影响后续的世界规则变化或明确补充的重要背景，须给出 evidence 和 impact。普通情节与人物变化留在正文。同主题沿用原名称。', objectSchema({
       subject: { ...text, maxLength: 80 }, fact: { ...text, maxLength: 500 },
       effective: { type: 'integer', minimum: 1, maximum: 999999 }, revealed: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 999999 }] },
+      impact: { ...text, maxLength: 300, description: '章节建议须说明后续哪些情节受该变化持续约束。' },
       evidence: objectSchema({ path: { ...pathSchema, description: '实际章节的 .md 相对路径；作者本轮口述请省略。' }, quote: { ...text, maxLength: 300 } }, ['quote']),
     }, ['subject', 'fact', 'effective', 'revealed']), (input, signal, confirm) => run.proposeRule(input, signal, confirm)), confirmable: true },
     ...((input.chatChapter || input.task === 'discuss') && characterCards ? [{ ...tool('propose_character_change', '提交交稿后的单个角色卡变化建议。必须引用本章交稿原句；确认卡会展示原阶段、证据和建议新阶段，作者确认后才保存。', objectSchema({
       character: { type: 'string', minLength: 1, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 }, note: { type: 'string', maxLength: 200 },
       content: { type: 'string', minLength: 1, maxLength: 500000 }, evidence: objectSchema({ path: pathSchema, quote: { ...text, maxLength: 300 } }, ['path', 'quote']),
-    }, ['character', 'chapter', 'content', 'evidence']), (value, signal, confirm) => run.proposeCharacterChange(value, signal, confirm)), confirmable: true, confirmationOptions: ['接受变化', '保留原卡'] as [string, string] }] : []),
+    }, ['character', 'chapter', 'content', 'evidence']), (value, signal, confirm) => run.proposeCharacterChange(value, signal, confirm)), confirmable: true }] : []),
     ...((input.chatChapter || input.task === 'discuss') && characterCards ? [{ ...tool('suggest_character_card',
-      '交稿后检查值得跟进且缺卡的人物。新章保存后调用；重写候选交付后也可调用，工具等正文采纳才询问。先传称呼、章号、理由和原句询问建卡；若可能为已有角色的别称，传 possibleIdentity。得到 draft_requested 后才传五栏 content 请求保存。', objectSchema({
+      '交稿后检查值得跟进且缺卡的人物。新章保存后调用；重写候选交付后也可调用，工具等正文采纳才询问。首次省略 content，工具会根据称呼、章号、理由和原句询问作者；若可能为已有角色的别称，传 possibleIdentity。收到 draft_requested 后再传五栏草稿请求保存。', objectSchema({
         character: { ...text, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 },
-        reason: { ...text, maxLength: 300 }, possibleIdentity: { ...text, maxLength: 100 }, content: { ...text, maxLength: 500000 },
+        reason: { ...text, maxLength: 300 }, possibleIdentity: { ...text, maxLength: 100 },
+        content: { ...text, maxLength: 500000, description: '作者同意建卡后提交的五栏 Markdown 草稿。首次调用会忽略此字段。' },
         evidence: objectSchema({ path: pathSchema, quote: { ...text, maxLength: 300 } }),
       }, ['character', 'chapter', 'reason', 'evidence']), (value, signal, confirm) => run.proposeCharacterChange(value, signal, confirm)),
       confirmable: true, confirmationOptions: ['建卡', '暂时跳过'] as [string, string] }] : []),
@@ -126,9 +129,9 @@ export async function writingResources(service: WritingService, sessionId: strin
     ...(!input.chatChapter && characterCards ? [{ ...tool('save_character_card', '根据作者已确认的信息整理并保存一份细化五栏角色卡阶段。性格特点必须含表征、内在和描写，愿景必须含明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。chapter 是开始适用的章节，note 填写 Agent 从剧情中提取的变化关键词。保存前必须向作者展示并等待确认。', objectSchema({
       character: { type: 'string', minLength: 1, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 }, note: { type: 'string', maxLength: 200 }, content: { type: 'string', minLength: 1, maxLength: 500000 },
     }, ['character', 'chapter', 'content']), async (value, signal, confirm) => {
-      if (!await confirm?.(`保存 ${value.character} 的第 ${value.chapter} 章角色卡阶段${value.note ? `（${value.note}）` : ''}\n\n${value.content}`)) return { status: 'declined' };
+      if (!await confirm?.(`保存 ${value.character} 的第 ${value.chapter} 章角色卡阶段${value.note ? `（${value.note}）` : ''}\n\n${value.content}`, { path: '角色卡/' + value.character, operation: 'create', label: '保存角色卡' })) return { status: 'declined' };
       signal?.throwIfAborted();
       return characterCards.create(run.record.context.workspaceId, value);
-    }), confirmable: true, confirmationOptions: ['确认保存', '取消保存'] as [string, string] }] : []),
+    }), confirmable: true }] : []),
   ] };
 }
