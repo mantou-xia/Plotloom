@@ -2,7 +2,7 @@ import { GlobalLayout } from '@plotloom/ui/layouts/global-layout';
 import { Dialog } from '@plotloom/ui/dialog';
 import { Button } from '@plotloom/ui/button';
 import { ThemeRoot } from '@plotloom/ui/theme-root';
-import type { Project, SessionSummary, SessionOrganization } from '@plotloom/contracts';
+import type { Project, SessionDetail, SessionSummary, SessionOrganization } from '@plotloom/contracts';
 import type { Workspace } from '@plotloom/contracts/workspaces';
 import type { ChatSummary } from '@plotloom/contracts/skills';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,8 +14,8 @@ import { notifyRequestError, runWithToast } from '../utils/feedback';
 import { chatDraft } from '../features/agent/chat-draft';
 import { ChatPage } from '../features/agent/chat-page';
 import { ChatWorkspace } from '../features/workspace/chat-workspace';
-import { NewChatPage } from '../features/agent/new-chat-page';
-import { SkillsPage } from '../features/skills/skills-page';
+import { NewChatPage, type NewChatModelSnapshot } from '../features/agent/new-chat-page';
+import { SkillsPage, type SkillsSnapshot } from '../features/skills/skills-page';
 import { CreateNovelDialog, NovelsPage } from '../features/novels/novels-page';
 import type { ChatGroup } from '../features/navigation/sidebar-data';
 import { AppSidebar, type AppPage } from '../features/navigation/app-sidebar';
@@ -32,6 +32,11 @@ export function App() {
   const [acceptedRevision, setAcceptedRevision] = useState(0);
   const [modelRevision, setModelRevision] = useState(0);
   const [skillRevision, setSkillRevision] = useState(0);
+  // 页面卸载仍会清理请求和交互，只在应用生命周期内保留已读数据。
+  const [chatSnapshots] = useState(() => new Map<string, SessionDetail>());
+  // 设置和技能页共用目录快照，后台刷新时也能立即移除已删除的条目。
+  const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsSnapshot | null>(null);
+  const newChatModelSnapshot = useRef<NewChatModelSnapshot | null>(null);
   const settingsTrigger = useRef<HTMLElement | null>(null);
   /** 设置属于二级导航，不覆盖原页面；返回恢复入口焦点和原来的页面状态。 */
   function navigate(next: AppPage) {
@@ -141,6 +146,7 @@ export function App() {
     setSaving(true);
     try {
       await requestJson('/api/sessions/' + encodeURIComponent(chatToDelete.id), 'DELETE');
+      chatSnapshots.delete(chatToDelete.id);
       clearSession(chatToDelete.id, chatToDelete.projectPath ?? '', chatToDelete.workspaceId);
       setChatToDelete(null);
       await refreshChats();
@@ -159,6 +165,7 @@ export function App() {
           if (action === 'archive') clearSession(chat.id, chat.projectPath ?? '', chat.workspaceId);
         } else {
           await requestJson(path, 'DELETE');
+          chatSnapshots.delete(chat.id);
           clearSession(chat.id, chat.projectPath ?? '', chat.workspaceId);
         }
       } catch (error) {
@@ -195,7 +202,7 @@ export function App() {
   const projectName = projects.find(project => project.path === projectPath)?.name
     ?? (projectPath.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) || projectPath);
   return (
-    <ThemeRoot color={theme.color}>
+    <ThemeRoot color={theme.color} mode={theme.mode} documentTheme>
       <ToastViewport />
       {/* 两级页面共用外壳和侧栏宽度；保留主导航节点，返回时可恢复展开状态与焦点。 */}
       <GlobalLayout sidebar={<>
@@ -215,10 +222,10 @@ export function App() {
         <div className="plotloom-app-content" data-hidden={settingsOpen} inert={settingsOpen} aria-hidden={settingsOpen || undefined}>
           {page === 'chat' ? <ChatWorkspace open={panelOpen} onOpenChange={changePanelOpen} sessionId={sessionId} workspaceId={bookId} draftRevision={startRevision}
             updatedAt={activeChat?.updatedAt} onAccepted={() => setAcceptedRevision(value => value + 1)}>{(openCitations, openTurnChanges, openManuscript, openDeliverable, quoteDraft) => sessionId ?
-            <ChatPage acceptedRevision={acceptedRevision} novelRoot={currentBook?.root} title={activeChat?.name} key={sessionId} sessionId={sessionId} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
+            <ChatPage acceptedRevision={acceptedRevision} novelRoot={currentBook?.root} title={activeChat?.name} key={sessionId} sessionId={sessionId} snapshots={chatSnapshots} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
               onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges}
               onOpenManuscript={openManuscript} onOpenDeliverable={openDeliverable} quoteDraft={quoteDraft} /> :
-            <NewChatPage modelRevision={modelRevision} skillRevision={skillRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
+            <NewChatPage modelRevision={modelRevision} modelSnapshotRef={newChatModelSnapshot} skillRevision={skillRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
               workspaceId={workspaceId} workspaceTitle={currentBook?.title} novelRoot={currentBook?.root} quoteDraft={quoteDraft}
               renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName || '选择项目'}
                 state={projectState} disabled={disabled} open={projectDialog === 'switch'}
@@ -228,16 +235,20 @@ export function App() {
                   if (project.path !== projectPath) startChat(project.path);
                   setProjectDialog(null);
                 }} />} />}</ChatWorkspace> : null}
-          {page === 'skills' ? <SkillsPage skillRevision={skillRevision} /> : null}
+          {page === 'skills' ? <SkillsPage skillRevision={skillRevision} snapshot={skillsSnapshot} setSnapshot={setSkillsSnapshot} /> : null}
           {page === 'novels' ? <NovelsPage workspaces={workspaces} state={workspaceState} workspaceId={workspaceId}
             onOpen={id => updateRoute({ sessionId: null, workspaceId: id })} onRefresh={refreshWorkspaces}
             onUpdate={updated => setWorkspaces(current => current.map(book => book.id === updated.id ? updated : book))}
             onCreate={() => setCreatingNovel(true)} /> : null}
         </div>
         {settingsSection ? <SettingsPage section={settingsSection} color={theme.color} onColorChange={theme.setColor}
+          mode={theme.mode} onModeChange={theme.setMode}
           archived={chats.filter(chat => chat.archived)} archiveStatus={listState} projects={projects} onBatch={applyArchiveBatch}
           onRestore={chat => void organize(chat, { archived: false })} onDelete={setChatToDelete}
-          onModelsChange={() => setModelRevision(v => v + 1)} onSkillsChange={() => setSkillRevision(v => v + 1)} /> : null}
+          onModelsChange={() => setModelRevision(v => v + 1)} onSkillsChange={deletedId => {
+            if (deletedId) setSkillsSnapshot(current => current && { ...current, skills: current.skills.filter(skill => skill.id !== deletedId) });
+            setSkillRevision(v => v + 1);
+          }} /> : null}
       </GlobalLayout>
       {creatingNovel && <CreateNovelDialog onClose={() => setCreatingNovel(false)} onCreated={book => {
         setWorkspaces(current => [...current.filter(item => item.id !== book.id), book]);

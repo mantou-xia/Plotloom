@@ -7,5 +7,5 @@
 .plotloom-project-switcher__item[aria-pressed='true'] { background: var(--pl-surface-muted, #f6f6f7); }
 .plotloom-project-switcher__name { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
 .plotloom-project-switcher__check { flex-shrink: 0; width: 18px; height: 18px; }
-.plotloom-project-switcher__footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e5e5; }
+.plotloom-project-switcher__footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--pl-border, #e5e5e5); }
 .plotloom-project-switcher__footer .plotloom-button { width: 100%; min-height: 44px; justify-content: flex-start; padding: 10px 12px; }

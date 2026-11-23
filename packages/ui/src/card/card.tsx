@@ -11,14 +11,14 @@ export interface CardProps extends ComponentPropsWithRef<'div'> {
   borderRadius?: CSSProperties['borderRadius'];
   /** 默认 12px；支持 CSS 简写，例如 '12px 16px'。 */
   padding?: CSSProperties['padding'];
-  /** 默认纯白；液态玻璃中作为 10% 的染色，不遮挡背后的页面内容。 */
+  /** 默认为主题表面；液态玻璃中作为 10% 的染色，不遮挡背后的页面内容。 */
   backgroundColor?: CSSProperties['backgroundColor'];
   /** 默认关闭；开启时使用中性灰实线，不叠加阴影。 */
   bordered?: boolean;
 }
 
 /** 材质只处理背后的像素，不过滤 children；公开外观参数优先于 style。 */
-export function Card({ borderRadius = 8, padding = 12, backgroundColor = '#ffffff', bordered = false,
+export function Card({ borderRadius = 8, padding = 12, backgroundColor = 'var(--pl-surface, #ffffff)', bordered = false,
   material = 'normal', className = '', style, children, ref, ...props }: CardProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<SVGFilterElement>(null);

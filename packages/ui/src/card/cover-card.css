@@ -12,7 +12,7 @@
   border: 0;
   border-radius: 8px;
   background: #273936;
-  color: #fff;
+  color: var(--pl-on-media, #fff);
 }
 .pl-cover-card__open::before {
   content: '';
@@ -39,7 +39,7 @@
   line-height: 1.28;
 }
 .pl-cover-card__actions { position: absolute; z-index: 3; inset: 8px 8px auto auto; display: flex; gap: 4px; }
-.pl-cover-card__actions .plotloom-button--ghost { --pl-button-text: #fff; }
+.pl-cover-card__actions .plotloom-button--ghost { --pl-button-text: var(--pl-on-media, #fff); }
 
 /* 透明操作层保留 Tab 顺序。键盘聚焦立即显示，触屏直接显示操作入口。 */
 @media (hover: hover) and (pointer: fine) {

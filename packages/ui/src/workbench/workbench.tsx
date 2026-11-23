@@ -3,7 +3,7 @@ import { ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '../button/button.tsx';
 import { ScrollBox } from '../scroll-box/scroll-box.tsx';
 import { ColorPicker } from '../color-picker/color-picker.tsx';
-import { THEME_PRESETS } from '../theme/theme.ts';
+import { THEME_MODES, THEME_PRESETS, normalizeThemeMode, type ThemeMode } from '../theme/theme.ts';
 import { componentCatalog, type ComponentExample } from './catalog.ts';
 import { ComponentControls } from './component-controls.tsx';
 import type { PreviewControls } from './controls.ts';
@@ -23,11 +23,13 @@ export interface WorkbenchProps {
   onStateChange: (state: string) => void;
   onSizeChange: (width: number, height: number) => void;
   onColorChange: (color: string) => void;
+  mode: ThemeMode;
+  onModeChange: (mode: ThemeMode) => void;
   onReset: () => void;
 }
 
 /** 仅用于开发调试的界面；iframe 尺寸是实际 CSS 像素，原生缩放通过观察器回写控件。 */
-export function ComponentWorkbench({ example, state, width, height, color, controls, onControlsChange, lastAction, frameRef, onSelect, onStateChange, onSizeChange, onColorChange, onReset }: WorkbenchProps) {
+export function ComponentWorkbench({ example, state, width, height, color, mode, onModeChange, controls, onControlsChange, lastAction, frameRef, onSelect, onStateChange, onSizeChange, onColorChange, onReset }: WorkbenchProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const [pickerRevision, setPickerRevision] = useState(0);
   const [search, setSearch] = useState('');
@@ -128,6 +130,9 @@ export function ComponentWorkbench({ example, state, width, height, color, contr
         <label>画布宽度（px）<input key={`width-${width}`} type="number" min="240" max="2400" defaultValue={width} onBlur={(event) => commitSize(event.target, 'width')} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
         <label>画布高度（px）<input key={`height-${height}`} type="number" min="160" max="1600" defaultValue={height} onBlur={(event) => commitSize(event.target, 'height')} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
       </div><div className="pl-workbench__sizes"><Button variant="ghost" onClick={() => onSizeChange(375, 667)}>窄屏</Button><Button variant="ghost" onClick={() => onSizeChange(768, 600)}>中屏</Button><Button variant="ghost" onClick={() => onSizeChange(1280, 800)}>宽屏</Button></div></fieldset>
+      <label>颜色模式<select value={mode} onChange={event => onModeChange(normalizeThemeMode(event.target.value))}>
+        {Object.entries(THEME_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></label>
       <label htmlFor="theme-preset">组件库配色</label>
       <select id="theme-preset" value={THEME_PRESETS.some((item) => item.color === color) ? color : 'custom'} onChange={(event) => { if (event.target.value !== 'custom') { setPickerRevision((value) => value + 1); onColorChange(event.target.value); } }}>
         <option value="custom" disabled>自定义颜色</option>{THEME_PRESETS.map((item) => <option key={item.color} value={item.color}>{item.name}</option>)}

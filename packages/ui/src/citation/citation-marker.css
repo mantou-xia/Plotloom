@@ -2,8 +2,8 @@
 .plotloom-button.pl-citation-marker {
   --pl-button-height: 20px;
   --pl-button-background: var(--pl-surface-muted, #f0f0f2);
-  --pl-button-hover: #e5e5e8;
-  --pl-button-active: #dcdce1;
+  --pl-button-hover: var(--pl-surface-hover, #e5e5e8);
+  --pl-button-active: var(--pl-surface-active, #dcdce1);
   --pl-button-text: var(--pl-text-muted, #60636b);
   min-width: 22px;
   height: 20px;

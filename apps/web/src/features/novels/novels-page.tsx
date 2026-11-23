@@ -5,6 +5,7 @@ import { PageLayout } from '@plotloom/ui/layouts/page-layout';
 import { Button } from '@plotloom/ui/button';
 import { Dialog } from '@plotloom/ui/dialog';
 import { Input } from '@plotloom/ui/input';
+import { Skeleton } from '@plotloom/ui/skeleton';
 import { requestJson } from '../../utils/http';
 import { runWithToast } from '../../utils/feedback';
 import { NovelWorkbench } from './novel-workbench';
@@ -28,7 +29,10 @@ export function NovelsPage({ workspaces, state, workspaceId, onOpen, onUpdate, o
 
   return <PageLayout title="小说管理" gap={36} style={{ height: '100%' }}
     actions={<Button startIcon={<Plus />} onClick={onCreate}>新建小说</Button>}>
-    {state === 'loading' ? <p role="status">正在加载小说…</p> : null}
+    {state === 'loading' && !workspaces.length ? <div className="plotloom-shelf-grid" aria-label="小说列表" aria-busy="true">
+      <Skeleton style={{ blockSize: 'auto', aspectRatio: '5 / 7' }} />
+      <Skeleton style={{ blockSize: 'auto', aspectRatio: '5 / 7' }} />
+    </div> : null}
     {state === 'error' ? <Button variant="secondary" onClick={() => void onRefresh()}>重新加载小说</Button> : null}
     {state === 'ready' && workspaces.length === 0 ? <p className="plotloom-novel-muted">新建小说并绑定空文件夹，即可开始创作。</p> : null}
     {state === 'ready' && workspaceId ? <p role="status">找不到该小说，请从列表重新打开。</p> : null}

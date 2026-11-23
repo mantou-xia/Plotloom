@@ -1,11 +1,13 @@
 import { memo, useEffect, useRef } from 'react';
 import type { ParticleShape } from './activity.ts';
 import { createActivityRenderer } from './particle-renderer.js';
+import { useColorScheme } from '../theme/theme-root.tsx';
 
 const SHAPES: Record<ParticleShape, number> = { magnifier: 0, cube: 1, bricks: 2, robot: 3, gift: 4, book: 5, pencil: 6, folder: 7, sphere: 8 };
 
 /** 动画完全隔离于 React 渲染；隐藏、离屏、减少动态效果或任务终止时停止 RAF。 */
 export const ActivityParticles = memo(function ActivityParticles({ shape, active, reducedMotion }: { shape: ParticleShape; active: boolean; reducedMotion: boolean }) {
+  const scheme = useColorScheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const control = useRef<{ update: (shape: ParticleShape, active: boolean, reduced: boolean) => void } | null>(null);
   useEffect(() => {
@@ -81,7 +83,8 @@ export const ActivityParticles = memo(function ActivityParticles({ shape, active
     // 挂载时只建立一个渲染器；后续 props 通过 update 保留粒子过渡位置。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => { control.current?.update(shape, active, reducedMotion); }, [shape, active, reducedMotion]);
+  // Canvas 像素不会随 CSS 换色。主题切换也走同步绘制，停止状态只补一帧。
+  useEffect(() => { control.current?.update(shape, active, reducedMotion); }, [shape, active, reducedMotion, scheme]);
   return <canvas ref={canvasRef} className="pl-agent-activity__canvas" data-shape={shape} tabIndex={0} role="img"
     aria-label="活动粒子：左右拖动或按左右方向键旋转，Home 恢复视角" />;
 });

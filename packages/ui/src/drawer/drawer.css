@@ -1,7 +1,7 @@
 .pl-drawer { box-sizing: border-box; position: fixed; inset: 12px 12px 12px auto; width: min(640px, calc(100vw - 24px)); max-width: none; height: calc(100dvh - 24px); max-height: none; margin: 0; padding: 0; border: 0; border-radius: 20px; background: var(--pl-surface, white); color: var(--pl-text); transform: translateX(calc(100% + 12px)); transition: transform 280ms ease, overlay 280ms allow-discrete, display 280ms allow-discrete; }
 .pl-drawer[open] { display: flex; flex-direction: column; transform: translateX(0); }
 .pl-drawer::backdrop { background: transparent; transition: background 280ms ease, overlay 280ms allow-discrete, display 280ms allow-discrete; }
-.pl-drawer[open]::backdrop { background: rgb(20 24 32 / 34%); }
+.pl-drawer[open]::backdrop { background: var(--pl-overlay, rgb(20 24 32 / 34%)); }
 @starting-style {
   .pl-drawer[open] { transform: translateX(calc(100% + 12px)); }
   .pl-drawer[open]::backdrop { background: transparent; }

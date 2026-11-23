@@ -19,39 +19,50 @@ import './new-chat-page.css';
 
 export const modelKey = (provider: string, model: string) => JSON.stringify([provider, model]);
 
+export interface NewChatModelSnapshot {
+  revision: number;
+  models: ModelInfo[];
+  selected: string | null;
+  thinking: ThinkingLevel;
+}
+
 /** 模型配置属于页面，项目切换只重置草稿，不能重复请求或覆盖用户已选模型。 */
-function useNewChatModels(modelRevision: number) {
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [thinking, setThinking] = useState<ThinkingLevel>('off');
+function useNewChatModels(modelRevision: number, snapshotRef: RefObject<NewChatModelSnapshot | null>) {
+  const cached = snapshotRef.current?.revision === modelRevision ? snapshotRef.current : null;
+  const [models, setModels] = useState<ModelInfo[]>(() => cached?.models ?? []);
+  const [selected, setSelected] = useState<string | null>(() => cached?.selected ?? null);
+  const [thinking, setThinking] = useState<ThinkingLevel>(() => cached?.thinking ?? 'off');
   const [failed, setFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loadedRevision, setLoadedRevision] = useState(() => cached?.revision);
   const [reload, setReload] = useState(0);
   useEffect(() => {
+    // 同一配置版本下直接复用默认模型。设置保存后递增版本，避免把旧配置带入新会话。
+    if (!reload && snapshotRef.current?.revision === modelRevision) return;
     const abort = new AbortController();
     void Promise.all([requestJson<{ models: ModelInfo[] }>('/api/models', 'GET', undefined, abort.signal),
       requestJson<ModelConfig>('/api/model-config', 'GET', undefined, abort.signal)]).then(([list, config]) => {
       if (abort.signal.aborted) return;
-      setModels(list.models); setFailed(false); setLoaded(true);
       const initial = list.models.find(model => model.configured && model.provider === config.provider && model.id === config.model)
         ?? list.models.find(model => model.configured);
-      setSelected(initial ? modelKey(initial.provider, initial.id) : null);
-      setThinking(selectThinkingLevel(initial?.thinkingLevels, config.thinkingLevel));
+      const next = { revision: modelRevision, models: list.models, selected: initial ? modelKey(initial.provider, initial.id) : null,
+        thinking: selectThinkingLevel(initial?.thinkingLevels, config.thinkingLevel) };
+      snapshotRef.current = next;
+      setModels(next.models); setSelected(next.selected); setThinking(next.thinking); setFailed(false); setLoadedRevision(next.revision);
     }).catch(error => { if (!abort.signal.aborted) { setFailed(true); notifyRequestError(error, 'new-chat-models'); } });
     return () => abort.abort();
-  }, [reload, modelRevision]);
-  return { models, selected, setSelected, thinking, setThinking, failed, loaded, setReload };
+  }, [reload, modelRevision, snapshotRef]);
+  return { models, selected, setSelected, thinking, setThinking, failed, loaded: loadedRevision === modelRevision, setReload };
 }
 
 /** 页面、背景与编辑器持续挂载；草稿版本只更新数据，不再重建任何可见控件。 */
-export function NewChatPage({ modelRevision = 0, skillRevision, draftRevision, projectPath, workspaceId, workspaceTitle, novelRoot, onStarted, renderProjectControl, quoteDraft }: {
-  modelRevision?: number; skillRevision: number;
+export function NewChatPage({ modelRevision, modelSnapshotRef, skillRevision, draftRevision, projectPath, workspaceId, workspaceTitle, novelRoot, onStarted, renderProjectControl, quoteDraft }: {
+  modelRevision: number; modelSnapshotRef: RefObject<NewChatModelSnapshot | null>; skillRevision: number;
   draftRevision: number; projectPath: string;
   workspaceId: string | null; workspaceTitle?: string; novelRoot?: string;
   onStarted: (session: SessionSummary) => void; renderProjectControl: (disabled: boolean) => ReactNode;
   quoteDraft?: ChapterQuoteDraft;
 }) {
-  const modelState = useNewChatModels(modelRevision);
+  const modelState = useNewChatModels(modelRevision, modelSnapshotRef);
   const [pending, setPending] = useState(false);
   const [unstartedWorld, setUnstartedWorld] = useState<string | null>(null);
   // 以本书正式资料为准，换会话或换浏览器都能识别已确认的世界观。
@@ -125,7 +136,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
   /** 并发附件共用创建请求；目录绑定后固定，发送失败重试复用同一会话。 */
   function ensureSession(): Promise<SessionSummary> {
     if (!canStart) return Promise.reject(new Error('请先选择项目或小说。'));
-    if (!chosen?.configured) return Promise.reject(new Error('请先选择已配置的模型。'));
+    if (!loaded || failed || !chosen?.configured) return Promise.reject(new Error('请先选择已配置的模型。'));
     if (!draft.current) {
       const path = workspaceId ? `/api/workspaces/${encodeURIComponent(workspaceId)}/sessions` : '/api/sessions';
       draft.current = requestJson<SessionSummary>(path, 'POST', {
@@ -177,7 +188,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
           : !loaded ? null : !chosen ? '暂无已配置凭据的模型，请先配置本机模型。' : pending ? '正在开始对话…' : null}
       </div>
       <TaskComposer draftContext={quoteDraft?.items.length ? <ChapterQuoteList draft={quoteDraft} /> : null}
-        options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !chosen || failed, busy: pending,
+        options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !loaded || !chosen || failed, busy: pending,
         hasDraftContext: Boolean(quoteDraft?.items.length),
         models: models.filter(model => model.configured).map(model => modelKey(model.provider, model.id)),
         modelLabels: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.name + ' · ' + model.provider])),

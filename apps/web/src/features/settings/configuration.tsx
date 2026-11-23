@@ -178,10 +178,11 @@ export function ProviderConfiguration({ onChange }: { onChange: () => void }) {
 }
 
 /** 全局技能准入影响下一轮聊天；依赖及每个工作区的选择仍由服务端判断。 */
-export function GlobalSkills({ onChange }: { onChange: () => void }) {
+export function GlobalSkills({ onChange }: { onChange: (deletedId?: string) => void }) {
   const { data, setData, error, reload } = useSettingsData(loadSkills);
   const [pending, setPending] = useState<string | null>(null);
   const [saveError, setSaveError] = useState('');
+  const [removing, setRemoving] = useState<SkillInfo | null>(null);
   async function toggle(skill: SkillInfo, enabled: boolean) {
     setPending(skill.id); setSaveError('');
     try {
@@ -191,10 +192,36 @@ export function GlobalSkills({ onChange }: { onChange: () => void }) {
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : '技能设置保存失败'); }
     finally { setPending(null); }
   }
+  /** 服务端确认后再更新两个列表。失败时保留确认框，用户可以重试。 */
+  async function remove() {
+    if (!removing || pending !== null) return;
+    const { id } = removing;
+    setPending(id);
+    setSaveError('');
+    const result = await runWithToast(() => requestJson('/api/skills/' + encodeURIComponent(id), 'DELETE'),
+      { loading: '正在删除技能…', success: '技能已删除' });
+    if (result.ok) {
+      setData(current => current && ({ skills: current.skills.filter(skill => skill.id !== id) }));
+      setRemoving(null);
+      onChange(id);
+    }
+    setPending(null);
+  }
   if (error) return <p role="alert">{error} <Button onClick={reload}>重试</Button></p>;
   if (!data) return <p role="status">正在读取技能…</p>;
   return <><SettingsSection title="全局启用" description="修改从下一轮聊天起生效。">
     {data.skills.map(s => <SettingsRow key={s.id} title={s.name} description={s.description}>
-      <Switch aria-label={s.name} checked={s.enabled} disabled={pending !== null} onCheckedChange={v => void toggle(s, v)} /></SettingsRow>)}
-  </SettingsSection><p role="alert">{saveError}</p></>;
+      <div className="plotloom-settings-skill-actions">
+        {s.source !== 'builtin' ? <Button variant="ghost" danger size="sm" iconOnly tooltip aria-label={`删除技能 ${s.name}`}
+          disabled={pending !== null} onClick={() => setRemoving(s)}><Trash2 aria-hidden="true" /></Button> : null}
+        <Switch aria-label={s.name} checked={s.enabled} disabled={pending !== null} onCheckedChange={v => void toggle(s, v)} />
+      </div>
+    </SettingsRow>)}
+  </SettingsSection><p role="alert">{saveError}</p>
+    {removing ? <Dialog open title="删除技能" onOpenChange={open => { if (!open && pending === null) setRemoving(null); }}
+      footer={<><Button variant="ghost" disabled={pending !== null} onClick={() => setRemoving(null)}>取消</Button>
+        <Button danger loading={pending !== null} onClick={() => void remove()}>确认删除</Button></>}>
+      <p>删除「{removing.name}」及其在 Plotloom 中保存的资源文件？删除后，新一轮聊天将无法使用此技能。</p>
+    </Dialog> : null}
+  </>;
 }

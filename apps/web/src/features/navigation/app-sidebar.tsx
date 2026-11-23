@@ -64,7 +64,6 @@ export function AppSidebar({ page, sessionId, chats, listState, projects: regist
   }, [activeChatId, selectedSection]);
   useEffect(() => { if (currentProjectPath) setSections(current => ({ ...current, projects: true })); }, [currentProjectPath]);
   const toggle = (key: keyof typeof sections, expanded: boolean) => setSections(current => ({ ...current, [key]: expanded }));
-  const contentState = (count: number) => listState === 'error' ? 'error' : count ? 'ready' : 'empty';
   const shared = { activeChatId, now, onOpenChat, onOrganize };
   const groupActions = { onGroupUpdate, onArchiveGroup };
   const refresh = <SidebarActionButton label="刷新聊天列表" icon={<RefreshCw />} onClick={() => void onRefresh()} />;
@@ -80,21 +79,21 @@ export function AppSidebar({ page, sessionId, chats, listState, projects: regist
         {pinned.map(chat => <ChatRow key={chat.id} chat={chat} {...shared} />)}
       </SidebarSection>}
       <SidebarSection label="项目" expanded={sections.projects} onExpandedChange={next => toggle('projects', next)}
-        contentState={projectState === 'error' ? 'error' : projects.length ? 'ready' : 'empty'} emptyText={projectState === 'loading' ? '正在加载…' : '暂无项目'}
+        contentState={projectState === 'error' ? 'error' : projects.length ? 'ready' : projectState === 'loading' ? 'loading' : 'empty'} emptyText="暂无项目"
         errorText="项目加载失败，请刷新重试" actions={<>{projectState === 'error' || listState === 'error' ? refresh : null}
           <SidebarActionButton label="新增项目" icon={<Plus />} onClick={onChooseProject} /></>}>
         {projects.map(group => <ChatGroupView key={group.id} group={group} {...shared} {...groupActions} chatState={listState} onNewChat={() => onNewChat(group.projectPath)} />)}
       </SidebarSection>
       <SidebarSection label="小说" expanded={sections.novels} onExpandedChange={next => toggle('novels', next)}
-        contentState={workspaceState === 'error' ? 'error' : contentState(novels.length)}
-        emptyText={workspaceState === 'loading' || listState === 'loading' ? '正在加载…' : '暂无小说'}
+        contentState={workspaceState === 'error' || listState === 'error' ? 'error' : novels.length ? 'ready' : workspaceState === 'loading' || listState === 'loading' ? 'loading' : 'empty'}
+        emptyText="暂无小说"
         errorText="小说列表加载失败，请刷新重试"
         actions={<><SidebarActionButton label="新建小说" icon={<Plus />} onClick={onCreateNovel} />
           <SidebarActionButton label="刷新小说列表" icon={<RefreshCw />} onClick={() => { void onRefreshWorkspaces(); void onRefresh(); }} /></>}>
         {novels.map(group => <ChatGroupView key={group.id} group={group} {...shared} {...groupActions} chatState={listState} onNewChat={() => onNewNovelChat(group.id)} />)}
       </SidebarSection>
       <SidebarSection label="最近" expanded={sections.recent} onExpandedChange={next => toggle('recent', next)}
-        contentState={contentState(recent.length)} emptyText={listState === 'loading' ? '正在加载…' : '暂无聊天'}
+        contentState={listState === 'ready' && !recent.length ? 'empty' : listState}
         errorText="聊天列表加载失败，请刷新重试"
         actions={listState === 'error' ? refresh : undefined}>
         {recent.map(chat => <ChatRow key={chat.id} chat={chat} {...shared} />)}
@@ -158,7 +157,7 @@ function ChatGroupView({ group, onNewChat, onGroupUpdate, onArchiveGroup, chatSt
   useEffect(() => { if (containsActive) setExpanded(true); }, [containsActive, shared.activeChatId]);
   return <><SidebarGroup contextMenu={menu} label={group.label} expanded={expanded} onExpandedChange={setExpanded}
     collapsedIcon={novel ? <Book /> : undefined} expandedIcon={novel ? <BookOpen /> : undefined}
-    contentState={chatState === 'error' ? 'error' : group.chats.length ? 'ready' : 'empty'} emptyText={chatState === 'loading' ? '正在加载…' : '暂无聊天'}
+    contentState={chatState === 'ready' && !group.chats.length ? 'empty' : chatState}
     actions={onNewChat ? <SidebarActionButton label={`在 ${group.label} 中新建聊天`} icon={<SquarePen />} onClick={onNewChat} /> : undefined}>
     {group.chats.map(chat => <ChatRow key={chat.id} chat={chat} {...shared} />)}
   </SidebarGroup>

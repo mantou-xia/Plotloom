@@ -8,7 +8,8 @@ import { Sidebar } from '@plotloom/ui/sidebar';
 import { SidebarNavItem } from '@plotloom/ui/sidebar/nav-item';
 import { SettingsSection } from '@plotloom/ui/settings-section';
 import { SettingsRow } from '@plotloom/ui/settings-row';
-import { THEME_PRESETS } from '@plotloom/ui/theme';
+import { THEME_MODES, THEME_PRESETS, normalizeThemeMode, type ThemeMode } from '@plotloom/ui/theme';
+import { RadioGroup } from '@plotloom/ui/radio-group';
 import './settings-page.css';
 
 import { ArchiveList, type ArchiveListProps } from './archive-list';
@@ -17,10 +18,14 @@ interface SettingsPageProps extends ArchiveListProps {
   archiveStatus: 'loading' | 'ready' | 'error';
   section: SettingsCategory;
   onModelsChange: () => void;
-  onSkillsChange: () => void;
+  onSkillsChange: (deletedId?: string) => void;
   color: string;
   onColorChange: (color: string) => void;
+  mode: ThemeMode;
+  onModeChange: (mode: ThemeMode) => void;
 }
+
+const appearanceOptions = Object.entries(THEME_MODES).map(([value, label]) => ({ value, label }));
 
 /** 进入设置时将焦点交给返回按钮，侧栏宽度和拖拽把手由应用外层布局管理。 */
 export const settingsCategories = { appearance: '外观', providers: '模型服务', defaults: '默认模型', persona: 'Agent 人设', skills: '技能', tools: '工具', archive: '归档' } as const;
@@ -42,7 +47,7 @@ export function SettingsSidebar({ onBack, section, onSelect }: { onBack: () => v
 }
 
 /** 设置正文嵌入共享主内容区，主题保存由应用管理。 */
-export function SettingsPage({ color, onColorChange, section, onModelsChange, onSkillsChange, archived, archiveStatus, ...archiveActions }: SettingsPageProps) {
+export function SettingsPage({ color, onColorChange, mode, onModeChange, section, onModelsChange, onSkillsChange, archived, archiveStatus, ...archiveActions }: SettingsPageProps) {
   if (section === 'providers') return <ProviderConfiguration onChange={onModelsChange} />;
   return <div className="plotloom-settings-content">
       <h2 className="plotloom-settings-content__title">{section === 'archive' ? '已归档的对话' : settingsCategories[section]}</h2>
@@ -53,6 +58,10 @@ export function SettingsPage({ color, onColorChange, section, onModelsChange, on
           {archiveStatus === 'ready' && <p>从侧边栏归档对话后，可以在这里恢复或永久删除。</p>}
         </div>
       ) : section === 'archive' ? <ArchiveList archived={archived} {...archiveActions} /> : section === 'defaults' ? <DefaultModelConfiguration onChange={onModelsChange} /> : section === 'skills' ? <GlobalSkills onChange={onSkillsChange} /> : section === 'tools' ? <ToolsSettings /> : section === 'persona' ? <AgentProfileSettings /> : <SettingsSection title="主题">
+        <SettingsRow title="颜色模式" description="使用浅色或深色，也可以随操作系统自动切换。">
+          <RadioGroup aria-label="颜色模式" className="plotloom-appearance-modes" orientation="horizontal" size="sm" options={appearanceOptions}
+            value={mode} onValueChange={value => onModeChange(normalizeThemeMode(value))} />
+        </SettingsRow>
         <SettingsRow title="主题色" description="选择偏好的颜色，应用于整个界面。">
           <ColorSwatches color={color} onChange={onColorChange} presets={THEME_PRESETS} label="主题色" />
         </SettingsRow>

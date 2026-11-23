@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contrastRatio, createThemeTokens, DEFAULT_THEME_COLOR, normalizeThemeColor, THEME_PRESETS } from '../../packages/ui/src/theme/theme.ts';
+import { contrastRatio, createThemeTokens, DEFAULT_THEME_COLOR, normalizeThemeColor, normalizeThemeMode, resolveColorScheme, THEME_PRESETS } from '../../packages/ui/src/theme/theme.ts';
+
+test('显式模式覆盖系统，缺失或非法设置跟随系统', () => {
+  assert.equal(normalizeThemeMode('old'), 'system');
+  assert.equal(normalizeThemeMode(null), 'system');
+  assert.equal(resolveColorScheme('system', true), 'dark');
+  assert.equal(resolveColorScheme('system', false), 'light');
+  assert.equal(resolveColorScheme('light', true), 'light');
+  assert.equal(resolveColorScheme('dark', false), 'dark');
+});
 
 test('HEX 输入规范化，半输入及不透明度不作为主题保存', () => {
   assert.equal(normalizeThemeColor(' #AbC '), '#aabbcc');
@@ -22,14 +31,18 @@ test('任意主色保留原值，按钮状态、选中背景及链接前景达�
     }
   }
   for (const color of colors) {
-    const tokens = createThemeTokens(color);
-    assert.equal(tokens['--pl-primary'], color);
-    for (const state of ['', '-hover', '-active']) {
-      assert.ok(contrastRatio(tokens[`--pl-primary${state}`], tokens[`--pl-on-primary${state}`]) >= 4.5, `${color} ${state}`);
+    for (const scheme of ['light', 'dark'] as const) {
+      const tokens = createThemeTokens(color, scheme);
+      assert.equal(tokens['--pl-primary'], color);
+      for (const state of ['', '-hover', '-active']) {
+        assert.ok(contrastRatio(tokens[`--pl-primary${state}`], tokens[`--pl-on-primary${state}`]) >= 4.5, `${color} ${state}`);
+      }
+      assert.ok(contrastRatio(tokens['--pl-primary-text'], tokens['--pl-primary-subtle']) >= 4.5, `${color} selected`);
+      const surfaces = scheme === 'dark' ? ['#18191c', '#222428', '#2c2e34'] : ['#ffffff', '#f6f6f7'];
+      for (const surface of surfaces) {
+        assert.ok(contrastRatio(tokens['--pl-primary-text'], surface) >= 4.5, `${color} ${scheme} link`);
+        assert.ok(contrastRatio(tokens['--pl-focus'], surface) >= 3, `${color} ${scheme} focus`);
+      }
     }
-    assert.ok(contrastRatio(tokens['--pl-primary-text'], tokens['--pl-primary-subtle']) >= 4.5, `${color} selected`);
-    assert.ok(contrastRatio(tokens['--pl-primary-text'], '#ffffff') >= 4.5, `${color} link`);
-    assert.ok(contrastRatio(tokens['--pl-primary-text'], '#f6f6f7') >= 4.5, `${color} muted link`);
-    assert.ok(contrastRatio(tokens['--pl-focus'], '#ffffff') >= 3, `${color} focus`);
   }
 });

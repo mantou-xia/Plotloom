@@ -1,13 +1,14 @@
 /* Visual reference: Uiverse.io / zanina-yassine / curly-shrimp-52 (MIT), see SOURCE.md. */
 .pl-primary-tabs { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .pl-primary-tabs__scroll { max-width: 100%; align-self: flex-start; overflow-x: auto; padding: 2px 2px 8px; margin: -2px -2px -8px; }
-.pl-primary-tabs__list { position: relative; isolation: isolate; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); width: max-content; padding: 2px; border-radius: 9px; background: var(--pl-primary-tabs-track, #dadadb); }
+/* 底槽用弱层级，滑块用更亮的表面，两种主题下都能看清选中位置。 */
+.pl-primary-tabs__list { position: relative; isolation: isolate; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); width: max-content; padding: 2px; border-radius: 9px; background: var(--pl-primary-tabs-track, var(--pl-surface-muted, #f6f6f7)); }
 .pl-primary-tabs__tab { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--pl-text-muted, #60636b); font: inherit; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; }
 .pl-primary-tabs__tab[data-active], .pl-primary-tabs__tab:hover:not([data-disabled]) { color: var(--pl-text, #202124); }
 .pl-primary-tabs__tab:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-focus, #60636b); }
 .pl-primary-tabs__tab[data-disabled] { opacity: .45; cursor: not-allowed; }
 /* 滑块脱离文档流；不切换字重和尺寸，快速切换也不会推动标签或正文。 */
-.pl-primary-tabs__indicator { position: absolute; z-index: 0; top: 0; left: 0; width: var(--active-tab-width); height: var(--active-tab-height); transform: translate(var(--active-tab-left), var(--active-tab-top)); border-radius: 7px; background: var(--pl-surface, #fff); box-shadow: 0 3px 8px rgb(0 0 0 / 12%), 0 3px 1px rgb(0 0 0 / 4%); pointer-events: none; transition: transform .2s ease-out, width .2s ease-out; }
+.pl-primary-tabs__indicator { position: absolute; z-index: 0; top: 0; left: 0; width: var(--active-tab-width); height: var(--active-tab-height); transform: translate(var(--active-tab-left), var(--active-tab-top)); border-radius: 7px; background: light-dark(var(--pl-surface-raised, #fff), var(--pl-surface-active, #34363e)); box-shadow: 0 3px 8px rgb(0 0 0 / 12%), 0 3px 1px rgb(0 0 0 / 4%); pointer-events: none; transition: transform .2s ease-out, width .2s ease-out; }
 .pl-primary-tabs__panel { min-width: 0; }
 .pl-primary-tabs__panel:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pl-focus, #60636b); }
 @media (prefers-reduced-motion: reduce) { .pl-primary-tabs__indicator { transition: none; } }

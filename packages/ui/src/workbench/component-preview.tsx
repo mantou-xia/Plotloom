@@ -29,6 +29,7 @@ import { QuestionCard } from '../question-card/question-card.tsx';
 import { Disclosure } from '../disclosure/disclosure.tsx';
 import { Drawer } from '../drawer/drawer.tsx';
 import { Notice } from '../notice/notice.tsx';
+import { Skeleton } from '../skeleton/skeleton.tsx';
 import { Dialog } from '../dialog/dialog.tsx';
 import { formCatalog } from './form-catalog.ts';
 import { Tooltip } from '../tooltip/tooltip.tsx';
@@ -101,6 +102,9 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   </ActionMenu>;
   if (component === 'drawer') target = <><Button onClick={() => setDrawerOpen(true)}>打开抽屉</Button><Drawer open={drawerOpen} onOpenChange={setDrawerOpen} title="示例抽屉">{content}</Drawer></>;
   if (component === 'notice') target = <Notice tone={state === 'error' || state === 'success' ? state : 'info'}>{state === 'success' ? '连接成功' : state === 'error' ? '无法连接，请检查服务地址。' : '正在检查连接…'}</Notice>;
+  if (component === 'skeleton') target = <Skeleton key={state}
+    lineWidths={state === 'block' ? ['100%', '100%', '100%', '63%'] : undefined}
+    style={{ ...style, width: style.width ?? 240 }} />;
   if (component === 'disclosure') {
     const disclosure = <Disclosure key={state} label="更多设置" defaultOpen={state === 'open'}>{content}</Disclosure>;
     if (state === 'card') target = <Card style={style}>{disclosure}</Card>;

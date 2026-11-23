@@ -9,7 +9,7 @@
 .pl-message-status__action { width: 32px; height: 32px; }
 .pl-message-status[data-state="failed"] .pl-message-status__icon,
 .pl-message-status[data-state="failed"] .pl-message-status__title,
-.pl-message-status [data-retry-error] { color: #b91c1c; }
+.pl-message-status [data-retry-error] { color: var(--pl-danger, #b91c1c); }
 .pl-message-status[data-state="waiting"] .pl-message-status__icon { animation: pl-message-status-spin 1s linear infinite; }
 .pl-message-status__feedback { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @keyframes pl-message-status-spin { to { transform: rotate(360deg); } }

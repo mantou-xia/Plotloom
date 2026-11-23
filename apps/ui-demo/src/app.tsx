@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ComponentPreview, ComponentWorkbench, defaultControls, type PreviewControls } from '@plotloom/ui/workbench';
 import { componentCatalog } from '@plotloom/ui/workbench/catalog';
 import { ThemeRoot } from '@plotloom/ui/theme-root';
-import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '@plotloom/ui/theme';
+import { DEFAULT_THEME_COLOR, normalizeThemeColor, normalizeThemeMode, readThemeMode, writeThemeMode, type ThemeMode } from '@plotloom/ui/theme';
 
-interface PreviewConfig { component: string; state: string; color: string; revision: number; controls: PreviewControls }
+interface PreviewConfig { component: string; state: string; color: string; mode: ThemeMode; revision: number; controls: PreviewControls }
 const initial = componentCatalog[0];
-const initialConfig: PreviewConfig = { component: initial.id, state: initial.states[0].id, color: DEFAULT_THEME_COLOR, revision: 0, controls: defaultControls(initial.id, initial.states[0].id) };
+const initialConfig: PreviewConfig = { component: initial.id, state: initial.states[0].id, color: DEFAULT_THEME_COLOR, mode: readThemeMode(), revision: 0, controls: defaultControls(initial.id, initial.states[0].id) };
 
 /** 宿主只管理调试状态；消息限定同源及当前 iframe，配色更新不重新加载预览。 */
 export function WorkbenchApp() {
@@ -32,8 +32,9 @@ export function WorkbenchApp() {
     return () => window.removeEventListener('message', receive);
   }, [config]);
 
-  return <ThemeRoot color={config.color}><ComponentWorkbench
+  return <ThemeRoot color={config.color} mode={config.mode} documentTheme><ComponentWorkbench
     example={example} state={config.state} color={config.color} controls={config.controls} {...size} lastAction={lastAction} frameRef={frameRef}
+    mode={config.mode} onModeChange={mode => { writeThemeMode(mode); setConfig(current => ({ ...current, mode })); }}
     onControlsChange={(patch) => setConfig((current) => ({ ...current, controls: { ...current.controls, ...patch } }))}
     onSelect={(id) => {
       const selected = componentCatalog.find((item) => item.id === id)!;
@@ -55,13 +56,15 @@ export function PreviewApp() {
       if (event.origin !== location.origin || event.source !== window.parent || event.data?.type !== 'plotloom:config') return;
       const next = event.data.config as PreviewConfig;
       const entry = componentCatalog.find((item) => item.id === next?.component);
-      if (entry?.states.some((item) => item.id === next.state) && typeof next.color === 'string' && normalizeThemeColor(next.color)) setConfig(next);
+      if (entry?.states.some((item) => item.id === next.state) && typeof next.color === 'string' && normalizeThemeColor(next.color)) {
+        setConfig({ ...next, mode: normalizeThemeMode(next.mode) });
+      }
     };
     window.addEventListener('message', receive);
     window.parent.postMessage({ type: 'plotloom:ready' }, location.origin);
     return () => window.removeEventListener('message', receive);
   }, []);
-  return <ThemeRoot color={config.color}><ComponentPreview
+  return <ThemeRoot color={config.color} mode={config.mode} documentTheme><ComponentPreview
     key={`${config.component}:${config.state}:${config.revision}`} component={config.component} state={config.state} color={config.color} controls={config.controls}
     onColorChange={(color) => { setConfig((current) => ({ ...current, color })); window.parent.postMessage({ type: 'plotloom:color', color }, location.origin); }}
     onAction={(action) => window.parent.postMessage({ type: 'plotloom:action', action }, location.origin)}

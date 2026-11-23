@@ -3,7 +3,16 @@ import type { AgentEvent, ModelConfig, ModelInfo, SessionListItem } from '@plotl
 import { iconMarkup } from '@plotloom/ui/icons/dom';
 import { checkFields, checkJson, checkStream, consumeSse, isObject, type CheckResult, type StreamItem } from './client.ts';
 import { uploadDraft, attachmentPreview, appendSourceDraft } from './sources.ts';
+import { normalizeThemeMode, readThemeMode, THEME_MODES, writeThemeMode } from '@plotloom/ui/theme';
+import '@plotloom/ui/theme.css';
 import './style.css';
+
+/** 跟随系统时由根节点 color-scheme 响应变化，显式选择覆盖系统。 */
+function applyThemeMode(mode = readThemeMode()) {
+  if (mode === 'system') delete document.documentElement.dataset.plScheme;
+  else document.documentElement.dataset.plScheme = mode;
+}
+applyThemeMode();
 
 type Phase = 'running' | 'success' | 'error' | 'stopped' | 'disconnected';
 interface Run {
@@ -42,7 +51,7 @@ app.innerHTML = `
   <header class="topbar">
     <a class="brand" href="#sessions.create"><span class="brand-mark" aria-hidden="true">P<span>/</span></span><span>Plotloom<span class="brand-sub">开发者工作台</span></span></a>
     <div class="top-title">接口试验台 <span class="tag">P3 · DEMO</span></div>
-    <div class="top-actions"><span id="connection" role="status"></span><button id="refresh" class="button quiet">重新检测</button></div>
+    <div class="top-actions"><select id="color-mode" aria-label="颜色模式">${Object.entries(THEME_MODES).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><span id="connection" role="status"></span><button id="refresh" class="button quiet">重新检测</button></div>
   </header>
   <div class="workspace">
     <aside class="sidebar" aria-label="接口目录">
@@ -402,6 +411,14 @@ function notify(message: string) {
   byId('notice').classList.add('visible');
   noticeTimer = setTimeout(() => byId('notice').classList.remove('visible'), 3500);
 }
+
+const modePicker = byId<HTMLSelectElement>('color-mode');
+modePicker.value = readThemeMode();
+modePicker.addEventListener('change', () => {
+  const mode = normalizeThemeMode(modePicker.value);
+  writeThemeMode(mode);
+  applyThemeMode(mode);
+});
 
 window.addEventListener('hashchange', () => {
   selected = endpointById.get(location.hash.slice(1)) ?? selected;

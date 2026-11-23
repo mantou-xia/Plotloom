@@ -2,6 +2,15 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // 主题模块执行前就恢复显式选择，避免首屏短暂使用系统的相反配色。
+      try {
+        const mode = localStorage.getItem('plotloom.theme-mode');
+        if (mode === 'light' || mode === 'dark') document.documentElement.dataset.plScheme = mode;
+      } catch {}
+    </script>
+    <style>html { color-scheme: light dark; background: Canvas; } html[data-pl-scheme="light"] { color-scheme: light; } html[data-pl-scheme="dark"] { color-scheme: dark; }</style>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
     <title>Plotloom</title>

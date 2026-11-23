@@ -16,8 +16,8 @@ import { modelKey } from './new-chat-page';
 import { thinkingLabels } from './thinking-levels';
 
 /** 组件保持纯 UI；这里负责公开协议转换、配置保存、附件上传及上下文刷新。 */
-export function ChatComposer({ sessionId, projectPath, busy, activity, stopping, revision, attachmentDropTarget, conversationFiles, quoteDraft, onSubmit, onStop, onRefresh }: {
-  sessionId: string; projectPath?: string; busy: boolean; activity?: string; stopping: boolean; revision: number;
+export function ChatComposer({ sessionId, projectPath, busy, disabled, activity, stopping, revision, attachmentDropTarget, conversationFiles, quoteDraft, onSubmit, onStop, onRefresh }: {
+  sessionId: string; projectPath?: string; busy: boolean; disabled: boolean; activity?: string; stopping: boolean; revision: number;
   attachmentDropTarget: RefObject<HTMLElement | null>;
   conversationFiles: readonly ComposerConversationFile[];
   quoteDraft?: ChapterQuoteDraft;
@@ -51,7 +51,7 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
 
   /** 等待服务端成功后更新选中值；互斥锁堵住连续点击和发送之间的配置竞争。 */
   async function saveConfig(input: SessionConfigRequest) {
-    if (operation.current || busy) throw new Error('当前任务处理中，请稍后调整配置。');
+    if (operation.current || busy || disabled) throw new Error('当前任务处理中，请稍后调整配置。');
     operation.current = true; setSaving(true);
     try {
       const saved = await requestJson<SessionConfig>(`${path}/config`, 'PUT', input);
@@ -68,7 +68,7 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
         : compactRunning ? '正在压缩上下文…' : null}
     </div>
     <TaskComposer draftContext={quoteDraft?.items.length ? <ChapterQuoteList draft={quoteDraft} /> : null}
-      options={{ height: 0, draftKey: sessionId, ...chatDraft('session:' + sessionId), disabled: !config || failed, busy: locked, stopping,
+      options={{ height: 0, draftKey: sessionId, ...chatDraft('session:' + sessionId), disabled: disabled || !config || failed, busy: locked, stopping,
       hasDraftContext: Boolean(quoteDraft?.items.length),
       onStop: canStop ? compactRunning ? () => {
         void requestJson(`${path}/compact/stop`, 'POST').then(onRefresh).catch(cause => notifyRequestError(cause, 'composer-compact-stop'));

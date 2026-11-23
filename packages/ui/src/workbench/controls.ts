@@ -114,7 +114,7 @@ export interface PreviewControls {
   sidebarIcon: boolean;
   sidebarGroupIcon: 'folder' | 'book';
   sidebarActions: boolean;
-  sidebarContentState: 'ready' | 'empty' | 'error';
+  sidebarContentState: 'ready' | 'loading' | 'empty' | 'error';
   sidebarEmptyText: string;
   sidebarErrorText: string;
   sessionTimeLabel: string;
@@ -200,7 +200,7 @@ export function defaultControls(component: string, state: string): PreviewContro
     tooltipDelay: 0,
     tooltipShake: true,
     cardBorderRadius: component === 'card' && state === 'liquid-glass' ? 32 : 8,
-    cardBackgroundColor: '#ffffff',
+    cardBackgroundColor: 'var(--pl-surface)',
     cardBordered: state === 'bordered',
     cardMaterial: state === 'liquid-glass' ? 'liquid-glass' : 'normal',
     width: component === 'split-pane-layout' ? { mode: state === 'narrow' ? 'fixed' : 'fill', value: 560 } : { mode: component === 'sidebar-action-button' ? 'auto' : component === 'sidebar' || component.startsWith('sidebar-') || component === 'card' && state === 'liquid-glass' ? 'fixed' : component === 'global-layout' || component === 'page-layout' || component === 'scroll-box' || component === 'ascii-ocean' ? 'fill' : 'auto', value: component === 'card' && state === 'liquid-glass' ? 360 : component === 'sidebar-action-button' ? 32 : component === 'sidebar-session-item' ? 320 : component === 'sidebar' || component.startsWith('sidebar-') ? 256 : component === 'button' ? 180 : 320 },
@@ -236,7 +236,7 @@ export function defaultControls(component: string, state: string): PreviewContro
     sidebarIcon: true,
     sidebarGroupIcon: 'folder',
     sidebarActions: true,
-    sidebarContentState: state === 'empty' || state === 'error' ? state : 'ready',
+    sidebarContentState: state === 'loading' || state === 'empty' || state === 'error' ? state : 'ready',
     sidebarEmptyText: '暂无聊天',
     sidebarErrorText: '加载失败',
     sessionTimeLabel: '3 分钟前',

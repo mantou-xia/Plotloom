@@ -35,6 +35,9 @@ export const componentCatalog: ComponentExample[] = [
   { id: 'notice', name: 'Notice', category: '反馈组件', exportPath: './notice', description: '在原位反馈操作结果。',
     interaction: 'tone 控制状态，children 提供提示文本。', width: 520, height: 220,
     states: [{ id: 'info', name: '信息', description: '普通状态。' }, { id: 'success', name: '成功', description: '操作完成。' }, { id: 'error', name: '失败', description: '可读屏的错误状态。' }] },
+  { id: 'skeleton', name: 'Skeleton', category: '反馈组件', exportPath: './skeleton', description: '加载骨架屏先预留空间，超过 150 毫秒后显示带轻缓呼吸动效的灰色占位。',
+    interaction: '通过 style 或 className 设置尺寸，lineWidths 设置段落各行宽度，外层区域标注 aria-busy。', width: 400, height: 200,
+    states: [{ id: 'default', name: '文本行', description: '文本或列表行的占位。' }, { id: 'block', name: '内容块', description: '四行正文占位，末行收短。' }] },
   { id: 'disclosure', name: 'Disclosure', category: '布局组件', exportPath: './disclosure',
     description: '折叠一组可选内容。', interaction: 'label 设置标题，children 提供内容，defaultOpen 控制初始状态。用鼠标、Enter 或空格切换。', width: 520, height: 300,
     states: [
@@ -626,6 +629,7 @@ export const componentCatalog: ComponentExample[] = [
       "name": "展开",
       "description": "独立组件的展开初始状态，右侧属性可继续调整。"
     },
+    { "id": "loading", "name": "加载态", "description": "内容行保留高度，延迟显示灰色骨架。" },
     { "id": "empty", "name": "空态", "description": "展开后显示缩进的灰色暂无聊天文字；右侧可修改文案。" },
     { "id": "error", "name": "异常态", "description": "展开后显示红色加载失败提示，不展示普通条目；右侧可修改文案。" },
     {
@@ -682,6 +686,7 @@ export const componentCatalog: ComponentExample[] = [
       { id: 'collapsed', name: '收起分类', description: '隐藏整个分类内容，子项退出键盘导航。' },
       { id: 'long', name: '长标题', description: '分类标题省略，展开箭头和独立操作区保持可见。' },
       { id: 'disabled', name: '禁止折叠', description: '禁用标题切换；操作插槽由调用方控制。' },
+      { id: 'loading', name: '加载态', description: '内容行保留高度，延迟显示灰色骨架。' },
       { id: 'empty', name: '空态', description: '分类下显示灰色暂无聊天文字，标题和操作仍保留。' },
       { id: 'error', name: '异常态', description: '分类下显示红色加载失败文字，支持自定义文案。' },
     ],

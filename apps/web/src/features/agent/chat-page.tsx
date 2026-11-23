@@ -6,6 +6,7 @@ import type { ComposerMessage } from '@plotloom/ui/task-composer';
 import type { ComposerConversationFile } from '@plotloom/ui/task-composer/types';
 import { Button } from '@plotloom/ui/button';
 import { ScrollBox } from '@plotloom/ui/scroll-box';
+import { Skeleton } from '@plotloom/ui/skeleton';
 import { ToolApprovalCard, type ToolApprovalState } from '@plotloom/ui/tool-approval-card';
 import { QuestionCard } from '@plotloom/ui/question-card';
 import { ChatComposer } from './chat-composer';
@@ -63,22 +64,25 @@ function ChatTitle({ name, onSave }: { name: string; onSave: (name: string) => P
 }
 
 /** 页面以服务端快照为准；SSE 触发刷新，离开页面断开连接但不停止后台任务。 */
-export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript, onOpenDeliverable, quoteDraft }: {
+export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, snapshots, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript, onOpenDeliverable, quoteDraft }: {
   onRename: (id: string, name: string) => Promise<string>;
+  snapshots: Map<string, SessionDetail>;
   title?: string; novelRoot?: string; acceptedRevision: number; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
   onOpenManuscript: (view: NonNullable<SessionDetail['manuscriptRequest']>['view']) => boolean;
   onOpenDeliverable: OpenDeliverable;
   quoteDraft?: ChapterQuoteDraft;
 }) {
-  const [session, setSession] = useState<SessionDetail | null>(null);
+  const [session, setSession] = useState(() => snapshots.get(sessionId) ?? null);
+  const [verified, setVerified] = useState(false);
+  const hasRead = useRef(false);
   const [openedAt] = useState(() => Date.now());
   const manuscriptRequest = session?.manuscriptRequest;
   useEffect(() => {
-    if (!manuscriptRequest || (['discard', 'export_txt'].includes(manuscriptRequest.view.mode) && Date.parse(manuscriptRequest.createdAt) < openedAt)) return;
+    if (!verified || !manuscriptRequest || (['discard', 'export_txt'].includes(manuscriptRequest.view.mode) && Date.parse(manuscriptRequest.createdAt) < openedAt)) return;
     const key = 'plotloom:manuscript-request:' + sessionId;
     if (sessionStorage.getItem(key) === manuscriptRequest.id) return;
     if (onOpenManuscript(manuscriptRequest.view)) sessionStorage.setItem(key, manuscriptRequest.id);
-  }, [sessionId, manuscriptRequest, openedAt, onOpenManuscript]);
+  }, [sessionId, verified, manuscriptRequest, openedAt, onOpenManuscript]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -135,9 +139,20 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
       try {
         const detail = await requestJson<SessionDetail>(path, 'GET', undefined, abort.signal);
         if (abort.signal.aborted) return;
-        setSession(detail); setLoadFailed(false);
+        // 只缓存稳定快照，避免切回时重放审批或显示过期的生成状态。
+        snapshots.delete(sessionId);
+        if (detail.status === 'idle' && detail.activity === 'idle' && !pending) {
+          snapshots.set(sessionId, detail);
+          const oldest = snapshots.keys().next().value;
+          if (snapshots.size > 12 && oldest !== undefined) snapshots.delete(oldest);
+        }
+        setSession(detail); setVerified(true); setLoadFailed(false);
         if (detail.status === 'running' || pending) timer = setTimeout(() => void load(), 350);
-        else { setControlsRevision(value => value + 1); void onSessionsChange(); }
+        else {
+          if (hasRead.current) setControlsRevision(value => value + 1);
+          void onSessionsChange();
+        }
+        hasRead.current = true;
       } catch (cause) {
         if (!abort.signal.aborted) {
           setLoadFailed(true); notifyRequestError(cause, `session-load-${sessionId}`);
@@ -147,7 +162,7 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
     }
     void load();
     return () => { abort.abort(); clearTimeout(timer); };
-  }, [path, pending, reload, onSessionsChange, sessionId, acceptedRevision]);
+  }, [path, pending, reload, onSessionsChange, sessionId, acceptedRevision, snapshots]);
 
   // 按浮层实际高度给最后一轮留出滚动空间。输入区和正文变高时，仅在用户仍靠近底部时跟随。
   useLayoutEffect(() => {
@@ -176,7 +191,7 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
   function send(message: ComposerMessage): Promise<boolean> {
     const sent = quoteDraft?.items ?? [];
     const body = composerRequest(message, sent);
-    if ((!body.text && !body.attachmentIds?.length && !body.references?.length) || busy || sending.current || !session) return Promise.resolve(false);
+    if ((!body.text && !body.attachmentIds?.length && !body.references?.length) || busy || sending.current || !session || !verified) return Promise.resolve(false);
     const acceptance = Promise.withResolvers<boolean>();
     follow.current = true;
     void generate('messages', body, acceptance.resolve).catch(() => {});
@@ -188,7 +203,7 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
 
   /** 重试由后端重放最新原始请求；保留历史，工具会再次执行。同步锁阻止连续点击。 */
   async function retry() {
-    if (!session?.retryMessageId || busy || sending.current) return;
+    if (!session?.retryMessageId || busy || sending.current || !verified) return;
     follow.current = true;
     await generate('retry', { messageId: session.retryMessageId });
   }
@@ -197,6 +212,7 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
   async function generate(endpoint: 'messages' | 'retry', body: SubmitMessageRequest | RetryMessageRequest, accepted?: (value: boolean) => void) {
     if (sending.current) { accepted?.(false); return; }
     sending.current = true;
+    snapshots.delete(sessionId);
     const abort = new AbortController();
     controller.current = abort; setPending(true);
     try {
@@ -260,21 +276,28 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
     }
   }
 
-  return <section ref={attachmentDropTarget} className="plotloom-chat" aria-label="聊天">
+  const initialLoading = !session && !loadFailed;
+  return <section ref={attachmentDropTarget} className="plotloom-chat" aria-label="聊天" aria-busy={initialLoading}>
+    {initialLoading && !title ? <header className="plotloom-chat__header"><Skeleton className="plotloom-chat__title-skeleton" /></header> :
     <ChatTitle name={title || session?.name || '新聊天'} onSave={async next => {
       const name = await onRename(sessionId, next);
+      const cached = snapshots.get(sessionId);
+      if (cached) snapshots.set(sessionId, { ...cached, name });
       setSession(current => current && { ...current, name });
       await onSessionsChange();
-    }} />
+    }} />}
     <div className="plotloom-chat__reading">
       <ScrollBox ref={viewport} className="plotloom-chat__messages" aria-label="聊天记录" onScroll={event => {
         const element = event.currentTarget;
         follow.current = element.scrollHeight - element.clientHeight - element.scrollTop <= 48; setAway(!follow.current);
       }}>
         <div ref={thread} className="plotloom-chat__thread">
-          {!session && !loadFailed ? <p role="status">正在加载聊天…</p> : session && !turns.length ? <p className="plotloom-chat__empty">有什么想法，开始聊聊吧。</p> : null}
+          {initialLoading ? <div className="plotloom-chat__history-skeleton">
+            <Skeleton className="plotloom-chat__message-skeleton" />
+            <Skeleton lineWidths={['82%', '68%', '54%']} />
+          </div> : session && !turns.length ? <p className="plotloom-chat__empty">有什么想法，开始聊聊吧。</p> : null}
           {turns.map(turn => <ChatTurn key={turn.id} turn={turn} busy={busy} onOpenCitations={onOpenCitations} onOpenTurnChanges={onOpenTurnChanges}
-            onOpenDeliverable={onOpenDeliverable} onRetry={turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
+            onOpenDeliverable={onOpenDeliverable} onRetry={verified && turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
           {loadFailed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新查询聊天记录</Button> : null}
         </div>
       </ScrollBox>
@@ -285,7 +308,7 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
         {/* 保留编辑器和占位，切换卡片时草稿、附件及阅读视口保持原位。 */}
         <div className="plotloom-chat__composer-content" data-suspended={composerSuspended || undefined}
           inert={composerSuspended} aria-hidden={composerSuspended || undefined}>
-          <ChatComposer sessionId={sessionId} projectPath={session.projectPath ?? novelRoot} busy={busy} conversationFiles={conversationFiles}
+          <ChatComposer sessionId={sessionId} projectPath={session.projectPath ?? novelRoot} busy={busy} disabled={!verified} conversationFiles={conversationFiles}
             activity={awaitingApproval ? session.activity : pending ? 'generating' : session.activity}
             attachmentDropTarget={attachmentDropTarget} stopping={stopping} revision={controlsRevision + settingsRevision} quoteDraft={quoteDraft}
             onSubmit={send} onStop={() => void stop()} onRefresh={() => setReload(value => value + 1)} />
@@ -301,7 +324,7 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
             submitting={decidingId === approval.id} stopping={stopping} onStop={() => void stop()}
             onDecision={stopping ? undefined : decision => void decideApproval(approval.id, decision)} />
         </div> : null}
-      </div> : null}
+      </div> : initialLoading ? <Skeleton className="plotloom-chat__composer-skeleton" /> : null}
     </div>
   </section>;
 }

@@ -1,6 +1,30 @@
 import { generate } from '@ant-design/colors';
 
 export const DEFAULT_THEME_COLOR = '#2563eb';
+export const THEME_MODE_KEY = 'plotloom.theme-mode';
+export const THEME_MODES = { system: '跟随系统', light: '浅色', dark: '深色' } as const;
+export type ThemeMode = keyof typeof THEME_MODES;
+export type ColorScheme = Exclude<ThemeMode, 'system'>;
+
+export function normalizeThemeMode(value: unknown): ThemeMode {
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
+/** 读取失败时仍可随系统配色，界面无需等待本地配置。 */
+export function readThemeMode(): ThemeMode {
+  try { return normalizeThemeMode(localStorage.getItem(THEME_MODE_KEY)); }
+  catch { return 'system'; }
+}
+
+export function writeThemeMode(mode: ThemeMode): boolean {
+  try { localStorage.setItem(THEME_MODE_KEY, mode); return true; }
+  catch { return false; }
+}
+
+export const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)';
+export function resolveColorScheme(mode: ThemeMode, systemDark: boolean): ColorScheme {
+  return mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
+}
 export const THEME_PRESETS = [
   { name: '湖蓝', color: DEFAULT_THEME_COLOR },
   { name: '青绿', color: '#0f766e' },
@@ -38,16 +62,20 @@ export function foregroundFor(background: string): string {
 }
 
 /** 主色保持用户选择，派生状态独立配前景；文字与焦点用足够深的同色系颜色。 */
-export function createThemeTokens(input: string): Record<`--pl-${string}`, string> {
+export function createThemeTokens(input: string, scheme: ColorScheme = 'light'): Record<`--pl-${string}`, string> {
   const color = normalizeThemeColor(input) ?? DEFAULT_THEME_COLOR;
   const palette = generate(color);
   const hover = palette[4];
   const active = palette[6];
   // 黑色等输入的最浅色阶仍可能偏暗；选中区域需要浅底，回退中性浅灰保持语义。
-  const subtle = contrastRatio(palette[0], '#000000') >= 7 ? palette[0] : '#f6f6f7';
-  const text = [color, ...palette.slice(6), '#000000'].find((candidate) =>
-    contrastRatio(candidate, '#ffffff') >= 4.5 && contrastRatio(candidate, subtle) >= 4.5
-      && contrastRatio(candidate, '#f6f6f7') >= 4.5,
+  const dark = scheme === 'dark';
+  const surfaces = dark ? ['#18191c', '#222428', '#2c2e34'] : ['#ffffff', '#f6f6f7'];
+  // 深色保留主题色的色相并压低选中背景亮度；任意自定义色都要有可读前景。
+  const subtle = dark ? generate(color, { theme: 'dark', backgroundColor: '#18191c' })[1]
+    : contrastRatio(palette[0], '#000000') >= 7 ? palette[0] : '#f6f6f7';
+  const candidates = dark ? [color, ...palette.slice(0, 5).reverse(), '#ffffff'] : [color, ...palette.slice(6), '#000000'];
+  const text = candidates.find(candidate =>
+    [...surfaces, subtle].every(surface => contrastRatio(candidate, surface) >= 4.5),
   )!;
   return {
     '--pl-primary': color,

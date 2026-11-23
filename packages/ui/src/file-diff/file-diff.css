@@ -15,8 +15,8 @@
   font: 12px/22px ui-monospace, Consolas, monospace;
 }
 
-.pl-file-diff__row[data-kind='added'] { background: #e8f5ec; color: #16613a; }
-.pl-file-diff__row[data-kind='removed'] { background: #fceceb; color: #9d292b; }
+.pl-file-diff__row[data-kind='added'] { background: var(--pl-success-surface, #e8f5ec); color: var(--pl-success, #16613a); }
+.pl-file-diff__row[data-kind='removed'] { background: var(--pl-danger-surface, #fceceb); color: var(--pl-danger, #9d292b); }
 .pl-file-diff__row > span { text-align: right; padding-inline-end: 0.7ch; user-select: none; }
 .pl-file-diff__row[data-kind='context'] > span { color: var(--pl-text-muted); }
 .pl-file-diff__row code { font: inherit; white-space: pre; tab-size: 4; }

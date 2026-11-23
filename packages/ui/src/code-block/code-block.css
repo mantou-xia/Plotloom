@@ -3,7 +3,7 @@
 .pl-code-block__toolbar > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }
 .pl-code-block__language { min-width: 0; overflow-wrap: anywhere; }
 /* 成功使用固定绿色，避免用户主色接近默认灰色时反馈不明显。 */
-.pl-code-block__copy[data-copied] { --pl-button-text: #15803d; }
+.pl-code-block__copy[data-copied] { --pl-button-text: var(--pl-success, #15803d); }
 .pl-code-block__status { display: block; flex: none; padding: 0 12px; font-size: 12px; }
 .pl-code-block__status:empty { display: none; }
 .pl-code-block__scroll { flex: 0 1 auto; max-height: 480px; }

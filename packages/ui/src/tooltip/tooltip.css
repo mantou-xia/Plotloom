@@ -9,8 +9,8 @@
   padding: 0.3em 0.6em;
   border: 0;
   border-radius: 8px;
-  background: #333333;
-  color: #e8e8e8;
+  background: var(--pl-tooltip-surface, #333333);
+  color: var(--pl-tooltip-text, #e8e8e8);
   font: 400 16px/1.5 system-ui, sans-serif;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -24,7 +24,7 @@
 .pl-tooltip[data-starting-style], .pl-tooltip[data-ending-style] { opacity: 0; scale: 0; }
 .pl-tooltip[data-ending-style] { pointer-events: none; animation: none; }
 /* 箭头是定位装饰，通过背景方块绘制，避免额外边框。 */
-.pl-tooltip__arrow { width: 10px; height: 10px; background: #333333; rotate: 45deg; }
+.pl-tooltip__arrow { width: 10px; height: 10px; background: var(--pl-tooltip-surface, #333333); rotate: 45deg; }
 .pl-tooltip__arrow[data-side='top'] { bottom: -4px; }
 .pl-tooltip__arrow[data-side='bottom'] { top: -4px; }
 .pl-tooltip__arrow[data-side='left'] { right: -4px; }

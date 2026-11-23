@@ -103,3 +103,10 @@
 .plotloom-tool-row dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
 .plotloom-tool-row dt { color: var(--pl-text-muted); }
 .plotloom-tool-row dd { margin: 0; overflow-wrap: anywhere; }
+
+/* 选中只改变背景与文字，不改变选项尺寸或焦点位置。 */
+.plotloom-appearance-modes.pl-form-options { gap: 6px; }
+.plotloom-appearance-modes .pl-form-choice { gap: 7px; padding: 4px 9px; border-radius: 8px; background: var(--pl-surface-muted); }
+.plotloom-appearance-modes .pl-form-choice:hover { background: var(--pl-surface-hover); }
+.plotloom-appearance-modes .pl-form-choice:has([data-checked]) { background: var(--pl-primary-subtle); color: var(--pl-primary-text); }
+.plotloom-settings-skill-actions { display: flex; align-items: center; gap: 8px; }

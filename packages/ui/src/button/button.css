@@ -2,7 +2,7 @@
   --pl-button-height: 40px;
   --pl-button-background: transparent;
   --pl-button-hover: var(--pl-surface-muted, #f6f6f7);
-  --pl-button-active: #e4e4e7;
+  --pl-button-active: var(--pl-surface-active, #e4e4e7);
   --pl-button-text: var(--pl-text, #202124);
   position: relative;
   box-sizing: border-box;
@@ -30,7 +30,7 @@
   --pl-button-active: var(--pl-primary-active, #1e40af);
   --pl-button-text: var(--pl-on-primary, #fff);
 }
-.plotloom-button--secondary { --pl-button-background: #ededf0; --pl-button-hover: #e4e4e7; --pl-button-active: #d4d4d8; }
+.plotloom-button--secondary { --pl-button-background: var(--pl-surface-hover, #ededf0); --pl-button-hover: var(--pl-surface-active, #e4e4e7); --pl-button-active: var(--pl-border, #d4d4d8); }
 .plotloom-button--subtle {
   --pl-button-background: var(--pl-primary-subtle, #eff6ff);
   --pl-button-hover: var(--pl-primary-subtle, #eff6ff);
@@ -54,8 +54,8 @@
 }
 
 /* 危险语义独立于用户主色，所有变体复用同一组明确的警示颜色。 */
-.plotloom-button[data-danger] { --pl-button-text: #b91c1c; --pl-button-hover: #fee2e2; --pl-button-active: #fecaca; }
-.plotloom-button[data-danger]:is(.plotloom-button--secondary, .plotloom-button--subtle) { --pl-button-background: #fef2f2; }
+.plotloom-button[data-danger] { --pl-button-text: var(--pl-danger, #b91c1c); --pl-button-hover: var(--pl-danger-surface, #fee2e2); --pl-button-active: color-mix(in srgb, var(--pl-danger-surface, #fee2e2) 88%, var(--pl-danger, #b91c1c)); }
+.plotloom-button[data-danger]:is(.plotloom-button--secondary, .plotloom-button--subtle) { --pl-button-background: var(--pl-danger-surface, #fef2f2); }
 .plotloom-button[data-danger].plotloom-button--primary {
   --pl-button-background: #b91c1c; --pl-button-hover: #991b1b; --pl-button-active: #7f1d1d; --pl-button-text: #fff;
 }

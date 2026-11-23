@@ -28,7 +28,7 @@
 .pl-file-summary__row .pl-file-summary__counts,
 .pl-file-summary__row .pl-file-summary__unknown { justify-self: end; }
 .pl-file-summary__counts { display: inline-flex; gap: 6px; flex-shrink: 0; font: 12px ui-monospace, Consolas, monospace; }
-.pl-file-summary__counts > :first-child { color: #16613a; }
-.pl-file-summary__counts > :last-child { color: #9d292b; }
+.pl-file-summary__counts > :first-child { color: var(--pl-success, #16613a); }
+.pl-file-summary__counts > :last-child { color: var(--pl-danger, #9d292b); }
 .pl-file-summary__unknown { font-size: 12px; color: var(--pl-text-muted); white-space: nowrap; }
 .pl-file-summary .pl-file-summary__expand { margin: 2px 6px 5px; }

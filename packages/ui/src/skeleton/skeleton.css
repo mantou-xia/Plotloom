@@ -1,0 +1,39 @@
+.pl-skeleton {
+  --pl-skeleton-base: color-mix(in srgb, var(--pl-text, #202124) 9%, var(--pl-surface, #fff));
+  --pl-skeleton-peak: color-mix(in srgb, var(--pl-text, #202124) 17%, var(--pl-surface, #fff));
+  --pl-skeleton-delay: 150ms;
+  --pl-skeleton-reveal: pl-skeleton-reveal 1ms step-end var(--pl-skeleton-delay) forwards;
+  display: block;
+  inline-size: 100%;
+  opacity: 0;
+  /* 尺寸立即占位；短请求完成前不点亮骨架，也不延迟真实内容。 */
+  animation: var(--pl-skeleton-reveal);
+}
+
+.pl-skeleton:where(:not([data-paragraph])), .pl-skeleton__line {
+  block-size: 14px;
+  border-radius: 8px;
+  background-color: var(--pl-skeleton-base);
+}
+
+.pl-skeleton[data-paragraph] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pl-skeleton__line { flex: none; }
+
+/* 呼吸仅插值背景色，段落的行宽、行高和间距保持固定。 */
+@media (prefers-reduced-motion: no-preference) {
+  .pl-skeleton:not([data-paragraph]) {
+    animation: var(--pl-skeleton-reveal), pl-skeleton-breathe 1.6s ease-in-out var(--pl-skeleton-delay) infinite;
+  }
+  .pl-skeleton__line { animation: pl-skeleton-breathe 1.6s ease-in-out var(--pl-skeleton-delay) infinite; }
+}
+
+@keyframes pl-skeleton-reveal { to { opacity: 1; } }
+@keyframes pl-skeleton-breathe {
+  0%, 100% { background-color: var(--pl-skeleton-base); }
+  50% { background-color: var(--pl-skeleton-peak); }
+}

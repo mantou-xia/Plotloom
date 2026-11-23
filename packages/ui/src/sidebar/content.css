@@ -1,5 +1,7 @@
 /* 跟随分组内容缩进；外层分类没有内层缩进时使用基础文字留白。 */
 .pl-sidebar-content-state {
+  box-sizing: border-box;
+  min-block-size: calc(1.5em + 16px);
   margin: 0;
   padding: 8px 8px 8px calc(8px + var(--pl-entry-indent, 0px));
   color: var(--pl-text-muted, #60636b);
@@ -7,4 +9,7 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.pl-sidebar-content-state[data-state='error'] { color: #dc2626; }
+.pl-sidebar-content-state[data-state='error'] { color: var(--pl-danger, #dc2626); }
+/* 加载和空态共用一行高度，避免骨架出现时推挤下面的分类。 */
+.pl-sidebar-content-state[data-state='loading'] { display: grid; align-items: center; }
+.pl-sidebar-content-state[data-state='loading'] > .pl-skeleton { inline-size: 84%; }

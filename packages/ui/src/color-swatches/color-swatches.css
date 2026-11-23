@@ -7,7 +7,7 @@
 /* 焦点阴影替代圆形边框，避免重复描边。 */
 .plotloom-color-swatches__add:focus-visible { border: 0; }
 .plotloom-color-swatches__dialog { width: 312px; max-width: calc(100% - 24px); max-height: calc(100% - 24px); margin: auto; padding: 16px; overflow: auto; border: 0; border-radius: 10px; background: var(--pl-surface); color: var(--pl-text); }
-.plotloom-color-swatches__dialog::backdrop { background: rgb(0 0 0 / 18%); }
+.plotloom-color-swatches__dialog::backdrop { background: var(--pl-overlay, rgb(0 0 0 / 18%)); }
 .plotloom-color-swatches__dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .plotloom-color-swatches__dialog-heading h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .plotloom-color-swatches__close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--pl-text-muted); cursor: pointer; }

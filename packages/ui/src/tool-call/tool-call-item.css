@@ -1,7 +1,7 @@
 .pl-tool-call { min-width: 0; width: 100%; }
 /* 颜色辅助区分结果，保留勾/叉形状与状态文字，且不改变图标尺寸。 */
-.pl-tool-call .pl-process-node__icon[data-status=completed] { color: #15803d; }
-.pl-tool-call .pl-process-node__icon[data-status=failed] { color: #b91c1c; }
+.pl-tool-call .pl-process-node__icon[data-status=completed] { color: var(--pl-success, #15803d); }
+.pl-tool-call .pl-process-node__icon[data-status=failed] { color: var(--pl-danger, #b91c1c); }
 .pl-tool-call__details { display: grid; gap: 12px; min-width: 0; }
 .pl-tool-call__label { margin: 0 0 6px; font-size: 11px; color: var(--pl-text-muted, #60636b); }
 .pl-tool-call__source { color: var(--pl-primary-text, #2457a6); font-size: 13px; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }

@@ -62,7 +62,7 @@ function ContentStateControls({ controls, onChange }: {
 }) {
   return <>
     <label>内容状态<select value={controls.sidebarContentState} onChange={(event) => onChange({ sidebarContentState: event.target.value as PreviewControls['sidebarContentState'] })}>
-      <option value="ready">正常</option><option value="empty">空态</option><option value="error">异常态</option>
+      <option value="ready">正常</option><option value="loading">加载态</option><option value="empty">空态</option><option value="error">异常态</option>
     </select></label>
     <label>空态文案<input value={controls.sidebarEmptyText} onChange={(event) => onChange({ sidebarEmptyText: event.target.value })} /></label>
     <label>异常文案<input value={controls.sidebarErrorText} onChange={(event) => onChange({ sidebarErrorText: event.target.value })} /></label>

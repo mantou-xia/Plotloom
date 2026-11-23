@@ -43,11 +43,11 @@
 .pl-session-metadata__tag.plotloom-button:not(:disabled):is(:hover, :focus-visible) { color: var(--pl-primary-text, #1d4ed8); }
 .pl-session-metadata__tag.plotloom-button:not(:disabled):active { color: var(--pl-text, #202124); }
 .pl-session-metadata__tag[data-status='running'], .pl-session-metadata__tag[data-status='unread'], .pl-session-metadata__tag[aria-pressed='true'] { color: var(--pl-session-status-text); }
-.pl-session-metadata__tag[data-status='failed'] { color: #995b60; }
+.pl-session-metadata__tag[data-status='failed'] { color: var(--pl-danger, #995b60); }
 /* 会话状态图标使用固定语义色，让待审批和任务结果在各主题下可辨识。 */
-.pl-session-metadata__tag[data-status='awaiting_approval'] svg { color: #a16207; }
-.pl-session-metadata__tag[data-status='unread'] svg { color: #16803d; }
-.pl-session-metadata__tag[data-status='failed'] svg { color: #dc2626; }
+.pl-session-metadata__tag[data-status='awaiting_approval'] svg { color: var(--pl-warning, #a16207); }
+.pl-session-metadata__tag[data-status='unread'] svg { color: var(--pl-success, #16803d); }
+.pl-session-metadata__tag[data-status='failed'] svg { color: var(--pl-danger, #dc2626); }
 /* 悬停和键盘焦点同样展开；内侧焦点环避免被叠放裁切，动画只影响当前行。 */
 .pl-sidebar-session-item:is(:hover, :focus-within) .pl-session-metadata__slot { grid-template-columns: var(--pl-expanded-tag-width); }
 .pl-sidebar-session-item:is(:hover, :focus-within) .pl-session-metadata__slot + .pl-session-metadata__slot { margin-left: var(--pl-session-tag-gap); }

@@ -14,7 +14,7 @@
 .pl-process-node__details > .pl-markdown { font-size: 14px; }
 .pl-process-node__details > .pl-markdown > div > :last-child { margin-bottom: 0; }
 .pl-process-node__icon[data-status=running], .pl-process-node__status[data-status=running] { color: var(--pl-primary-text, #2457a6); }
-.pl-process-node__icon[data-status=failed], .pl-process-node__status[data-status=failed] { color: #b91c1c; }
+.pl-process-node__icon[data-status=failed], .pl-process-node__status[data-status=failed] { color: var(--pl-danger, #b91c1c); }
 .pl-process-node__icon[data-status=running] svg { animation: pl-process-spin 1s linear infinite; }
 @keyframes pl-process-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .pl-process-node__icon[data-status=running] svg { animation: none; } }

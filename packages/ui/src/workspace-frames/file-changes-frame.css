@@ -17,8 +17,8 @@
 .plotloom-file-changes__file > .plotloom-file-changes__meta { flex-shrink: 0; }
 .plotloom-file-changes__meta { color: var(--pl-text-muted); font-size: 11px; font-weight: 400; }
 .plotloom-file-changes__counts { display: flex; justify-content: flex-end; gap: 6px; min-width: 8ch; font: 12px ui-monospace, Consolas, monospace; }
-.plotloom-file-changes__counts > :first-child { color: #16613a; }
-.plotloom-file-changes__counts > :last-child { color: #9d292b; }
+.plotloom-file-changes__counts > :first-child { color: var(--pl-success, #16613a); }
+.plotloom-file-changes__counts > :last-child { color: var(--pl-danger, #9d292b); }
 /* 短差异按行数撑开；超过视口上限的内容由差异区自行滚动。 */
 .plotloom-file-changes__panel > .pl-file-diff { max-height: min(42vh, 320px); }
 .plotloom-file-changes__detail {

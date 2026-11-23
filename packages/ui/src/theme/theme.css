@@ -1,13 +1,48 @@
-.plotloom-theme {
-  --pl-surface: #ffffff;
-  --pl-surface-muted: #f6f6f7;
+:root { color-scheme: light dark; }
+[data-pl-scheme='light'] { color-scheme: light; --pl-ocean-invert: 1; }
+[data-pl-scheme='dark'] { color-scheme: dark; --pl-ocean-invert: 0; }
+
+:root, .plotloom-theme {
+  --pl-surface: light-dark(#ffffff, #18191c);
+  --pl-surface-muted: light-dark(#f6f6f7, #222428);
+  --pl-surface-raised: light-dark(#ffffff, #25272c);
+  --pl-surface-hover: light-dark(#ededf0, #2c2e34);
+  --pl-surface-active: light-dark(#e4e4e7, #34363e);
   /* 侧栏与全局外壳共用主题底色，避免两处渐变定义逐渐偏离。 */
   --pl-sidebar-surface: linear-gradient(to bottom right,
     color-mix(in srgb, var(--pl-primary, #2563eb) 12%, var(--pl-surface)),
     color-mix(in srgb, var(--pl-primary, #2563eb) 2%, var(--pl-surface)));
-  --pl-text: #202124;
-  --pl-text-muted: #60636b;
-  --pl-border: #d4d4d8;
+  --pl-text: light-dark(#202124, #ededf0);
+  --pl-text-muted: light-dark(#60636b, #b1b4bd);
+  --pl-border: light-dark(#d4d4d8, #464951);
+  --pl-success: light-dark(#16613a, #83d9a5);
+  --pl-success-surface: light-dark(#e8f5ec, #1c3528);
+  --pl-danger: light-dark(#b91c1c, #ffa5a6);
+  --pl-danger-surface: light-dark(#fef2f2, #3d2528);
+  --pl-warning: light-dark(#854d0e, #f1cc86);
+  --pl-warning-surface: light-dark(#fef3c7, #3c3020);
+  --pl-info: light-dark(#2457a6, #a0c4ff);
+  --pl-info-surface: light-dark(#eff6ff, #23354f);
+  --pl-on-media: #ffffff;
+  --pl-tooltip-surface: light-dark(#333333, #383b43);
+  --pl-tooltip-text: light-dark(#f5f5f5, #f4f4f7);
+  --pl-overlay: light-dark(rgb(20 24 32 / 30%), rgb(0 0 0 / 56%));
+  /* 原版输入器在 Shadow DOM 中使用这些变量；沿宿主继承同一套语义色。 */
+  --theme-bg: var(--pl-surface);
+  --theme-elevated: var(--pl-surface-raised);
+  --theme-fg: var(--pl-text);
+  --theme-text-secondary: var(--pl-text-muted);
+  --theme-border: var(--pl-border);
+  --theme-hover: var(--pl-surface-hover);
+  --theme-sidebar: var(--pl-surface-muted);
+  --theme-accent: var(--pl-primary-text);
+  --theme-accent-hover: var(--pl-primary-text);
+  --theme-primary: var(--pl-primary);
+  --theme-selection: var(--pl-primary-subtle);
+}
+
+:root { background: var(--pl-surface); }
+.plotloom-theme {
   min-height: 100dvh;
   background: var(--pl-surface);
   color: var(--pl-text);
