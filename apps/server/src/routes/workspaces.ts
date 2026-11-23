@@ -57,6 +57,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, service: Workspace
   app.post<{ Params: ProposalParams & { changeId: string }; Body: { action: 'accept' | 'reject' } }>('/api/workspaces/:workspaceId/proposals/:proposalId/changes/:changeId', {
     schema: { params: obj({ workspaceId: id, proposalId: id, changeId: id }), body: obj({ action: { type: 'string', enum: ['accept', 'reject'] } }) },
   }, (req) => service.decide(req.params.workspaceId, req.params.proposalId, req.params.changeId, req.body.action));
+  app.post<{ Params: ProposalParams; Body: { action: 'accept' | 'reject' } }>('/api/workspaces/:workspaceId/proposals/:proposalId/decision', {
+    schema: { params: proposalParams, body: obj({ action: { type: 'string', enum: ['accept', 'reject'] } }) },
+  }, (req) => service.decideProposal(req.params.workspaceId, req.params.proposalId, req.body.action));
   app.post<{ Params: WorkspaceParams; Body: { query: string; paths?: string[] } }>('/api/workspaces/:workspaceId/search', {
     schema: { params, body: obj({ query: { type: 'string', minLength: 1, maxLength: 1000 }, paths: { type: 'array', maxItems: 100, uniqueItems: true, items: path } }, ['query']) },
   }, (req) => service.search(req.params.workspaceId, req.body));

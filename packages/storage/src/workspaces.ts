@@ -182,8 +182,13 @@ export class FileWorkspaceStore implements WorkspaceStore {
     (state.history[pending.path] ??= []).push(pending.revision);
     if (pending.proposalId) {
       const proposal = state.proposals.find((p) => p.id === pending.proposalId)!;
-      const change = proposal.changes.find((c) => c.id === pending.changeId)!;
-      change.status = 'accepted'; change.revisionId = pending.revision.id; proposalStatus(proposal);
+      // 旧提交日志记录单个 ID，批量日志用同一修订覆盖该次处理的全部差异。
+      const accepted = new Set(pending.changeIds ?? [pending.changeId]);
+      for (const change of proposal.changes) {
+        if (!accepted.has(change.id)) continue;
+        change.status = 'accepted'; change.revisionId = pending.revision.id;
+      }
+      proposalStatus(proposal);
     }
     state.pending = null;
   }
@@ -195,7 +200,7 @@ export class FileWorkspaceStore implements WorkspaceStore {
     else throw new WorkspaceError('COMMIT_UNCERTAIN', '上次文件提交未确认且磁盘另有变化；请查看工作区恢复信息，核对后显式保留当前磁盘。');
     await this.persist(state);
   }
-  async commit(state: WorkspaceState, doc: DocumentView, content: string, source: Revision['source'], change?: { proposalId: string; changeId: string }, restoredFrom?: string): Promise<Revision> {
+  async commit(state: WorkspaceState, doc: DocumentView, content: string, source: Revision['source'], change?: { proposalId: string; changeIds: string[] }, restoredFrom?: string): Promise<Revision> {
     if (process.platform !== 'win32') throw new WorkspaceError('PLATFORM_UNSUPPORTED', '当前文件提交仅在 Windows 验证，其他平台暂不启用写入。', 422);
     const target = await this.target(state, doc.path, true);
     // 先保存两边内容及意图，再触碰正式稿；进程中断不会使候选的处理状态丢失依据。

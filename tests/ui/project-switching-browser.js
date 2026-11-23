@@ -23,7 +23,7 @@ async page => {
   for (const width of [1440,768,390]) {
     await page.setViewportSize({width,height:1000});
     await page.waitForTimeout(700);
-    await page.getByRole('textbox',{name:'尽管问...'}).fill('草稿-' + width);
+    await page.getByRole('textbox',{name:'输入消息，/ 调用技能，@ 引用文件'}).fill('草稿-' + width);
     await page.evaluate(() => {
       const host = document.querySelector('.plotloom-task-composer [data-deep-agent-original]');
       window.stableNodes = {
@@ -65,7 +65,7 @@ async page => {
     const failures = await page.evaluate(() => window.textFrames.flat());
     if (failures.length) throw new Error(JSON.stringify({width,failures}));
     const expectedDraft = width === 1440 ? '' : width === 768 ? '草稿-1440' : '草稿-768';
-    if (await page.getByRole('textbox',{name:'尽管问...'}).inputValue() !== expectedDraft) throw new Error('切换项目未恢复本项目草稿');
+    if (await page.getByRole('textbox',{name:'输入消息，/ 调用技能，@ 引用文件'}).inputValue() !== expectedDraft) throw new Error('切换项目未恢复本项目草稿');
     results.push({width,frames:await page.evaluate(()=>window.textFrames.length),failures});
   }
   if (counts.models !== initialCounts.models || counts.config !== initialCounts.config) throw new Error('切换重复加载模型');
@@ -91,12 +91,12 @@ async page => {
   await page.locator('input[type=file]').setInputFiles('README.md');
   await firstUpload;
   await choose('项目乙');
-  await page.getByRole('textbox',{name:'尽管问...'}).fill('新项目草稿');
+  await page.getByRole('textbox',{name:'输入消息，/ 调用技能，@ 引用文件'}).fill('新项目草稿');
   const oldResponse = page.waitForResponse('**/reset-draft-1/attachments');
   releaseUpload(); await oldResponse;
   await page.waitForTimeout(150);
   if (await page.getByText('README.md',{exact:true}).count()) throw new Error('旧上传回填到新草稿');
-  if (await page.getByRole('textbox',{name:'尽管问...'}).inputValue() !== '新项目草稿') throw new Error('旧上传改变新草稿');
+  if (await page.getByRole('textbox',{name:'输入消息，/ 调用技能，@ 引用文件'}).inputValue() !== '新项目草稿') throw new Error('旧上传改变新草稿');
   const newResponse = page.waitForResponse('**/reset-draft-2/attachments');
   await page.locator('input[type=file]').setInputFiles('README.md');
   await newResponse;
@@ -113,9 +113,9 @@ async page => {
   await firstConfig;
   await page.getByRole('button',{name:'项目甲',exact:true}).hover();
   await page.getByRole('button',{name:'在 项目甲 中新建聊天',exact:true}).click();
-  await page.getByRole('textbox',{name:'尽管问...'}).fill('切换后继续输入');
+  await page.getByRole('textbox',{name:'输入消息，/ 调用技能，@ 引用文件'}).fill('切换后继续输入');
   const configResponse = page.waitForResponse('**/reset-draft-2/config');
   releaseConfig(); await configResponse; await page.waitForTimeout(200);
-  if (messageRequests || await page.getByRole('textbox',{name:'尽管问...'}).inputValue() !== '切换后继续输入') throw new Error('旧发送影响新项目');
+  if (messageRequests || await page.getByRole('textbox',{name:'输入消息，/ 调用技能，@ 引用文件'}).inputValue() !== '切换后继续输入') throw new Error('旧发送影响新项目');
   await page.evaluate(result => {window.projectSwitchingResult=result;}, {results,extraModelRequests:0,staleUploadIgnored:true,staleSendIgnored:true});
 }

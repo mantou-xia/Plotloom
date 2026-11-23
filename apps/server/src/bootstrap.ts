@@ -13,6 +13,7 @@ import { FileSkillRepository } from '@plotloom/storage/skills';
 import { registerSkillRoutes } from './routes/skills.ts';
 import { WritingService } from '@plotloom/application/writing';
 import { chapterChat, recoverWritingInput, writingResources } from './writing.ts';
+import { quotedEditResources } from './quoted-edit.ts';
 import type { WritingRequest } from '@plotloom/contracts/writing';
 import { registerWritingRoutes } from './routes/writing.ts';
 import { MessageSourceService } from '@plotloom/application/sources';
@@ -50,6 +51,8 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
       if (businessInput !== undefined) return writingResources(writing, id, businessInput as WritingRequest, characterCards);
       const { workspaceId } = await agent.getSkillProfile(id);
       if (!workspaceId) return;
+      if (input?.references?.some(reference => reference.editComment !== undefined))
+        return quotedEditResources(workspaces, writing, id, workspaceId, input.references);
       const request = await chapterChat(workspaces, characterCards, workspaceId, text, input);
       return writingResources(writing, id, request, characterCards, { sources, ids: input?.attachmentIds ?? [] });
     } });

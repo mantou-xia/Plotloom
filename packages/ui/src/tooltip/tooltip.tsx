@@ -1,10 +1,10 @@
-import { useCallback, useId, useRef, useState, type CSSProperties, type ReactElement } from 'react';
+import { useCallback, useId, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { Tooltip as Primitive } from 'deep-agent-base-ui/tooltip';
 import './tooltip.css';
 
 export interface TooltipProps {
-  /** 提示仅承载说明文字，不放置按钮或链接。 */
-  content: string;
+  /** 提示可分段展示说明，不放置按钮或链接。 */
+  content: ReactNode;
   /** 单个可聚焦元素；自定义组件需要透传事件、ARIA 属性和 ref。 */
   children: ReactElement<{ 'aria-describedby'?: string }>;
   disabled?: boolean;
@@ -24,7 +24,7 @@ export function Tooltip({ content, children, disabled = false, delay = 0, shake 
   const [container, setContainer] = useState<HTMLDialogElement>();
   // 保留触发器已有说明；只在气泡挂载期间建立辅助技术关联。
   const description = [children.props['aria-describedby'], open ? id : undefined].filter(Boolean).join(' ') || undefined;
-  return <Primitive.Root disabled={disabled || !content.trim()} onOpenChange={next => {
+  return <Primitive.Root disabled={disabled || (typeof content === 'string' ? !content.trim() : content == null)} onOpenChange={next => {
     // 原生模态层会遮住页面根部的气泡，提示必须挂载在触发器所属的模态层内。
     if (next) setContainer(trigger.current?.closest<HTMLDialogElement>('dialog:modal') ?? undefined);
     setOpen(next);

@@ -108,6 +108,37 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       await decide(proposal, 0, 'accept', 404, b);
       assert.equal((await server.json(`/api/workspaces/${a}/proposals`)).proposals[0].status, 'resolved');
     });
+    await t.test('批量决定只影响剩余差异，采纳是一次提交且外部冲突时不部分写入', async () => {
+      const path = '批量修改.md';
+      const before = '一旧\n保留甲\n二旧\n保留乙\n三旧\n';
+      const after = before.replaceAll('旧', '新');
+      const create = (content: string, baseVersion: string) => server.json<Proposal>(`/api/workspaces/${a}/proposals`, 'POST', { path, content, baseVersion }, 201);
+      const batch = (p: Proposal, action: string, status = 200) => server.json<Proposal>(`/api/workspaces/${a}/proposals/${p.id}/decision`, 'POST', { action }, status);
+      await save(path, before, null);
+      const p = await create(after, digest(before));
+      assert.equal(p.changes.length, 3);
+      await decide(p, 0, 'reject');
+      const accepted = await batch(p, 'accept');
+      assert.deepEqual(accepted.changes.map(c => c.status), ['rejected', 'accepted', 'accepted']);
+      assert(accepted.changes[1].revisionId);
+      assert.equal(accepted.changes[1].revisionId, accepted.changes[2].revisionId);
+      const mixed = '一旧\n保留甲\n二新\n保留乙\n三新\n';
+      assert.equal((await read(a, path)).content, mixed);
+      assert.deepEqual(await batch(p, 'accept'), accepted);
+      const p2 = await create(before.replaceAll('旧', '再改'), digest(mixed));
+      await decide(p2, 0);
+      const partial = (await read(a, path)).content;
+      const rejected = await batch(p2, 'reject');
+      assert.deepEqual(rejected.changes.map(c => c.status), ['accepted', 'rejected', 'rejected']);
+      assert.equal((await read(a, path)).content, partial);
+      const p3 = await create(before, digest(partial));
+      await writeFile(join(bookA, path), '外部稿', 'utf8');
+      await batch(p3, 'accept', 409);
+      await batch(p3, 'other', 400);
+      const conflict = await server.json<Proposal>(`/api/workspaces/${a}/proposals/${p3.id}`);
+      assert(conflict.changes.every(c => c.status === 'pending'));
+      assert.equal((await read(a, path)).content, '外部稿');
+    });
     await t.test('先采纳前处再采纳后处；选区定位重复文字及 emoji', async () => {
       await save('选区.md', '相同😀\n保留\n相同😀\n结尾', null);
       const doc = await read(a, '选区.md'); const start = doc.content.lastIndexOf('相同');

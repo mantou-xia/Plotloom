@@ -15,8 +15,9 @@ export function TaskComposerExample({ state, controls, style, onAction }: {
     {state === 'reset-draft' ? <Button variant="secondary" onClick={() => {
       setDraftKey(value => value + 1); onAction('draftKey 改变：原位清空草稿');
     }}>重置草稿</Button> : null}
-    <TaskComposer options={{
+    <TaskComposer draftContext={state === 'draft-context' ? <div>第一章.md · 第 2 行</div> : undefined} options={{
       draftKey,
+      hasDraftContext: state === 'draft-context',
       attachmentDropTarget,
       height: controls.height.mode === 'fixed' ? controls.height.value : 480,
       disabled: controls.disabled,

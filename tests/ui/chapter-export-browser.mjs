@@ -10,7 +10,7 @@ export default async function verifyChapterExport(page, origin, bookRoot) {
   const plain = '第四章 归舟\n\n“等潮退了再走。”\n“好。”';
   const button = name => page.getByRole('button', { name, exact: true });
   const send = async (text, steps) => {
-    const composer = page.getByRole('textbox', { name: '尽管问...' });
+    const composer = page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' });
     await composer.click();
     await page.keyboard.press('Control+a');
     await page.keyboard.insertText(text + '\nWRITE:' + JSON.stringify({ steps }));

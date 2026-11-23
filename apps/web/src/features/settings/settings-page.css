@@ -54,11 +54,10 @@
   .plotloom-provider-detail { overflow: visible; }
 }
 @media (max-width: 900px) { .plotloom-model-service { height: auto; min-height: 100%; align-content: start; } }
-.plotloom-settings-content .pl-settings-section__body > .plotloom-button { margin: 12px 24px 18px; }
 .plotloom-settings-sidebar__header h1 { margin: 22px 12px 0; font-size: 24px; line-height: 1.4; font-weight: 650; }
 .plotloom-settings-sidebar__group { margin: 0 12px 10px; color: var(--pl-text-muted); font-size: 12px; }
 .plotloom-settings-content { width: 100%; max-width: 960px; margin: 0 auto; padding: 52px 48px 80px; }
-.plotloom-settings-content__title { margin: 0 0 56px; font-size: 32px; font-weight: 650; line-height: 1.3; letter-spacing: -0.5px; outline: none; }
+.plotloom-settings-content__title { margin: 0 0 36px; font-size: 32px; font-weight: 650; line-height: 1.3; letter-spacing: -0.5px; outline: none; }
 .plotloom-settings-content__title:focus-visible { border-radius: 4px; box-shadow: 0 0 0 2px var(--pl-focus); }
 /* 各状态共用顶部留白，数据返回时图标和提示标题保持原位。 */
 .plotloom-archive-empty { container-type: inline-size; padding: clamp(32px, 7vh, 72px) 0 32px; text-align: center; }
@@ -101,6 +100,8 @@
 
 .plotloom-tools-status { margin: 0; padding: 12px clamp(16px, 3vw, 24px); color: var(--pl-text-muted); font-size: 13px; line-height: 20px; }
 .pl-settings-row.plotloom-tool-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 12px 24px; }
+/* 工具详情填满网格列，起点由列宽决定，避免继承通用控件的靠右对齐。 */
+.plotloom-tool-row > .pl-settings-row__control { margin-inline-start: 0; }
 .plotloom-tools-status + .plotloom-tool-row { border-top: 1px solid var(--pl-border); }
 .plotloom-tool-row dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
 .plotloom-tool-row dt { color: var(--pl-text-muted); }

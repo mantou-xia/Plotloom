@@ -9,7 +9,7 @@ async page => {
   const collapse = page.getByRole('button', { name: '收起工作区', exact: true });
   if (await collapse.isVisible()) await collapse.click();
   const text = '请完成这次基础能力验收：先用一句中文解释什么是单栏聊天。然后在当前项目写入 agent-smoke.txt，内容必须为 Plotloom real integration OK。接着使用 browser 工具访问 http://127.0.0.1:4435，读取页面，把表单的验收内容填写为 real-browser-ok 并点击提交。最后读取提交后的页面确认结果，用简短 Markdown 总结文件名、网页地址和页面显示内容。只操作这个项目文件和这个本地测试表单。';
-  await page.getByRole('textbox', { name: '尽管问...' }).fill(text);
+  await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).fill(text);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   return { sessionId: created.id, project, submitted: true };
 }

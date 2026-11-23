@@ -7,7 +7,7 @@ async page => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const { projects: [project] } = await (await page.request.get(origin + '/api/projects')).json();
   await page.goto(origin + '/#' + new URLSearchParams({ project: project.path }));
-  const composer = page.getByRole('textbox', { name: '尽管问...' });
+  const composer = page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' });
   const send = async text => { await composer.fill(text); await button('发送').click(); };
   await composer.waitFor();
   assert(await button('设置 Agent 人设').count() === 0, '新聊天页无需首用表单');

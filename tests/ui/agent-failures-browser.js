@@ -21,13 +21,13 @@ async page => {
     await page.goto(`${origin}/#chat=${id}`);
     // 应用在初始化读取聊天 ID；同文档 hash 跳转后重载，确保检查的是当前测试会话。
     await page.reload();
-    await page.getByRole('textbox', { name: '尽管问...' }).waitFor();
+    await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).waitFor();
     const collapse = page.getByRole('button', { name: '收起工作区', exact: true });
     if (await collapse.isVisible()) await collapse.click();
   };
   const send = async text => {
     const count = (await detail()).messages.filter(m => m.role === 'user').length;
-    await page.getByRole('textbox', { name: '尽管问...' }).fill(text);
+    await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).fill(text);
     await page.getByRole('button', { name: '发送', exact: true }).click();
     await wait(s => s.messages.filter(m => m.role === 'user').length > count);
   };
@@ -85,7 +85,7 @@ async page => {
   await shot('load');
   await page.unroute(url());
   await page.getByRole('button', { name: '重新查询聊天记录', exact: true }).click();
-  await page.getByRole('textbox', { name: '尽管问...' }).waitFor();
+  await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).waitFor();
   assert(await page.getByRole('button', { name: '重新查询聊天记录', exact: true }).count() === 0, '加载失败可重新查询恢复');
   return { checks, screenshots, sessionId: id };
 }

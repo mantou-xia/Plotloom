@@ -4,6 +4,14 @@ import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import './document-editor.css';
 
+export interface DocumentSelectionAnchor {
+  start: number;
+  end: number;
+  left: number;
+  top: number;
+  bottom: number;
+}
+
 export interface DocumentEditorProps {
   label: string;
   value: string;
@@ -11,6 +19,8 @@ export interface DocumentEditorProps {
   scrollRef?: RefObject<HTMLElement | null>;
   onValueChange: (value: string) => void;
   onSelectionChange?: (selection: { start: number; end: number } | null) => void;
+  /** 选区在编辑器内的可见锚点，供宿主定位选区操作。 */
+  onSelectionAnchorChange?: (anchor: DocumentSelectionAnchor | null) => void;
   onBlur?: () => void;
   onCompositionChange?: (active: boolean) => void;
   onScroll?: (top: number) => void;
@@ -26,6 +36,23 @@ export function DocumentEditor(props: DocumentEditorProps) {
 
   useLayoutEffect(() => {
     const options = latest.current;
+    let measure = 0;
+    let selecting = false;
+    // 等拖选结束再报告锚点，避免出现的浮层截住鼠标或打断跨行选择。
+    function reportAnchor() {
+      if (selecting || !latest.current.onSelectionAnchorChange) return;
+      cancelAnimationFrame(measure);
+      measure = requestAnimationFrame(() => {
+        const { from, to, empty } = editor.state.selection.main;
+        const bounds = editor.scrollDOM.getBoundingClientRect();
+        const visible = empty ? undefined : [editor.coordsAtPos(from, 1), editor.coordsAtPos(to, -1)]
+          .find(rect => rect && rect.bottom > bounds.top && rect.top < bounds.bottom);
+        latest.current.onSelectionAnchorChange?.(visible ? {
+          start: from, end: to, left: visible.left - bounds.left,
+          top: visible.top - bounds.top, bottom: visible.bottom - bounds.top,
+        } : null);
+      });
+    }
     const editor = new EditorView({
       parent: host.current!,
       doc: options.value,
@@ -44,15 +71,33 @@ export function DocumentEditor(props: DocumentEditorProps) {
           if (update.selectionSet || update.docChanged) {
             const { from, to, empty } = update.state.selection.main;
             latest.current.onSelectionChange?.(empty ? null : { start: from, end: to });
+            reportAnchor();
           }
         }),
       ],
     });
     view.current = editor;
     if (options.scrollRef) options.scrollRef.current = editor.scrollDOM;
+    const startSelection = (event: PointerEvent) => {
+      if (event.button !== 0 || !latest.current.onSelectionAnchorChange) return;
+      selecting = true;
+      cancelAnimationFrame(measure);
+    };
+    const endSelection = () => {
+      if (!selecting) return;
+      selecting = false;
+      reportAnchor();
+    };
     const onScroll = () => latest.current.onScroll?.(editor.scrollDOM.scrollTop);
+    editor.contentDOM.addEventListener('pointerdown', startSelection, true);
+    window.addEventListener('pointerup', endSelection);
+    window.addEventListener('pointercancel', endSelection);
     editor.scrollDOM.addEventListener('scroll', onScroll);
     return () => {
+      cancelAnimationFrame(measure);
+      editor.contentDOM.removeEventListener('pointerdown', startSelection, true);
+      window.removeEventListener('pointerup', endSelection);
+      window.removeEventListener('pointercancel', endSelection);
       editor.scrollDOM.removeEventListener('scroll', onScroll);
       if (options.scrollRef) options.scrollRef.current = null;
       view.current = null;

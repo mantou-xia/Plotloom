@@ -1,7 +1,8 @@
 import type { RefObject } from "react";
 import type { MotionOptions, MotionController } from "./motion-runtime";
 export interface ComposerSkill { id: string; name: string; description?: string }
-export interface ComposerMention { kind: string; path?: string; relPath?: string; name?: string }
+export interface ComposerMention { kind: string; path?: string; relPath?: string; name?: string; attachmentId?: string }
+export type ComposerConversationFile = { name: string } & ({ attachmentId: string; path?: never } | { path: string; attachmentId?: never });
 /** size 为真实字节数；发送后直接复用附件卡片，无需根据文本长度重新估算。 */
 export interface ComposerAttachment { id: string; name: string; kind: string; status: string; size?: number; dataUrl?: string; extractedText?: string }
 export interface ComposerMessage { text: string; model: string; thinking: string; attachments: ComposerAttachment[]; skills: ComposerSkill[]; mentions: ComposerMention[]; permission: string }
@@ -9,8 +10,11 @@ export interface ComposerMessage { text: string; model: string; thinking: string
 export type DeepAgentComposerOptions = MotionOptions & {
   /** 值变化时原位恢复草稿文字并清空附件及引用；保留组件 DOM、模型与思考档位。 */
   draftKey?: string | number;
+  placeholder?: string;
   readDraft?: () => string;
   onDraftChange?: (text: string) => void;
+  /** 宿主有随消息提交的草稿内容时，允许在正文为空时发送。 */
+  hasDraftContext?: boolean;
   value?: string; onValueChange?: (value: string) => void | Promise<void>;
   thinkingOptions?: Array<{ value: string; label: string }>;
   disabled?: boolean; models?: string[]; modelLabels?: Record<string, string>; selectedModel?: string;
@@ -21,6 +25,8 @@ export type DeepAgentComposerOptions = MotionOptions & {
   permissionOptions?: boolean | 'project';
   permission?: string; onPermissionChange?: (permission: string) => void | Promise<void>;
   advancedMentions?: boolean; projectPath?: string; skills?: ComposerSkill[];
+  /** 会话文件优先显示，附件与项目路径由宿主分别转换为发送参数。 */
+  conversationFiles?: readonly ComposerConversationFile[];
   onSearchFiles?: (query: string) => Promise<{ entries: Array<{ path: string; name: string; isDirectory: boolean }>; truncated: boolean }>;
   attachmentAccept?: string; maxAttachments?: number;
   /** 扩展文件拖放范围，目标元素由宿主在挂载时提供。 */

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Activity, Box, Cloud, Copy, Cpu, Eye, Lightbulb, RefreshCw, Server, Trash2 } from 'lucide-react';
+import { Activity, Box, Cloud, Copy, Cpu, RefreshCw, Server, Trash2 } from 'lucide-react';
 import { PROVIDER_APIS, type ModelInfo, type ProviderSettings, type ProviderWrite } from '@plotloom/contracts';
 import { Button } from '@plotloom/ui/button';
 import { ProviderModelManager } from './provider-model-manager';
@@ -109,8 +109,6 @@ export function ProviderDetail({ provider: p, models, onSaved, initialManage }: 
     <ul>{shown.map(id => {
       const model = models.find(m => m.id === id);
       return <li key={id}><Box size={16} /><span>{model?.name || id}<small>{id} · {p.modelApis?.[id] ?? p.api}</small></span>
-        {model?.input.includes('image') && <Eye size={16} aria-label="支持图片输入" />}
-        {model?.reasoning && <Lightbulb size={16} aria-label="支持推理" />}
         <Button size="sm" variant="ghost" iconOnly tooltip aria-label={'移除模型 ' + id} disabled={busy} onClick={() => void run(() => save({ models: p.models.filter(m => m !== id) }))}><Trash2 /></Button></li>;
     })}</ul>
     {!shown.length && <p>{query ? '没有匹配的模型' : '尚未添加模型'}</p>}

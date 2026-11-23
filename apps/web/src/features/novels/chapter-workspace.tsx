@@ -6,8 +6,8 @@ import type { DocumentListEntry, ManuscriptView } from '@plotloom/contracts/work
 import { requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
 import { draftKey, ManuscriptEditor } from './manuscript-editor';
-import { ChapterCandidate } from './chapter-candidate';
 import { compareChapters } from './novel-api';
+import type { ChapterQuote } from '../agent/chapter-quote';
 import './novels.css';
 
 const prefix = '正文章节/';
@@ -15,7 +15,10 @@ const outline = '大纲/';
 const sections = [{ value: prefix, label: '正文' }, { value: outline, label: '大纲' }];
 
 /** 切换目录只改变显示范围，文稿和草稿继续按书籍及路径区分。 */
-export function ChapterWorkspace({ workspaceId, request, onAccepted }: { workspaceId: string; request?: ManuscriptView; onAccepted: () => void }) {
+export function ChapterWorkspace({ workspaceId, request, revision, reviewPath, onReviewCandidate, onQuote }: {
+  workspaceId: string; request?: ManuscriptView; revision: number; reviewPath?: string;
+  onReviewCandidate?: () => void; onQuote: (quote: ChapterQuote) => void;
+}) {
   const base = '/api/workspaces/' + encodeURIComponent(workspaceId);
   const pathKey = 'plotloom:chapter-path:' + workspaceId;
   const [path, setPath] = useState(() => request?.path ?? localStorage.getItem(pathKey) ?? '');
@@ -24,10 +27,8 @@ export function ChapterWorkspace({ workspaceId, request, onAccepted }: { workspa
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [reload, setReload] = useState(0);
   const [previousRequest, setPreviousRequest] = useState(request);
-  const [candidate, setCandidate] = useState(request?.proposalId);
   if (request && request !== previousRequest) {
     setPreviousRequest(request);
-    setCandidate(request.proposalId);
     if (request.path) {
       setSection(request.path.startsWith(outline) ? outline : prefix);
       setPath(request.path);
@@ -46,7 +47,7 @@ export function ChapterWorkspace({ workspaceId, request, onAccepted }: { workspa
       notifyRequestError(cause, 'chapter-list');
     });
     return () => controller.abort();
-  }, [base, pathKey, reload, workspaceId]);
+  }, [base, pathKey, reload, revision, workspaceId]);
 
   useEffect(() => { if (path) localStorage.setItem(pathKey, path); }, [path, pathKey]);
   const listed = entries.filter(file => file.path.startsWith(section)).map(entry => entry.path);
@@ -69,12 +70,11 @@ export function ChapterWorkspace({ workspaceId, request, onAccepted }: { workspa
       </PrimaryTabPanel>)}
     </PrimaryTabs>
   )}>
-    {selected ? <ManuscriptEditor key={selected} workspaceId={workspaceId} base={base} path={selected} reload={reload} onRefresh={refresh}
-      viewRequest={request?.path === selected ? request : undefined}
-      onReviewCandidate={request?.path === selected && request.proposalId ? () => setCandidate(request.proposalId) : undefined} /> :
-      <ManuscriptPaper title={section === outline ? '大纲' : '正文'} onRefresh={refresh}
-        editor={<p role="status" className="pl-manuscript-empty">{state === 'loading' ? '正在读取文稿…' : state === 'error' ? '无法读取文稿，请刷新重试。' :
-          '此目录还没有 Markdown 文稿。'}</p>} />}
-    {candidate && <ChapterCandidate key={candidate} base={base} id={candidate} onClose={() => setCandidate(undefined)} onAccepted={() => { refresh(); onAccepted(); }} />}
+      {selected ? <ManuscriptEditor key={selected} workspaceId={workspaceId} base={base} path={selected} reload={reload + revision} onRefresh={refresh} onQuote={onQuote}
+        viewRequest={request?.path === selected ? request : undefined}
+        onReviewCandidate={reviewPath === selected ? onReviewCandidate : undefined} /> :
+        <ManuscriptPaper title={section === outline ? '大纲' : '正文'} onRefresh={refresh}
+          editor={<p role="status" className="pl-manuscript-empty">{state === 'loading' ? '正在读取文稿…' : state === 'error' ? '无法读取文稿，请刷新重试。' :
+            '此目录还没有 Markdown 文稿。'}</p>} />}
   </ManuscriptFrame>{directory.dialog}</>;
 }

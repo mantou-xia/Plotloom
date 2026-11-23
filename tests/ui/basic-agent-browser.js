@@ -19,7 +19,7 @@ async page => {
   };
   const send = async text => {
     const previous = (await detail()).messages.filter(m => m.role === 'user').length;
-    await page.getByRole('textbox', { name: '尽管问...' }).fill(text); await page.getByRole('button', { name: '发送', exact: true }).click();
+    await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).fill(text); await page.getByRole('button', { name: '发送', exact: true }).click();
     await waitDetail(value => value.messages.filter(m => m.role === 'user').length > previous);
   };
   const results = [];

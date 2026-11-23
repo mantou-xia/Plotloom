@@ -14,7 +14,7 @@ async page => {
   await page.getByRole('button', { name: '重新查询聊天记录', exact: true }).waitFor();
   await page.unroute(url);
   await page.getByRole('button', { name: '重新查询聊天记录', exact: true }).click();
-  await page.getByRole('textbox', { name: '尽管问...' }).fill('WAIT:refresh');
+  await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).fill('WAIT:refresh');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   for (let i = 0; i < 50; i++) {
     const current = await (await page.request.get(url)).json();

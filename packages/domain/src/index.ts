@@ -40,11 +40,11 @@ export function changesFor(before: string, after: string, offset = 0): Change[] 
   return changes;
 }
 /** 始终按基础坐标重建，已采纳前方增删不会影响剩余修改的定位。 */
-export function renderProposal(proposal: Proposal, additionally?: string): string {
+export function renderProposal(proposal: Proposal, additionally?: ReadonlySet<string>): string {
   let result = ''; let cursor = 0;
   for (const change of proposal.changes) {
     result += proposal.baseContent.slice(cursor, change.start);
-    result += change.status === 'accepted' || change.id === additionally ? change.after : change.before;
+    result += change.status === 'accepted' || additionally?.has(change.id) ? change.after : change.before;
     cursor = change.end;
   }
   return result + proposal.baseContent.slice(cursor);

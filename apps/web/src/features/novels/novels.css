@@ -68,6 +68,46 @@
 .plotloom-novel-actions > .pl-form-select { width: 145px; }
 .plotloom-novel-status { min-height: 34px; justify-content: space-between; color: var(--pl-text-muted); font-size: 13px; }
 .plotloom-novel-text textarea { min-height: 330px; line-height: 1.75; }
+.plotloom-manuscript-input { position: relative; }
+.plotloom-manuscript-quote {
+  box-sizing: border-box;
+  position: absolute;
+  z-index: 2;
+  left: clamp(6px, var(--quote-x), calc(100% - min(340px, 100% - 12px) - 6px));
+  width: min(340px, calc(100% - 12px));
+  transform: translateY(6px);
+  padding: 6px 7px 6px 15px;
+  border-radius: 999px;
+  background: var(--pl-surface);
+  color: var(--pl-text);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+}
+.plotloom-manuscript-quote[data-above='true'] { transform: translateY(calc(-100% - 6px)); }
+.plotloom-manuscript-quote form { display: flex; align-items: center; gap: 4px; }
+.plotloom-manuscript-quote input {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding-inline: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+.plotloom-manuscript-quote input::placeholder { color: var(--pl-text-muted); }
+.plotloom-manuscript-quote input:focus-visible { outline: none; box-shadow: none; background: var(--pl-surface-muted); }
+.plotloom-manuscript-quote .plotloom-manuscript-quote-confirm {
+  flex: none;
+  border-radius: 50%;
+  background: var(--pl-surface-muted);
+  color: var(--pl-text);
+}
+.plotloom-manuscript-quote .plotloom-manuscript-quote-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pl-text) 8%, var(--pl-surface-muted));
+}
 .plotloom-novel-writing { margin-top: 12px; padding-top: 20px; border-top: 1px solid var(--pl-border); }
 .plotloom-novel-writing-options { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .plotloom-novel-writing-status { min-height: 1.5em; margin: 0; color: var(--pl-text-muted); font-size: 13px; line-height: 1.5; }
@@ -88,3 +128,19 @@
   .plotloom-novel-directory { padding: 8px 12px; }
   .plotloom-novel-directory-tabs.pl-primary-tabs { gap: 4px; }
 }
+.plotloom-candidate-panel { display: flex; height: 100%; flex-direction: column; min-width: 0; min-height: 0; background: var(--pl-surface-muted); }
+.plotloom-candidate-panel__header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; }
+.plotloom-candidate-panel__header h2 { margin: 0; font-size: 15px; }
+.plotloom-candidate-panel__header > div { min-width: 0; }
+.plotloom-candidate-panel__list { flex: 1; padding: 0 14px 14px; }
+.plotloom-candidate-panel__list > p { margin: 4px 0; color: var(--pl-text-muted); }
+.plotloom-candidate-panel__list ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.plotloom-candidate-panel__list .plotloom-candidate-panel__item { width: 100%; height: auto; min-height: 52px; background: var(--pl-surface); text-align: start; }
+.plotloom-candidate-panel__item .plotloom-button__content { width: 100%; justify-content: space-between; }
+.plotloom-candidate-panel__item-text { display: grid; min-width: 0; }
+.plotloom-candidate-panel__item-text strong { overflow: hidden; text-overflow: ellipsis; color: var(--pl-text); }
+.plotloom-candidate-panel__item-text > span { font-size: 12px; color: var(--pl-text-muted); }
+.plotloom-candidate-panel__header p { min-height: 1.5em; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pl-text-muted); font-size: 12px; }
+.plotloom-candidate-panel__progress { min-height: 28px; padding-inline: 14px; color: var(--pl-text-muted); font-size: 12px; }
+.plotloom-candidate-panel__diff { flex: 1; margin-inline: 8px; padding: 8px; border-radius: 6px; background: var(--pl-surface); }
+.plotloom-candidate-panel__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 10px 8px; }

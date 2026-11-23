@@ -213,13 +213,13 @@ export function App() {
           onSelect={settings => updateRoute({ settings }, 'replace')} /> : null}
       </>}>
         <div className="plotloom-app-content" data-hidden={settingsOpen} inert={settingsOpen} aria-hidden={settingsOpen || undefined}>
-          {page === 'chat' ? <ChatWorkspace open={panelOpen} onOpenChange={changePanelOpen} sessionId={sessionId} workspaceId={bookId}
-            updatedAt={activeChat?.updatedAt} onAccepted={() => setAcceptedRevision(value => value + 1)}>{(openCitations, openTurnChanges, openManuscript, openDeliverable) => sessionId ?
+          {page === 'chat' ? <ChatWorkspace open={panelOpen} onOpenChange={changePanelOpen} sessionId={sessionId} workspaceId={bookId} draftRevision={startRevision}
+            updatedAt={activeChat?.updatedAt} onAccepted={() => setAcceptedRevision(value => value + 1)}>{(openCitations, openTurnChanges, openManuscript, openDeliverable, quoteDraft) => sessionId ?
             <ChatPage acceptedRevision={acceptedRevision} novelRoot={currentBook?.root} title={activeChat?.name} key={sessionId} sessionId={sessionId} onRename={renameChat} settingsRevision={modelRevision + skillRevision}
               onSessionsChange={refreshChats} onOpenCitations={openCitations} onOpenTurnChanges={openTurnChanges}
-              onOpenManuscript={openManuscript} onOpenDeliverable={openDeliverable} /> :
-            <NewChatPage modelRevision={modelRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
-              workspaceId={workspaceId} workspaceTitle={currentBook?.title} novelRoot={currentBook?.root}
+              onOpenManuscript={openManuscript} onOpenDeliverable={openDeliverable} quoteDraft={quoteDraft} /> :
+            <NewChatPage modelRevision={modelRevision} skillRevision={skillRevision} draftRevision={startRevision} projectPath={projectPath} onStarted={openStartedChat}
+              workspaceId={workspaceId} workspaceTitle={currentBook?.title} novelRoot={currentBook?.root} quoteDraft={quoteDraft}
               renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName || '选择项目'}
                 state={projectState} disabled={disabled} open={projectDialog === 'switch'}
                 onOpenChange={open => setProjectDialog(open ? 'switch' : null)} onRetry={() => void refreshProjects()}

@@ -17,7 +17,7 @@ async page => {
   const heading = name => page.getByRole('heading', { name, exact: true });
   const edit = page.getByRole('button', { name: '重命名对话', exact: true });
   const input = page.getByRole('textbox', { name: '对话名称', exact: true });
-  const composer = page.getByRole('textbox', { name: '尽管问...' });
+  const composer = page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' });
   await heading(initialName).waitFor();
   await edit.click();
   assert(await page.getByRole('button', { name: /^(保存名称|取消重命名)$/ }).count() === 0, '编辑时只显示输入框');

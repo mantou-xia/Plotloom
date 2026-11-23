@@ -22,7 +22,11 @@ async (page) => {
     if (path === '/api/projects') return json({ projects: [project] });
     if (path === '/api/workspaces') return json({ workspaces: [workspace] });
     if (path === '/api/chats') return json({ sessions });
-    if (path === '/api/skills') return json({ skills: [] });
+    if (path === '/api/skills') return json({ skills: [
+      { id: 'skill-one', name: 'novel-draft', description: '起草小说', enabled: true, availableIn: ['novel'] },
+      { id: 'skill-two', name: 'other-writing', description: '其他写作技能', enabled: true, availableIn: ['novel'] },
+    ] });
+    if (path === `/api/workspaces/${workspace.id}/skills`) return json({ skillIds: ['skill-one'] });
     if ((path === '/api/sessions' || path === `/api/workspaces/${workspace.id}/sessions`) && req.method() === 'POST') {
       const input = req.postDataJSON();
       if (failCreate) return json({ error: { code: 'INVALID_PROJECT', message: '项目目录不存在' } }, 400);
@@ -66,7 +70,7 @@ async (page) => {
     && await page.locator('.plotloom-work-start__bottom details').count() === 0
     && await page.getByRole('textbox', { name: '项目目录', exact: true }).count() === 0, '底部仅保留现有对话框，无项目选择控件');
   await page.screenshot({ path: 'output/playwright/work-start-project.png' });
-  const editor = page.getByRole('textbox', { name: '尽管问...' });
+  const editor = page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' });
   await editor.fill('请整理这个项目');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await page.getByText('发送失败测试', { exact: true }).waitFor();
@@ -82,10 +86,15 @@ async (page) => {
   await page.getByRole('button', { name: '灯塔', exact: true }).hover();
   await page.getByRole('button', { name: '在 灯塔 中新建聊天', exact: true }).click();
   await page.getByRole('heading', { name: '继续创作《灯塔》' }).waitFor();
-  await editor.fill('讨论灯塔故事');
+  await editor.fill('/');
+  await page.getByRole('option', { name: /novel-draft/ }).waitFor();
+  assert(await page.getByRole('option', { name: /other-writing/ }).count() === 0, '小说首条消息只提供工作区启用的技能');
+  await page.getByRole('option', { name: /novel-draft/ }).click();
+  await editor.pressSequentially('讨论灯塔故事');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await recent.getByRole('button', { name: '小说新聊天', exact: true }).waitFor();
   assert(creations.length === 2 && !('projectPath' in creations[1]), '小说使用工作区入口创建，发送后出现在最近');
+  assert(submissions.at(-1).skillIds.join() === 'skill-one', '首条小说消息提交所选技能 ID');
   await projectHistory.click();
   await page.getByRole('heading', { name: '项目历史' }).waitFor();
   await page.getByRole('button', { name: '新聊天', exact: true }).click();

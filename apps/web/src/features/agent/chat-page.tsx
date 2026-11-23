@@ -3,6 +3,7 @@ import { Pencil } from 'lucide-react';
 import { Input } from '@plotloom/ui/input';
 import type { AgentQuestionAnswer, SessionDetail, SubmitMessageRequest, RetryMessageRequest, ToolApprovalDecision } from '@plotloom/contracts';
 import type { ComposerMessage } from '@plotloom/ui/task-composer';
+import type { ComposerConversationFile } from '@plotloom/ui/task-composer/types';
 import { Button } from '@plotloom/ui/button';
 import { ScrollBox } from '@plotloom/ui/scroll-box';
 import { ToolApprovalCard, type ToolApprovalState } from '@plotloom/ui/tool-approval-card';
@@ -13,11 +14,13 @@ import type { OpenTurnChanges } from '../workspace/chat-workspace';
 import { ChatTurn } from './chat-turn';
 import { chatTurns } from './chat-turns';
 import { composerRequest } from './composer-request';
+import type { ChapterQuoteDraft } from './chapter-quote';
 import { consumeAgentStream } from './client';
 import { request, requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
 import type { OpenCitations } from '../workspace/citation-sources-page';
 import type { OpenDeliverable } from '../workspace/deliverable-page';
+import { deliverableLinks } from './deliverable-links';
 import './chat-page.css';
 
 const operationLabels = { create: '创建文件', overwrite: '覆盖文件', edit: '修改文件' };
@@ -60,11 +63,12 @@ function ChatTitle({ name, onSave }: { name: string; onSave: (name: string) => P
 }
 
 /** 页面以服务端快照为准；SSE 触发刷新，离开页面断开连接但不停止后台任务。 */
-export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript, onOpenDeliverable }: {
+export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRename, onSessionsChange, settingsRevision = 0, onOpenCitations, onOpenTurnChanges, onOpenManuscript, onOpenDeliverable, quoteDraft }: {
   onRename: (id: string, name: string) => Promise<string>;
   title?: string; novelRoot?: string; acceptedRevision: number; sessionId: string; onSessionsChange: () => Promise<void>; settingsRevision?: number; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
   onOpenManuscript: (view: NonNullable<SessionDetail['manuscriptRequest']>['view']) => boolean;
   onOpenDeliverable: OpenDeliverable;
+  quoteDraft?: ChapterQuoteDraft;
 }) {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [openedAt] = useState(() => Date.now());
@@ -96,6 +100,21 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
   const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
   const busy = pending || session?.status === 'running';
   const turns = useMemo(() => session ? chatTurns(session) : [], [session]);
+  const conversationFiles = useMemo(() => {
+    // 候选以服务端消息快照为准，按最近一轮优先展示，刷新后仍能引用同一份资料。
+    const files = new Map<string, ComposerConversationFile>();
+    for (const turn of turns.toReversed()) {
+      for (const file of deliverableLinks(turn.answer).files) {
+        if (!files.has('file:' + file.path)) files.set('file:' + file.path, file);
+      }
+      for (const attachment of turn.user?.attachments ?? []) {
+        if (!files.has('attachment:' + attachment.id)) {
+          files.set('attachment:' + attachment.id, { name: attachment.name, attachmentId: attachment.id });
+        }
+      }
+    }
+    return [...files.values()];
+  }, [turns]);
   const approvals = session?.pendingApprovals ?? [];
   // 顺序展示待批调用，逐项处理可保留相同操作位置。
   const approval = approvals[0];
@@ -155,12 +174,16 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
 
   /** accepted 才释放草稿；发送失败保留原文，主动发送时恢复跟随最新消息。 */
   function send(message: ComposerMessage): Promise<boolean> {
-    const body = composerRequest(message);
+    const sent = quoteDraft?.items ?? [];
+    const body = composerRequest(message, sent);
     if ((!body.text && !body.attachmentIds?.length && !body.references?.length) || busy || sending.current || !session) return Promise.resolve(false);
     const acceptance = Promise.withResolvers<boolean>();
     follow.current = true;
     void generate('messages', body, acceptance.resolve).catch(() => {});
-    return acceptance.promise;
+    return acceptance.promise.then(accepted => {
+      if (accepted) quoteDraft?.clearSent(sent);
+      return accepted;
+    });
   }
 
   /** 重试由后端重放最新原始请求；保留历史，工具会再次执行。同步锁阻止连续点击。 */
@@ -262,9 +285,9 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, onRena
         {/* 保留编辑器和占位，切换卡片时草稿、附件及阅读视口保持原位。 */}
         <div className="plotloom-chat__composer-content" data-suspended={composerSuspended || undefined}
           inert={composerSuspended} aria-hidden={composerSuspended || undefined}>
-          <ChatComposer sessionId={sessionId} projectPath={session.projectPath ?? novelRoot} busy={busy}
+          <ChatComposer sessionId={sessionId} projectPath={session.projectPath ?? novelRoot} busy={busy} conversationFiles={conversationFiles}
             activity={awaitingApproval ? session.activity : pending ? 'generating' : session.activity}
-            attachmentDropTarget={attachmentDropTarget} stopping={stopping} revision={controlsRevision + settingsRevision}
+            attachmentDropTarget={attachmentDropTarget} stopping={stopping} revision={controlsRevision + settingsRevision} quoteDraft={quoteDraft}
             onSubmit={send} onStop={() => void stop()} onRefresh={() => setReload(value => value + 1)} />
         </div>
         {question ? <div className="plotloom-chat__composer-card">

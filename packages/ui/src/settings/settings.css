@@ -1,16 +1,14 @@
 .pl-settings-section { min-width: 0; width: 100%; }
 .pl-settings-section + .pl-settings-section { margin-top: 40px; }
-.pl-settings-section__header { margin-bottom: 18px; }
+.pl-settings-section__header { margin-bottom: 12px; }
 .pl-settings-section__header h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .pl-settings-section__header p { margin: 6px 0 0; color: var(--pl-text-muted); font-size: 13px; overflow-wrap: anywhere; }
-.pl-settings-section__body { min-width: 0; }
-/* 背景只属于分组；行之间用单侧中性分隔线，不为每行增加独立卡片。 */
+.pl-settings-section__body { min-width: 0; border-block: 1px solid var(--pl-border); }
+/* 同组控件沿右侧对齐，小容器内保留自然换行。 */
 .pl-settings-section__body > .pl-settings-row + .pl-settings-row { border-top: 1px solid var(--pl-border); }
-.pl-settings-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; width: 100%; min-width: 0; padding: 24px; }
-.pl-settings-row__description { min-width: 0; overflow-wrap: anywhere; }
+.pl-settings-section__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-block-start: 16px; }
+.pl-settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; width: 100%; min-width: 0; padding-block: 16px; min-height: 60px; }
+.pl-settings-row__description { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
 .pl-settings-row__description h4 { margin: 0; font-size: 14px; font-weight: 600; }
 .pl-settings-row__description p { margin: 4px 0 0; color: var(--pl-text-muted); font-size: 13px; }
-.pl-settings-row__control { min-width: 0; max-width: 100%; }
-@media (max-width: 480px) {
-  .pl-settings-row { padding: 16px; gap: 20px; }
-}
+.pl-settings-row__control { min-width: 0; max-width: 100%; margin-inline-start: auto; }

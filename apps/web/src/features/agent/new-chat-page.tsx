@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ModelConfig, ModelInfo, ProjectApprovalMode, ProjectFiles, SessionSummary, ThinkingLevel } from '@plotloom/contracts';
 import type { Attachment } from '@plotloom/contracts/sources';
+import type { SkillInfo, SkillSettings } from '@plotloom/contracts/skills';
 import { WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import { ATTACHMENT_TYPES, SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import { AsciiOcean } from '@plotloom/ui/ascii-ocean';
@@ -10,6 +11,8 @@ import { Button } from '@plotloom/ui/button';
 import { request, requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
 import { composerRequest } from './composer-request';
+import { ChapterQuoteList } from './chapter-quotes';
+import type { ChapterQuoteDraft } from './chapter-quote';
 import { consumeAgentStream } from './client';
 import { selectThinkingLevel, thinkingLabels } from './thinking-levels';
 import './new-chat-page.css';
@@ -41,11 +44,12 @@ function useNewChatModels(modelRevision: number) {
 }
 
 /** 页面、背景与编辑器持续挂载；草稿版本只更新数据，不再重建任何可见控件。 */
-export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, workspaceId, workspaceTitle, novelRoot, onStarted, renderProjectControl }: {
-  modelRevision?: number;
+export function NewChatPage({ modelRevision = 0, skillRevision, draftRevision, projectPath, workspaceId, workspaceTitle, novelRoot, onStarted, renderProjectControl, quoteDraft }: {
+  modelRevision?: number; skillRevision: number;
   draftRevision: number; projectPath: string;
   workspaceId: string | null; workspaceTitle?: string; novelRoot?: string;
   onStarted: (session: SessionSummary) => void; renderProjectControl: (disabled: boolean) => ReactNode;
+  quoteDraft?: ChapterQuoteDraft;
 }) {
   const modelState = useNewChatModels(modelRevision);
   const [pending, setPending] = useState(false);
@@ -72,15 +76,16 @@ export function NewChatPage({ modelRevision = 0, draftRevision, projectPath, wor
         : workspaceId || root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
     </div>
     <NewChatDraft draftRevision={draftRevision} projectPath={workspaceId ? novelRoot ?? '' : projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
-      modelState={modelState} pending={pending} setPending={setPending} onStarted={onStarted} />
+      modelState={modelState} skillRevision={skillRevision} pending={pending} setPending={setPending} onStarted={onStarted} quoteDraft={quoteDraft} />
   </section>;
 }
 
 /** 草稿拥有会话、附件及发送生命周期；切换项目后旧异步结果不能操作新草稿。 */
-function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pending, setPending, onStarted, attachmentDropTarget }: {
-  draftRevision: number; projectPath: string; workspaceId?: string; modelState: ReturnType<typeof useNewChatModels>;
+function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, skillRevision, pending, setPending, onStarted, attachmentDropTarget, quoteDraft }: {
+  draftRevision: number; projectPath: string; workspaceId?: string; modelState: ReturnType<typeof useNewChatModels>; skillRevision: number;
   attachmentDropTarget: RefObject<HTMLElement | null>;
   pending: boolean; setPending: (pending: boolean) => void; onStarted: (session: SessionSummary) => void;
+  quoteDraft?: ChapterQuoteDraft;
 }) {
   const { models, selected, setSelected, thinking, setThinking, failed, loaded, setReload } = modelState;
   const root = projectPath.trim();
@@ -99,6 +104,23 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
   }; }, [scope, setPending]);
   const chosen = models.find(model => modelKey(model.provider, model.id) === selected);
   const canStart = Boolean(root || workspaceId);
+  const [skillOptions, setSkillOptions] = useState<{ workspaceId?: string; revision: number; skills: SkillInfo[] }>();
+  // 新聊天尚未建会话。用公开目录和小说默认设置过滤候选，发送时仍以服务端准入为准。
+  useEffect(() => {
+    if (!canStart) return;
+    const abort = new AbortController();
+    void Promise.all([
+      requestJson<{ skills: SkillInfo[] }>('/api/skills', 'GET', undefined, abort.signal),
+      workspaceId ? requestJson<SkillSettings>(`/api/workspaces/${encodeURIComponent(workspaceId)}/skills`, 'GET', undefined, abort.signal) : null,
+    ]).then(([catalog, settings]) => {
+      if (abort.signal.aborted) return;
+      const scope = workspaceId ? 'novel' : 'project';
+      const skills = catalog.skills.filter(skill => skill.enabled && skill.availableIn.includes(scope)
+        && (!settings || settings.skillIds.includes(skill.id)));
+      setSkillOptions({ workspaceId, revision: skillRevision, skills });
+    }).catch(error => { if (!abort.signal.aborted) notifyRequestError(error, 'new-chat-skills'); });
+    return () => abort.abort();
+  }, [canStart, workspaceId, skillRevision]);
 
   /** 并发附件共用创建请求；目录绑定后固定，发送失败重试复用同一会话。 */
   function ensureSession(): Promise<SessionSummary> {
@@ -116,8 +138,9 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
 
   /** accepted 后才切入聊天记录；失败保留编辑器和附件，后续聊天页读取服务端运行快照。 */
   async function send(message: ComposerMessage): Promise<boolean> {
-    const body = composerRequest(message);
-    if (!canStart || sending.current || (!body.text && !body.attachmentIds?.length)) return false;
+    const sent = quoteDraft?.items ?? [];
+    const body = composerRequest(message, sent);
+    if (!canStart || sending.current || (!body.text && !body.attachmentIds?.length && !body.references?.length)) return false;
     sending.current = true; setPending(true);
     const acceptance = Promise.withResolvers<boolean>();
     void (async () => {
@@ -134,7 +157,11 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
         const response = await request(path + '/messages', 'POST', body, abort.signal);
         await consumeAgentStream(response, event => {
           if (event.sessionId !== session.id) throw new Error('收到不属于当前聊天的事件。');
-          if (event.type === 'accepted') { acceptance.resolve(true); if (mounted.current) onStarted(session); }
+          if (event.type === 'accepted') {
+            acceptance.resolve(true);
+            quoteDraft?.clearSent(sent);
+            if (mounted.current) onStarted(session);
+          }
           if (event.type === 'failed' && mounted.current) notifyRequestError(new Error(event.error.message), 'new-chat-send');
         });
       } catch (cause) { if (mounted.current) notifyRequestError(cause, 'new-chat-send'); }
@@ -149,7 +176,9 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
         {failed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新加载模型</Button>
           : !loaded ? null : !chosen ? '暂无已配置凭据的模型，请先配置本机模型。' : pending ? '正在开始对话…' : null}
       </div>
-      <TaskComposer options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !chosen || failed, busy: pending,
+      <TaskComposer draftContext={quoteDraft?.items.length ? <ChapterQuoteList draft={quoteDraft} /> : null}
+        options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !chosen || failed, busy: pending,
+        hasDraftContext: Boolean(quoteDraft?.items.length),
         models: models.filter(model => model.configured).map(model => modelKey(model.provider, model.id)),
         modelLabels: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.name + ' · ' + model.provider])),
         modelNames: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.id])),
@@ -160,7 +189,9 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, pen
         permissionOptions: root || workspaceId ? 'project' : false,
         permission: projectApprovalMode === 'full_access' ? 'full_access' : 'default',
         onPermissionChange: value => setApproval({ draftRevision, draftKey, mode: value === 'full_access' ? 'full_access' : 'required' }),
-        advancedMentions: false, projectPath: root || undefined, skills: [],
+        placeholder: '输入消息，/ 调用技能，@ 引用文件',
+        advancedMentions: false, projectPath: root || undefined,
+        skills: skillOptions?.workspaceId === workspaceId && skillOptions?.revision === skillRevision ? skillOptions.skills : undefined,
         onSearchFiles: root || workspaceId ? async query => { const session = await ensureSession(); return requestJson<ProjectFiles>('/api/sessions/' + encodeURIComponent(session.id) + '/project-files', 'POST', { query }); } : undefined,
         maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown', attachmentDropTarget,
         onAttachmentUpload: async input => {

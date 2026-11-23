@@ -15,7 +15,7 @@ import './skills-page.css';
 /** 页面负责请求与筛选；通用交互来自组件库，目录读取和导入仅通过公开接口执行。 */
 export function SkillsPage({ skillRevision = 0 }: { skillRevision?: number }) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [tools, setTools] = useState<ToolInfo[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -32,11 +32,12 @@ export function SkillsPage({ skillRevision = 0 }: { skillRevision?: number }) {
     // 离开页面取消读取，避免旧响应覆盖下一次进入页面后的清单。
     const load = async () => {
       try {
+        // 同时加载目录，让详情首次打开就能显示完整工具列表；目录故障仍可查看技能。
         const [result, directory] = await Promise.all([
           requestJson<{ skills: SkillInfo[] }>('/api/skills', 'GET', undefined, controller.signal),
-          requestJson<{ tools: ToolInfo[] }>('/api/tools', 'GET', undefined, controller.signal),
+          requestJson<{ tools: ToolInfo[] }>('/api/tools', 'GET', undefined, controller.signal).catch(() => null),
         ]);
-        if (!controller.signal.aborted) { setSkills(result.skills); setTools(directory.tools); }
+        if (!controller.signal.aborted) { setSkills(result.skills); setTools(directory?.tools ?? null); }
       } catch (cause) { if (!controller.signal.aborted) setFailed(true); throw cause; }
       finally { if (!controller.signal.aborted) setLoading(false); }
     };

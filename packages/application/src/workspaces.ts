@@ -29,7 +29,7 @@ export interface WorkspaceStore {
   persist(state: WorkspaceState): Promise<void>;
   snapshot(state: WorkspaceState, revision: Revision): Promise<string>;
   observe(state: WorkspaceState, doc: DocumentView): Promise<void>;
-  commit(state: WorkspaceState, doc: DocumentView, content: string, source: Revision['source'], change?: { proposalId: string; changeId: string }, restoredFrom?: string): Promise<Revision>;
+  commit(state: WorkspaceState, doc: DocumentView, content: string, source: Revision['source'], change?: { proposalId: string; changeIds: string[] }, restoredFrom?: string): Promise<Revision>;
   backup(state: WorkspaceState, destination: string): Promise<{ destination: string; files: number }>;
 }
 
@@ -258,21 +258,33 @@ export class WorkspaceService {
     } finally { await decisions.return!(); }
   }
   decide(id: string, proposalId: string, changeId: string, action: 'accept' | 'reject') {
+    return this.decideProposal(id, proposalId, action, changeId);
+  }
+
+  /** 批量处理只影响待决定差异，在同一工作区锁内取范围、校验版本并一次提交。 */
+  decideProposal(id: string, proposalId: string, action: 'accept' | 'reject', changeId?: string) {
     return this.store.run(id, async (s) => {
       const proposal = s.proposals.find((p) => p.id === proposalId) ?? missing();
-      const change = proposal.changes.find((c) => c.id === changeId) ?? missing();
-      const expectedStatus = action === 'accept' ? 'accepted' : 'rejected';
-      if (change.status === expectedStatus) return proposal;
-      if (change.status !== 'pending') throw new WorkspaceError('CHANGE_RESOLVED', '该处已处理；如需撤回已采纳内容，请恢复历史版本。');
-      if (action === 'reject') { change.status = 'rejected'; proposalStatus(proposal); await this.store.persist(s); return proposal; }
+      const change = changeId === undefined ? undefined : proposal.changes.find(c => c.id === changeId) ?? missing();
+      if (change && change.status !== 'pending') {
+        if (change.status === (action === 'accept' ? 'accepted' : 'rejected')) return proposal;
+        throw new WorkspaceError('CHANGE_RESOLVED', '该处已处理；如需撤回已采纳内容，请恢复历史版本。');
+      }
+      const targets = change ? [change] : proposal.changes.filter(c => c.status === 'pending');
+      if (!targets.length) return proposal;
+      if (action === 'reject') {
+        for (const target of targets) target.status = 'rejected';
+        proposalStatus(proposal); await this.store.persist(s); return proposal;
+      }
       for (const ref of proposal.references) {
         if ((await this.readObserved(s, ref.path)).version !== ref.version) throw new WorkspaceError('REFERENCE_CONFLICT', '候选引用的资料已变化，请核对后重新生成候选。');
       }
       const current = await this.readObserved(s, proposal.path);
       const anyAccepted = proposal.changes.some((c) => c.status === 'accepted');
       checkVersion(current.version, !anyAccepted && proposal.baseVersion === null ? null : hash(renderProposal(proposal)));
-      const after = renderProposal(proposal, changeId);
-      await this.commit(s, current, after, 'accepted', { proposalId, changeId });
+      const changeIds = targets.map(target => target.id);
+      const after = renderProposal(proposal, new Set(changeIds));
+      await this.commit(s, current, after, 'accepted', { proposalId, changeIds });
       // 工作台可跨轮次或重启后采纳。工具内采纳由当前工具记录，作者手动采纳归回候选来源。
       if (proposal.origin && !this.writeObserver.getStore())
         await this.onAcceptedWrite?.(proposal.origin, { path: current.path, operation: current.version ? 'edit' : 'create', before: current.content, after });

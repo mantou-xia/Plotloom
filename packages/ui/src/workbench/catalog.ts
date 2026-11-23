@@ -37,9 +37,9 @@ export const componentCatalog: ComponentExample[] = [
     ] },
   {
     id: 'settings-section', name: 'SettingsSection', category: '布局组件', exportPath: './settings-section',
-    description: '设置分组：标题、可选说明、统一背景与行间分隔。', interaction: '调整 title / description；children 注入 SettingsRow。示例组合开关、下拉和选色器，交互只更新本地状态。', width: 820, height: 520,
+    description: '设置分组：标题、可选说明、行间分隔与底部操作。', interaction: '调整 title / description；children 注入 SettingsRow，actions 注入底部按钮。示例交互只更新本地状态。', width: 820, height: 520,
     states: [
-      { id: 'default', name: '多行组合', description: '三个设置行共用底色，以单侧中性分隔线区分。' },
+      { id: 'default', name: '多行组合', description: '三行设置以中性分隔线区分，底部操作靠右对齐。' },
       { id: 'without-description', name: '无分组说明', description: 'description 为空时不渲染说明段落。' },
       { id: 'narrow', name: '窄容器', description: '280px 容器检查说明及控件换行。' },
     ],
@@ -58,7 +58,7 @@ export const componentCatalog: ComponentExample[] = [
     description: '文稿目录与稿纸布局，窄时支持悬浮目录。', interaction: '选择文稿、切换编辑和预览、点击刷新，缩窄预览检查悬浮目录。',
     width: 740, height: 520, states: [{ id: 'default', name: '文稿', description: '目录与编辑、预览示例' }] },
   { id: 'document-editor', name: 'DocumentEditor', category: 'Framework', exportPath: './document-editor',
-    description: '长文编辑、换行、选区与撤销。', interaction: '编辑正文并撤销，或切换只读状态查看长文。',
+    description: '长文编辑、换行、选区与撤销。', interaction: '选择文字查看选区锚点回调，编辑并撤销，或切换只读状态。',
     width: 660, height: 420, states: [{ id: 'default', name: '编辑', description: '输入、选区及撤销' },
       { id: 'read-only', name: '只读', description: '可阅读和复制正文' }] },
   { id: 'image-viewer-frame', name: 'ImageViewerFrame', category: 'Framework', exportPath: './image-viewer-frame',
@@ -108,6 +108,7 @@ export const componentCatalog: ComponentExample[] = [
     states: [
       { id: 'default', name: '多个功能', description: '展示按配置排列的三个入口。' },
       { id: 'limited', name: '单个功能', description: '只展示当前配置提供的入口。' },
+      { id: 'feature-request', name: '定位功能标签', description: 'featureRequest 定位文档；手动和程序打开单实例功能时复用当前标签。' },
     ],
   },
   {
@@ -405,6 +406,7 @@ export const componentCatalog: ComponentExample[] = [
     states: [
       { id: 'default', name: '短提示', description: '默认在触发元素上方显示，空间不足时自动避让。' },
       { id: 'long', name: '长提示', description: '长文字在气泡内自动换行。' },
+      { id: 'sections', name: '分段提示', description: 'content 可以传入包含标题与正文的说明内容。' },
       { id: 'disabled', name: '禁用提示', description: '关闭提示，触发按钮仍可正常使用。' },
     ],
   },
@@ -463,6 +465,7 @@ export const componentCatalog: ComponentExample[] = [
       { id: 'disabled', name: '禁用', description: '通过原版 disabled 参数禁止组件交互。' },
       { id: 'no-models', name: '模型列表为空', description: '原版模型面板的空列表提示。' },
       { id: 'reset-draft', name: '原位重置草稿', description: '输入内容、添加附件后改变 draftKey，清空草稿但保留编辑器、模型与档位。' },
+      { id: 'draft-context', name: '已有草稿资料', description: 'draftContext 显示在输入框内，hasDraftContext 为 true 时可直接发送宿主提供的资料。' },
       { id: 'reduced-motion', name: '减少动态效果', description: '原版 reducedMotion 参数保留操作并减少动画。' },
     ],
   },

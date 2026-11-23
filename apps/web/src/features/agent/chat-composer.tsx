@@ -4,7 +4,10 @@ import type { Attachment } from '@plotloom/contracts/sources';
 import { ATTACHMENT_TYPES, SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import type { SkillActivation } from '@plotloom/contracts/skills';
 import { chatDraft } from './chat-draft';
+import { ChapterQuoteList } from './chapter-quotes';
+import type { ChapterQuoteDraft } from './chapter-quote';
 import { TaskComposer, type ComposerMessage } from '@plotloom/ui/task-composer';
+import type { ComposerConversationFile } from '@plotloom/ui/task-composer/types';
 import { Button } from '@plotloom/ui/button';
 import { requestJson } from '../../utils/http';
 import { notifyRequestError } from '../../utils/feedback';
@@ -13,9 +16,11 @@ import { modelKey } from './new-chat-page';
 import { thinkingLabels } from './thinking-levels';
 
 /** 组件保持纯 UI；这里负责公开协议转换、配置保存、附件上传及上下文刷新。 */
-export function ChatComposer({ sessionId, projectPath, busy, activity, stopping, revision, attachmentDropTarget, onSubmit, onStop, onRefresh }: {
+export function ChatComposer({ sessionId, projectPath, busy, activity, stopping, revision, attachmentDropTarget, conversationFiles, quoteDraft, onSubmit, onStop, onRefresh }: {
   sessionId: string; projectPath?: string; busy: boolean; activity?: string; stopping: boolean; revision: number;
   attachmentDropTarget: RefObject<HTMLElement | null>;
+  conversationFiles: readonly ComposerConversationFile[];
+  quoteDraft?: ChapterQuoteDraft;
   onSubmit: (message: ComposerMessage) => Promise<boolean>; onStop: () => void; onRefresh: () => void;
 }) {
   const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
@@ -62,7 +67,9 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
       {failed ? <Button size="sm" variant="text" onClick={() => setReload(value => value + 1)}>重试加载输入配置</Button>
         : compactRunning ? '正在压缩上下文…' : null}
     </div>
-    <TaskComposer options={{ height: 0, draftKey: sessionId, ...chatDraft('session:' + sessionId), disabled: !config || failed, busy: locked, stopping,
+    <TaskComposer draftContext={quoteDraft?.items.length ? <ChapterQuoteList draft={quoteDraft} /> : null}
+      options={{ height: 0, draftKey: sessionId, ...chatDraft('session:' + sessionId), disabled: !config || failed, busy: locked, stopping,
+      hasDraftContext: Boolean(quoteDraft?.items.length),
       onStop: canStop ? compactRunning ? () => {
         void requestJson(`${path}/compact/stop`, 'POST').then(onRefresh).catch(cause => notifyRequestError(cause, 'composer-compact-stop'));
       } : onStop : undefined,
@@ -80,7 +87,8 @@ export function ChatComposer({ sessionId, projectPath, busy, activity, stopping,
       permissionOptions: config?.projectApprovalMode ? 'project' : false,
       permission: config?.projectApprovalMode === 'full_access' ? 'full_access' : 'default',
       onPermissionChange: async value => { await saveConfig({ projectApprovalMode: value === 'full_access' ? 'full_access' : 'required' }); },
-      advancedMentions: false, projectPath,
+      placeholder: '输入消息，/ 调用技能，@ 引用文件',
+      advancedMentions: false, projectPath, conversationFiles,
       skills: enabled?.skills.filter(skill => skill.runnable) ?? [], context: context ?? undefined,
       onSearchFiles: config?.projectApprovalMode ? query => requestJson<ProjectFiles>(`${path}/project-files`, 'POST', { query }) : undefined,
       maxAttachments: SOURCE_LIMITS.attachmentCount, attachmentAccept: '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown', attachmentDropTarget,

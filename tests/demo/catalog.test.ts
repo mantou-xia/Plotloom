@@ -16,7 +16,7 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 92);
+  assert.equal(routes.length, 93);
   for (const id of ['documents.entries', 'documents.reveal', 'documents.recycle-chapter']) {
     const doc = API_CATALOG.find(item => item.id === id)!;
     assert(doc.request.some(field => field.name === 'workspaceId' && field.required));
@@ -37,7 +37,10 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
   assert.equal(routes.filter(route => route.includes('/project-writes')).length, 2);
   assert.equal(routes.filter(route => route.includes('/attachments')).length, 4);
-  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 33);
+  assert.equal(routes.filter((route) => route.includes('/api/workspaces')).length, 34);
+  const batch = API_CATALOG.find(item => item.id === 'proposals.decide-all');
+  assert.equal(batch?.path, '/api/workspaces/:workspaceId/proposals/:proposalId/decision');
+  assert.equal(batch?.examples[0].body.action, 'accept');
   assert(API_CATALOG.find(item => item.id === 'character-cards.list')?.response.some(field => field.name === 'cards[].createdAt'));
   assert.equal(API_CATALOG.find(item => item.id === 'character-cards.list')?.examples.length, 0, '角色卡查询通过无请求体的 GET 发送');
   assert.deepEqual(API_CATALOG.filter(item => item.id.startsWith('character-cards.')).map(item => item.id), ['character-cards.list', 'character-cards.create', 'character-cards.read']);
@@ -54,6 +57,8 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert(importExample?.body.attachmentIds && String(importExample.body.text).includes('import_chapters'));
   const generation = API_CATALOG.find(item => item.id === 'generation.send')!;
   assert.match(generation.note, /正文章节\/第4章\.md/);
+  assert(generation.examples.some(example => example.name === '修改小说文稿并在右侧采纳' && String(example.body.text).includes('manuscript_workspace')));
+  assert(generation.examples.some(example => example.name === '审校润色并打开候选' && String(example.body.text).includes('propose_change')));
   assert(generation.examples.some(example => example.name === '小说聊天写新章' && String(example.body.text).startsWith('写第四章：')));
   for (const id of ['writing.context', 'writing.send']) {
     const endpoint = API_CATALOG.find(item => item.id === id)!;

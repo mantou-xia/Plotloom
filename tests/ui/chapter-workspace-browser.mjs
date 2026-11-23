@@ -22,7 +22,7 @@ export default async function verifyChapterWorkspace(page) {
   const pick = name => chapters.getByRole('button', { name, exact: true }).click();
   await page.goto(url);
   await page.getByRole('heading', { name: '继续创作《海潮》' }).waitFor();
-  const chat = page.getByRole('textbox', { name: '尽管问...' });
+  const chat = page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' });
   await chat.fill('等我核对第三章。');
   await button('打开工作区').click();
   await chapters.getByText(/此目录还没有 Markdown 文稿/).waitFor();

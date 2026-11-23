@@ -7,7 +7,8 @@ export interface ChatTurn {
   id: string; user?: Message; process: ExecutionEntry[]; answer: string;
   fileChanges?: TurnFileChanges['files']; fileReferences: FileSource[]; citations: Map<string, WebSource>; phase: AgentPhase; activity: AgentActivity;
 }
-const activities: Record<string, AgentActivity> = { browser: 'browsing', read: 'reading', read_skill: 'reading', write: 'writing', edit: 'editing', grep: 'searching', find: 'searching', ls: 'reading', bash: 'executing', powershell: 'executing' };
+const activities: Record<string, AgentActivity> = { browser: 'browsing', read: 'reading', read_skill: 'reading', write: 'writing', edit: 'editing',
+  edit_quoted_selections: 'editing', grep: 'searching', find: 'searching', ls: 'reading', bash: 'executing', powershell: 'executing' };
 
 /** 工具结果回填原调用位置，其余过程保留发生顺序；不把首个正文猜作最终回答。 */
 export function chatTurns(session: SessionDetail): ChatTurn[] {
@@ -21,7 +22,7 @@ export function chatTurns(session: SessionDetail): ChatTurn[] {
     }
     if (message.role === 'user') {
       turn.user = message;
-      turn.fileReferences = (message.references ?? []).map((reference, index) => ({ id: `${message.id}:file:${index}`, index: index + 1,
+      turn.fileReferences = (message.references ?? []).filter(reference => reference.editComment === undefined).map((reference, index) => ({ id: `${message.id}:file:${index}`, index: index + 1,
         kind: 'file', path: reference.path, title: reference.path, excerpt: reference.content }));
       continue;
     }

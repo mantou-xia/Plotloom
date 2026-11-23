@@ -13,6 +13,8 @@ export interface WorkspaceFeature {
   title: string;
   icon: ReactNode;
   keywords?: readonly string[];
+  /** 单实例功能可在手动打开和程序定位时复用同一标签。 */
+  singleton?: boolean;
   page: ReactNode;
 }
 
@@ -49,6 +51,8 @@ export interface WorkspacePanelProps {
   /** 首个标签随当前上下文展示的功能；新标签仍从功能列表开始。 */
   primaryFeatureId?: string;
   primaryRequest?: object;
+  /** 新对象用于定位已注册的功能，标签关闭后仍可再次请求打开。 */
+  featureRequest?: { featureId: string };
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** 每次提供新的对象时打开或选中同 ID 的页面；清除请求时移除该页。 */
@@ -58,10 +62,10 @@ export interface WorkspacePanelProps {
 }
 
 /** 同一标签切换和收起时保留已打开页面；关闭当前标签优先选右邻页。 */
-export function WorkspacePanel({ children, features, primaryFeatureId, primaryRequest, open, onOpenChange, requestedTab, className = '', style }: WorkspacePanelProps) {
-  const [{ tabs, activeId, previousRequest, previousPrimary }, setTabs] = useState<{
+export function WorkspacePanel({ children, features, primaryFeatureId, primaryRequest, featureRequest, open, onOpenChange, requestedTab, className = '', style }: WorkspacePanelProps) {
+  const [{ tabs, activeId, previousRequest, previousPrimary, previousFeature }, setTabs] = useState<{
     tabs: PanelTab[]; activeId: string; previousRequest?: WorkspaceTab;
-    previousPrimary?: object;
+    previousPrimary?: object; previousFeature?: WorkspacePanelProps['featureRequest'];
   }>({ tabs: [{ id: '1' }], activeId: '1' });
   const serial = useRef(1);
   // 从主区打开的内容与手动打开的标签共享生命周期，重复请求只更新该页并选中它。
@@ -76,6 +80,16 @@ export function WorkspacePanel({ children, features, primaryFeatureId, primaryRe
     const primary = tabs.find(tab => tab.featureId === primaryFeatureId || (tab.id === '1' && !tab.featureId));
     setTabs(current => ({ ...current, previousPrimary: primaryRequest, activeId: primary?.id ?? '1',
       tabs: primary ? current.tabs : [...current.tabs, { id: '1', featureId: primaryFeatureId }] }));
+  }
+  if (featureRequest !== previousFeature) {
+    const feature = features.find(item => item.id === featureRequest?.featureId);
+    const id = feature && `feature:${feature.id}`;
+    setTabs(current => {
+      if (!feature || !id) return { ...current, previousFeature: featureRequest };
+      const existing = current.tabs.find(tab => tab.featureId === feature.id || (tab.id === '1' && !tab.featureId && feature.id === primaryFeatureId));
+      return { ...current, previousFeature: featureRequest, activeId: existing?.id ?? id,
+        tabs: existing ? current.tabs : [...current.tabs, { id, featureId: feature.id }] };
+    });
   }
   function add() {
     const id = String(++serial.current);
@@ -96,9 +110,12 @@ export function WorkspacePanel({ children, features, primaryFeatureId, primaryRe
     return feature ? { id: tab.id, title: feature.title, icon: feature.icon, page: feature.page } : {
       id: tab.id, title: '新标签页', icon: <Plus />,
       page: <WorkspaceStart features={features} onOpen={id => setTabs(current => {
-        // 主功能只保留一个实例，避免同一文稿出现两个可写视图。
-        const existing = id === primaryFeatureId && current.tabs.find(item => item.featureId === id || (item.id === '1' && !item.featureId));
-        if (existing) return { ...current, activeId: existing.id };
+        // 单实例功能和主功能已打开时复用标签，并移除本次使用的空标签。
+        const single = features.some(item => item.id === id && item.singleton);
+        const reuse = id === primaryFeatureId || single;
+        const existing = reuse && current.tabs.find(item => item.featureId === id || (id === primaryFeatureId && item.id === '1' && !item.featureId));
+        if (existing) return { ...current, activeId: existing.id,
+          tabs: single ? current.tabs.filter(item => item.id !== tab.id || item.id === existing.id) : current.tabs };
         return { ...current, tabs: current.tabs.map(item => item.id === tab.id ? { ...item, featureId: id } : item) };
       })} />,
     };

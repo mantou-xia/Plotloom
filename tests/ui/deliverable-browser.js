@@ -10,6 +10,13 @@ async (page) => {
   const url = server + '/api/sessions/' + id;
   const config = await page.request.put(url + '/config', { data: { projectApprovalMode: 'full_access' } });
   assert(config.ok(), await config.text());
+  const upload = await page.request.post(url + '/attachments', { data: {
+    name: '聊天原稿.txt', mimeType: 'text/plain', data: Buffer.from('原稿正文').toString('base64'),
+  } });
+  assert(upload.status() === 201, await upload.text());
+  const attachment = await upload.json();
+  const supplied = await page.request.post(url + '/messages', { data: { text: '收下原稿', attachmentIds: [attachment.id] } });
+  assert((await supplied.text()).includes('event: completed'), '原稿没有成功发送');
   const path = '产物 数据.csv';
   const finalText = '[场景](scene.md)和[表格][report]，再次引用[场景副本](./scene.md)。另外有[网站](https://example.com)和代码 `[例子](ignored.md)`。\n\n[report]: <' + path + '>';
   const generated = await page.request.post(url + '/messages', { data: { text: 'WRITE:' + JSON.stringify({
@@ -19,7 +26,7 @@ async (page) => {
   assert((await generated.text()).includes('event: completed'), '未收到模型完成事件');
 
   await page.goto('http://127.0.0.1:4463/#chat=' + id);
-  const response = page.locator('.plotloom-chat__response');
+  const response = page.locator('.plotloom-chat__response').filter({ has: page.getByRole('link', { name: '场景', exact: true }) });
   const sceneLink = response.getByRole('link', { name: '场景', exact: true });
   await sceneLink.waitFor();
   assert(!(await response.textContent()).includes('[blocked]'), '正文仍有 blocked 标记');
@@ -56,6 +63,19 @@ async (page) => {
   await page.reload();
   await sceneLink.waitFor();
   assert(await artifacts.getByRole('button').count() === 2, '历史消息未恢复交付卡片');
+  const composer = page.getByPlaceholder('输入消息，/ 调用技能，@ 引用文件');
+  await composer.fill('@未交付');
+  await page.getByRole('option', { name: /未交付\.txt/ }).waitFor();
+  await composer.fill('@');
+  await page.getByRole('option', { name: /聊天原稿\.txt/ }).click();
+  await composer.pressSequentially('@scene');
+  await page.getByRole('option', { name: /scene\.md.*交付产物/ }).click();
+  const sent = page.waitForResponse(res => res.url().endsWith('/messages') && res.request().method() === 'POST');
+  await composer.press('Enter');
+  const result = await sent;
+  const body = result.request().postDataJSON();
+  assert(body.text === '@聊天原稿.txt @scene.md' && JSON.stringify(body.attachmentIds) === JSON.stringify([attachment.id]), '引用未按文件来源发送');
+  assert((await result.text()).includes('event: completed'), '引用文件后的消息没有完成');
 
   await page.goto('http://127.0.0.1:4464/#sessions.deliverable');
   await page.getByLabel('会话 ID', { exact: true }).fill(id);

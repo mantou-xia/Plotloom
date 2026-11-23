@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, Download, FileCheck, History } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { Check, ChevronDown, Download, FileCheck, History } from 'lucide-react';
+import { SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import { countManuscriptCharacters, type DocumentView, type ManuscriptView } from '@plotloom/contracts/workspaces';
 import { ActionMenu, ActionMenuItem } from '@plotloom/ui/action-menu';
 import { ManuscriptPaper } from '@plotloom/ui/manuscript-frame';
-import { DocumentEditor } from '@plotloom/ui/document-editor';
+import { DocumentEditor, type DocumentSelectionAnchor } from '@plotloom/ui/document-editor';
 import { Button } from '@plotloom/ui/button';
 import { MarkdownRenderer } from '@plotloom/ui/markdown';
 import { requestJson } from '../../utils/http';
 import { notifyRequestError, runWithToast } from '../../utils/feedback';
 import { NovelHistory, exportManuscript } from './novel-review';
 import { readManuscript } from './novel-api';
+import type { ChapterQuote } from '../agent/chapter-quote';
 
 interface Draft { baseVersion: string | null; content: string }
 export const draftKey = (workspaceId: string, path: string) => 'plotloom:novel-draft:v1:' + JSON.stringify([workspaceId, path]);
@@ -58,10 +60,11 @@ interface EditorProps {
   title?: string;
   onSaved?: () => void;
   viewRequest?: ManuscriptView;
+  onQuote?: (quote: ChapterQuote) => void;
 }
 
 /** 草稿携带原始版本。重开时遇到外部改稿，仍保留草稿供复制或核对。 */
-export function ManuscriptEditor({ workspaceId, base, path, reload, onRefresh, onReviewCandidate, onSaved, title = path, viewRequest }: EditorProps) {
+export function ManuscriptEditor({ workspaceId, base, path, reload, onRefresh, onReviewCandidate, onSaved, title = path, viewRequest, onQuote }: EditorProps) {
   const key = draftKey(workspaceId, path);
   const [document, setDocument] = useState<DocumentView>();
   const [draft, setDraft] = useState(() => readDraft(key));
@@ -87,6 +90,9 @@ export function ManuscriptEditor({ workspaceId, base, path, reload, onRefresh, o
   const conflict = !!(draft && document && draft.baseVersion !== document.version);
   const locked = busy || reading || !document;
   const [menuContainer, setMenuContainer] = useState<HTMLDialogElement | null>(null);
+  const [selection, setSelection] = useState<DocumentSelectionAnchor | null>(null);
+  const [comment, setComment] = useState('');
+  const quotePopover = useRef<HTMLDivElement>(null);
   const bindToolbar = useCallback((node: HTMLElement | null) => {
     setMenuContainer(node?.closest('dialog') ?? null);
   }, []);
@@ -119,6 +125,7 @@ export function ManuscriptEditor({ workspaceId, base, path, reload, onRefresh, o
   }, [reading, preview, viewKey]);
 
   function changeView(next: boolean) {
+    closeQuote();
     setPreview(next);
     sessionStorage.setItem(viewKey, next ? 'preview' : 'edit');
   }
@@ -214,14 +221,78 @@ export function ManuscriptEditor({ workspaceId, base, path, reload, onRefresh, o
   const hasSavedDocument = !!document?.version;
   const canFinalize = !locked && !draft && hasSavedDocument;
   const count = countManuscriptCharacters(content);
+  const anchor = !preview && onQuote ? selection : null;
+  const canQuote = !!document?.version && content === document.content && !reading;
 
-  const editor = <div className="plotloom-manuscript-input">
+  const closeQuote = useCallback(() => {
+    setSelection(null);
+    setComment('');
+  }, []);
+
+  useEffect(() => { closeQuote(); }, [closeQuote, onQuote, preview]);
+
+  useEffect(() => {
+    if (!anchor) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!quotePopover.current?.contains(event.target as Node)) closeQuote();
+    };
+    window.addEventListener('pointerdown', dismiss, true);
+    window.addEventListener('resize', closeQuote);
+    return () => {
+      window.removeEventListener('pointerdown', dismiss, true);
+      window.removeEventListener('resize', closeQuote);
+    };
+  }, [!!anchor, closeQuote]);
+
+  /** 编辑器坐标按 LF 计算，发送的 UTF-16 区间和原文必须精确对应已保存版本。 */
+  function confirmQuote(anchor: DocumentSelectionAnchor) {
+    if (!canQuote || !document?.version) return;
+    const value = editorText(content);
+    const text = value.slice(anchor.start, anchor.end);
+    if (!text.trim()) return;
+    const firstLine = value.slice(0, anchor.start).split('\n').length;
+    const lastLine = firstLine + text.replace(/\n$/, '').split('\n').length - 1;
+    const start = manuscriptOffset(content, anchor.start);
+    const end = manuscriptOffset(content, anchor.end);
+    onQuote?.({ firstLine, lastLine, reference: { workspaceId, path, version: document.version, editComment: comment.trim(),
+      selection: { start, end, text: content.slice(start, end) } } });
+    finishQuote();
+  }
+
+  function finishQuote() {
+    closeQuote();
+    documentScroll.current?.querySelector<HTMLElement>('[role="textbox"]')?.focus({ preventScroll: true });
+  }
+
+  const editor = <div className="plotloom-manuscript-input" onKeyDown={event => {
+    if (event.key === 'Escape' && anchor && !event.nativeEvent.isComposing) {
+      event.stopPropagation();
+      finishQuote();
+    }
+  }}>
     <DocumentEditor label="文稿正文" value={editorText(content)} readOnly={locked || conflict}
       scrollRef={documentScroll} onValueChange={changeDocument}
+      onSelectionAnchorChange={onQuote ? next => {
+        if (next && editorText(content).slice(next.start, next.end).trim()) setSelection(next);
+        else closeQuote();
+      } : undefined}
       onBlur={draft && !saveFailed && !composing ? () => void save() : undefined}
       onCompositionChange={setComposing}
-      onScroll={top => sessionStorage.setItem(viewKey + ':edit', String(top))} />
-    </div>;
+      onScroll={top => { sessionStorage.setItem(viewKey + ':edit', String(top)); closeQuote(); }} />
+    {anchor ? <div ref={quotePopover} className="plotloom-manuscript-quote" data-above={anchor.top >= 56}
+      style={{ '--quote-x': `${anchor.left}px`, top: anchor.top >= 56 ? anchor.top : anchor.bottom } as CSSProperties}>
+      <form aria-label="添加文稿引用" onSubmit={event => {
+        event.preventDefault();
+        confirmQuote(anchor);
+      }}>
+        <input aria-label="备注或修改要求" placeholder={canQuote ? '添加备注或修改要求（可选）' : '保存文稿后可添加引用'} value={comment}
+          maxLength={SOURCE_LIMITS.editCommentChars}
+          onChange={event => setComment(event.currentTarget.value)} />
+        <Button type="submit" size="sm" variant="ghost" className="plotloom-manuscript-quote-confirm" disabled={!canQuote}
+          iconOnly tooltip aria-label="确认引用"><Check /></Button>
+      </form>
+    </div> : null}
+  </div>;
   const previewContent = <article className="plotloom-chapter-preview" aria-label="章节预览" ref={previewBody} tabIndex={0}
       onScroll={event => sessionStorage.setItem(viewKey + ':preview', String(event.currentTarget.scrollTop))}>
       <MarkdownRenderer content={content} />

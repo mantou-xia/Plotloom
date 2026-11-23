@@ -9,11 +9,10 @@
 .plotloom-skills-empty p { margin: 0 0 8px; }
 .plotloom-skills-feedback { margin: 0; color: var(--pl-text-muted, #60636b); line-height: 1.6; }
 @media (max-width: 900px) { .plotloom-skills { grid-template-columns: minmax(0, 1fr); column-gap: 0; } }
-.plotloom-skill-details { width: 680px; height: min(760px, calc(100dvh - 48px)); }
+.plotloom-skill-details { width: 600px; }
 .plotloom-skill-details p { margin: 8px 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
-.plotloom-skill-details h3 { margin: 24px 0 12px; font-size: 15px; }
 .plotloom-skill-details__muted { color: var(--pl-text-muted, #60636b); }
+.plotloom-skill-details h3 { margin: 20px 0 8px; font-size: 14px; font-weight: 600; }
 .plotloom-skill-details__tools { margin: 0; padding: 0; list-style: none; }
-.plotloom-skill-details__tools > li { padding: 12px 16px; margin-bottom: 8px; background: var(--pl-surface-muted, #f4f4f5); border-radius: 12px; }
-.plotloom-skill-details__tools h4 { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin: 0; font-size: 14px; }
-.plotloom-skill-details__tools h4 span { font-size: 12px; font-weight: 400; color: var(--pl-text-muted, #60636b); }
+.plotloom-skill-details__tools li { padding-block: 10px; border-block-start: 1px solid var(--pl-border); overflow-wrap: anywhere; }
+.plotloom-skill-details__tools p { margin: 4px 0 0; color: var(--pl-text-muted); }

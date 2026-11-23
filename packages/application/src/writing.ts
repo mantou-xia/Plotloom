@@ -19,7 +19,7 @@ interface ChapterDelivery { path: string; version: string; proposalId?: string }
 const CHAPTER_PART_ENTRY = 'plotloom-chapter-draft-part';
 export const CHAPTER_PART_LIMIT = 1500;
 interface ChapterPart { draftId: string; part: number; content: string }
-export const WRITING_TOOLS = ['list_documents', 'read_document', 'search_documents', 'review_writing', 'propose_change', 'propose_world_rule', 'propose_character_change', 'suggest_character_card', 'save_character_card', 'manuscript_workspace', 'import_chapters', 'write_chapter_part', 'deliver_chapter'];
+export const WRITING_TOOLS = ['list_documents', 'read_document', 'search_documents', 'review_writing', 'propose_change', 'propose_world_rule', 'propose_character_change', 'suggest_character_card', 'save_character_card', 'manuscript_workspace', 'import_chapters', 'write_chapter_part', 'deliver_chapter', 'edit_quoted_selections'];
 type ConfirmOperation = (preview: string, target?: FileApprovalTarget) => Promise<boolean>;
 export interface WritingSessions {
   recordWrite(id: string, change: WorkspaceFileWrite): Promise<void>;
@@ -173,7 +173,7 @@ export class WritingService {
       finish: async (outcome: Outcome) => { record.outcome = outcome; await persist(); },
       list: async () => ({ paths: (await this.workspaces.listDocuments(context.workspaceId)).paths.filter(visiblePath) }),
       read: capture,
-      /** 面板工具每次只执行作者确认的动作，使用同一套正式文件及定稿用例。 */
+      /** 候选留到右侧审阅时决定；其他面板操作继续等待各自的确认。 */
       manuscript: async (input: { action: string; path?: string; content?: string; revisionId?: string }, signal?: AbortSignal,
         confirm?: ConfirmOperation) => {
         const { action, path, content, revisionId } = input;
@@ -182,18 +182,27 @@ export class WritingService {
         if (!path && !['list', 'refresh'].includes(action)) invalid('请指定文稿路径。');
         if (path) documentPath(path);
         if (action === 'export_txt' && !path?.startsWith('正文章节/')) invalid('请选择本书正文章节导出 TXT。');
-        if ((action === 'edit' && content === undefined) || (['restore', 'read_final'].includes(action) && !revisionId)) invalid('缺少文稿内容或定稿 ID。');
-        // 单次同意只对应这里展示的动作、正文与磁盘基础版本。
-        const baseVersion = path && ['edit', 'restore', 'finalize'].includes(action)
-          ? (await this.workspaces.peek(context.workspaceId, path)).version : null;
+        const id = context.workspaceId;
+        if (action === 'edit') {
+          if (!path || content === undefined) invalid('缺少文稿路径或内容。');
+          // 候选只保存差异，右侧采纳才写正式稿。固定本轮读过的版本，避免与手改混合。
+          const source = context.sources.find(item => item.path.toLowerCase() === path.toLowerCase());
+          const baseVersion = (source ?? await this.workspaces.peek(id, path)).version;
+          const proposal = await this.workspaces.createProposal(id, { path, baseVersion, content },
+            { origin: { sessionId, requestId: record.id, reason: '作者请求修改工作区文稿' }, signal });
+          return { ...proposal, view: { workspaceId: id, path, mode: 'edit', proposalId: proposal.id } };
+        }
+        if (['restore', 'read_final'].includes(action) && !revisionId) invalid('缺少定稿 ID。');
+        // 定稿和回退的批准仅作用于提请确认时的磁盘版本。
+        const baseVersion = path && ['restore', 'finalize'].includes(action)
+          ? (await this.workspaces.peek(id, path)).version : null;
         const labels: Record<string, string> = { list: '列出正文和大纲', refresh: '刷新文稿目录', open: '打开文稿',
-          preview: '预览文稿', history: '查看定稿记录', read_final: '查看指定定稿', edit: '提交文稿修改候选',
+          preview: '预览文稿', history: '查看定稿记录', read_final: '查看指定定稿',
           export_txt: '下载本章最新保存稿为 TXT', finalize: '留档为定稿', restore: '回退到指定定稿', discard: '丢弃浏览器中这篇文稿的未保存草稿' };
         if (!labels[action]) invalid('文稿操作无效。');
-        if (!await confirm?.(labels[action] + (path ? ' · ' + path : '') + (revisionId ? '\n定稿 ID：' + revisionId : '')
-          + (action === 'edit' ? '\n拟提交全文：\n' + content : ''), path && ['finalize', 'restore', 'edit'].includes(action) ? { path, operation: 'edit', label: labels[action] } : undefined)) return { status: 'declined' };
+        if (!await confirm?.(labels[action] + (path ? ' · ' + path : '') + (revisionId ? '\n定稿 ID：' + revisionId : ''),
+          path && ['finalize', 'restore'].includes(action) ? { path, operation: 'edit', label: labels[action] } : undefined)) return { status: 'declined' };
         signal?.throwIfAborted();
-        const id = context.workspaceId;
         if (!path) {
           const { paths } = await this.workspaces.listDocuments(id);
           return { paths: paths.filter(file => visiblePath(file) && (file.startsWith('正文章节/') || file.startsWith('大纲/'))),
@@ -213,8 +222,6 @@ export class WritingService {
           case 'discard': return { view: { ...view, mode: 'discard' } };
           case 'finalize': return this.workspaces.finalize(id, { path, baseVersion });
           case 'restore': return { document: await this.workspaces.restore(id, { path, baseVersion, revisionId: revisionId! }), view };
-          case 'edit': return this.workspaces.createProposal(id, { path, baseVersion, content: content! },
-            { origin: { sessionId, requestId: record.id, reason: '作者确认提交工作区修改候选' }, signal });
           default: return { status: 'completed' };
         }
       },
@@ -425,7 +432,7 @@ export function writingPrompt(context: WritingContext, chatChapter?: boolean): s
     + '作者给出具体设定后，简短复述，用 propose_world_rule 提出供作者采纳的设定。区分生效章节和主角得知章节；尚未决定何时揭示可传 null。仅作者采纳才正式生效。'
     + '世界观默认在初始化时整理，交稿后默认沿用。只在大阶段交替且世界规则发生持续变化，或正文明确揭示了尚未记录、会约束后续剧情的重要背景时提出建议。阶段结束本身、普通情节推进、角色变化、局部见闻、已记录规则的重述均不发起建议。重要背景补充仍按原生效章和实际揭示章记录。调用 propose_world_rule 时引用交付原句，并用 impact 写明对后续剧情的持续影响。已有主题沿用原名称，由作者决定是否采纳。'
     + '角色卡资料按当前章节引用。整理角色时，性格特点必须分为表征、内在和描写，愿景必须分为明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。建卡或作者确认后补录角色卡时使用 save_character_card。整章交稿后如发现角色变化，每次只处理一个角色，提取简短关键词（例如黑化、失去双亲、获得神力），用 propose_character_change 展示原阶段、对应情节和细化后的五栏建议，作者确认后才保存；不能把建议直接当作正式角色卡。重写候选在作者采纳后可于后续对话中复核。工具返回 needs_review 时，依据返回的最新正文重新判断，仍有变化则重新提出并等待确认。无变化时简要说明原因。交稿时也检查对后续剧情有影响却缺卡的人物，包含有稳定称呼的无名人物。仅被提及或路过的人略过。核对已知别名，身份不确定先问作者。用 suggest_character_card 提醒，跳过后仅在出现新的重要情节时再提。'
-    + '作者要求操作右侧工作区（打开、预览、修改、定稿、回退等）时，使用 manuscript_workspace，并等作者确认。单章 TXT 导出使用 export_txt，按本书章节清单确定 path。下载由客户端完成。作者拒绝或跳过时不得换工具绕过。'
+    + '作者明确要求修改右侧工作区的正文或大纲时，读取目标文稿并调用 manuscript_workspace 的 edit，直接提交修改候选。候选待采纳时只提示作者在右侧审阅，不要求在聊天里再次确认，也不能声称已写入正式稿。打开、预览、定稿和回退等其他面板操作使用 manuscript_workspace 并等待对应确认。单章 TXT 导出使用 export_txt，按本书章节清单确定 path。下载由客户端完成。作者拒绝或跳过时不得换工具绕过。'
     + (context.chapterNumber ? `当前写第${context.chapterNumber}章。主角对白与内心只使用本章已知的信息，即使前次聊天讨论过后期设定。\n` : '\n')
     + `本轮正式资料（JSON）：${JSON.stringify(materials)}\n`;
 }

@@ -12,6 +12,7 @@ import { MessageStatus } from '@plotloom/ui/message-status';
 import { CitationMarker } from '@plotloom/ui/citation-marker';
 import { SourceReference } from '@plotloom/ui/source-reference';
 import { AttachmentPreview } from './attachment-preview';
+import { SentChapterQuotes } from './chapter-quotes';
 import type { ChatTurn as Turn } from './chat-turns';
 import { notifyRequestError } from '../../utils/feedback';
 import type { OpenCitations } from '../workspace/citation-sources-page';
@@ -53,12 +54,14 @@ export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChang
   const working = turn.phase === 'working';
   const userText = turn.user?.content.filter(block => block.type === 'text').map(block => block.text).join('\n') ?? '';
   const attachments = turn.user?.attachments ?? [];
+  const quotedSelections = turn.user?.references?.filter(reference => reference.editComment !== undefined) ?? [];
   // 过程区提供运行反馈，回答下方的状态行只提供失败与停止后的恢复操作。
   const status = turn.phase === 'failed' ? 'failed' : turn.phase === 'stopped' ? 'stopped' : null;
   return <section className="plotloom-chat__turn" data-turn-id={turn.id}>
     {turn.user ? <UserMessageBubble text={userText}
-      attachments={attachments.length || turn.fileReferences.length ? <>
+      attachments={attachments.length || turn.fileReferences.length || quotedSelections.length ? <>
         {attachments.map(attachment => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
+        {quotedSelections.length ? <SentChapterQuotes references={quotedSelections} /> : null}
         {turn.fileReferences.length ? <SourceReference sources={turn.fileReferences} selectedId={selectedFile} onSelectedChange={setSelectedFile} /> : null}
       </> : undefined} /> : null}
     {userText.trim() && <MessageActions text={userText} subject="消息" style={{ marginInlineStart: 'auto' }}

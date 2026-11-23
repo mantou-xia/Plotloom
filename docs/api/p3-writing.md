@@ -33,7 +33,7 @@
 
 缺标题、正文为空或重复章号时，工具返回 `CHAPTER_IMPORT_AMBIGUOUS`，请核对后重发。拒绝、跳过或在待确认时停止，磁盘正文不会写入。已有同章且内容相同则跳过，并在 `paths` 和预览事件中返回原文件路径。任意同章内容冲突或多份正文会在批量预检时拒绝写入。磁盘故障或开始写入后停止时，已完成章节保留，再次确认导入可继续缺失章节。
 
-小说会话的 `manuscript_workspace` 工具复用正文、大纲和定稿接口。每次调用在现有确认卡等待作者选择，跳过和取消都不会生效。`list`、`refresh` 浏览文稿目录，`open`、`preview`、`history`、`read_final` 定位文稿和定稿，`finalize`、`restore` 校验确认前读取到的磁盘版本，`edit` 只提交候选，`discard` 丢弃当前浏览器的对应草稿。确认后的定位随 `tool_end.manuscriptView` 返回，也可从会话详情的 `manuscriptRequest` 获取。浏览器按指令 ID 去重，正文仍由文稿接口读取。不同小说与其他项目无法使用这一工具读写本书。
+小说会话的 `manuscript_workspace` 工具复用正文、大纲和定稿接口。`edit` 直接提交候选，`tool_end.manuscriptView` 返回 `mode: "edit"` 和 `proposalId`，右侧打开差异供作者采纳或拒绝。采纳前正式稿保持原样，其余操作继续使用确认卡。`list`、`refresh` 浏览文稿目录，`open`、`preview`、`history`、`read_final` 定位文稿和定稿，`finalize`、`restore` 校验确认前读取到的磁盘版本，`discard` 丢弃当前浏览器的对应草稿。文稿定位也可从会话详情的 `manuscriptRequest` 获取。浏览器按指令 ID 去重，正文仍由文稿接口读取。不同小说与其他项目无法使用这一工具读写本书。
 
 世界观保存在本书根目录的 `世界观.md`。每项包含主题、生效章、主角得知章和事实；得知章为“未揭示”的条目留在作者档案里。预览与创作可传 `chapterNumber`（1–999999，非法值返回 400）。工作台允许指定章号。接口未指定时优先识别目标文件名，再识别要求里的章号，写作缺省取第一章，无章号的作者讨论可查看全部设定。返回的世界观来源保留磁盘版本，content 为本章适用的内容。同主题取当前已生效、已揭示的最近设定。作者手工编辑时应保留条目格式。
 
@@ -77,7 +77,7 @@ WritingContext 返回 `workspaceId/task/instructions/target/sources/maxOutputCha
 | read_document | `{path}` | 读取并固定本轮原文版本，再读同路径返回同一快照 |
 | search_documents | `{query,paths?}` | 字面查找并保存实际命中文件原文和版本 |
 | review_writing | `{status,issues}` | 保存最小审校；证据必须来自本轮对应文件 |
-| propose_change | `{path,content,reason}` | 绑定目标、选区、基础版本和实际引用，创建 P2 候选 |
+| propose_change | `{path,content,reason}` | 绑定目标、选区、基础版本和实际引用，创建 P2 候选。正文或大纲的 `tool_end.manuscriptView` 带 `proposalId`，供右侧打开审阅 |
 
 审校 status 为 clear 或 needs_input；clear 必须无问题，有问题必须 needs_input。每个问题为 `{kind,message,evidence:[{path,quote}]}`，kind 为 setting/viewpoint/missing_material；设定及视角冲突至少有一条逐字原文证据。新读取资料后重新审校。同一轮一旦发现需澄清问题，不能自己重新标 clear 并提交候选；用户下一条说明后可发起新一轮。
 

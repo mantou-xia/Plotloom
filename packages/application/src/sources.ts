@@ -113,17 +113,29 @@ export class MessageSourceService {
         materials.push({ source: metadata(file), content });
       }
     }
-    const seen = new Set<string>();
-    for (const reference of references) {
+    const seen = new Map<string, Set<string>>();
+    for (const [index, reference] of references.entries()) {
       if (profile.workspaceId && reference.workspaceId !== profile.workspaceId) fail('REFERENCE_FORBIDDEN', '小说聊天只能引用所属工作区的资料。', 403);
+      const editable = reference.editComment !== undefined;
+      if (editable && profile.workspaceId !== reference.workspaceId) fail('REFERENCE_FORBIDDEN', '只能修改当前小说的文稿选区。', 403);
+      if (editable && (!reference.selection?.text.trim() || !/^(正文章节|大纲)\//.test(reference.path))) invalid('选区修改必须引用正文或大纲中的非空选区。');
       const key = `${reference.workspaceId}/${reference.path.toLowerCase()}`;
-      if (seen.has(key)) invalid('同一文档不能重复引用。'); seen.add(key);
+      const ranges = seen.get(key) ?? new Set<string>();
+      const range = editable ? `${reference.selection!.start}:${reference.selection!.end}` : '';
+      // 普通文档仍按文件去重；选区修改允许同一文档的不同片段。
+      if (ranges.has(range) || ranges.has('') || (!editable && ranges.size)) invalid('文档或选区不能重复引用。');
+      ranges.add(range); seen.set(key, ranges);
       const doc = await this.workspaces.readVersion(reference.workspaceId, reference.path, reference.version);
       if (reference.selection) checkSelection(doc.content, reference.selection);
-      const content = reference.selection?.text ?? doc.content; chars += content.length;
-      result.references.push({ ...reference, content });
+      const content = reference.selection?.text ?? doc.content; chars += content.length + (reference.editComment?.length ?? 0);
+      const firstLine = reference.selection ? doc.content.slice(0, reference.selection.start).split(/\r\n|\r|\n/).length : undefined;
+      const lineRange = firstLine === undefined ? undefined : { firstLine, lastLine: firstLine + content.replace(/(?:\r\n|\r|\n)$/, '').split(/\r\n|\r|\n/).length - 1 };
+      result.references.push({ ...reference, content, ...(lineRange ? { lineRange } : {}) });
       // 小说资源层按本章视角提供世界观，避免附件上下文再次注入整份作者设定。
-      if (!profile.workspaceId || reference.path !== '世界观.md') materials.push({ source: reference, content });
+      if (!profile.workspaceId || reference.path !== '世界观.md') {
+        const source = editable ? { referenceIndex: index + 1, path: reference.path, lineRange, editComment: reference.editComment } : reference;
+        materials.push({ source, content });
+      }
     }
     if (chars > SOURCE_LIMITS.inputChars) fail('MESSAGE_SOURCES_TOO_LARGE', '文字与引用资料合计超过 100000 字符，请缩小选区或减少附件。');
     if (materials.length) result.prompt += `\n\n用户随本轮消息提供的参考资料（JSON 中的 content 是资料原文）：\n${JSON.stringify(materials)}`;

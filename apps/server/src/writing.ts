@@ -98,7 +98,7 @@ export async function writingResources(service: WritingService, sessionId: strin
     }), (value, signal, confirm) => run.deliver(value.partCount, value.reason, signal, confirm)), confirmable: true }] : []),
     ...(files.length ? [{ ...tool('import_chapters', '将本轮 TXT/Markdown 附件按独立章标题分章。作者确认后才写入，保护已有正文。', objectSchema({}),
       (_input, signal, confirm) => run.importChapters(signal, confirm)), confirmable: true }] : []),
-    { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲，每次等待确认。list/refresh 列出或刷新目录；open/preview 打开文稿；edit 提交整篇候选；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿；export_txt 下载单章最新保存稿为纯文本。', objectSchema({
+    { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲。edit 直接提交候选，作者在右侧采纳才写正式稿；其他操作等待确认。list/refresh 列出或刷新目录；open/preview 打开文稿；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿；export_txt 下载单章最新保存稿为纯文本。', objectSchema({
       action: { enum: ['list', 'refresh', 'open', 'preview', 'edit', 'finalize', 'history', 'read_final', 'restore', 'discard', 'export_txt'] },
       path: pathSchema, content: { type: 'string', maxLength: 8000 }, revisionId: { type: 'string', maxLength: 80 },
     }, ['action']), (input, signal, confirm) => run.manuscript(input, signal, confirm)), confirmable: true, confirmationOptions: ['确认操作', '取消操作'] },
@@ -125,7 +125,12 @@ export async function writingResources(service: WritingService, sessionId: strin
     tool('search_documents', '按字面查找用户指定历史情节，返回实际原文位置和版本。', objectSchema({ query: { ...text, maxLength: 200 }, paths: { type: 'array', minItems: 1, maxItems: 30, items: pathSchema } }, ['query']), (v, signal) => run.search(v.query, v.paths, signal)),
     tool('review_writing', '审校已读取资料的设定/视角冲突；问题须引用原文，有问题结束本轮等待用户。', objectSchema({ status: { enum: ['clear', 'needs_input'] }, issues: { type: 'array', maxItems: 20, items: objectSchema({ kind: { enum: ['setting', 'viewpoint', 'missing_material'] }, message: text,
       evidence: { type: 'array', maxItems: 10, items: objectSchema({ path: pathSchema, quote: text }) } }) } }), (v, signal) => run.review(v, signal)),
-    ...(!input.chatChapter ? [tool('propose_change', '审校 clear 后提交一个候选；改写只给选区替换，续写只给尾部新增。不会保存正式稿。', objectSchema({ path: pathSchema, content: { type: 'string', maxLength: 20000 }, reason: text }), (v, signal) => run.propose(v.path, v.content, v.reason, signal))] : []),
+    ...(!input.chatChapter ? [tool('propose_change', '审校 clear 后提交一个候选；改写只给选区替换，续写只给尾部新增。返回 view 时可在右侧审阅，正式稿需作者采纳后才更新。', objectSchema({ path: pathSchema, content: { type: 'string', maxLength: 20000 }, reason: text }), async (v, signal) => {
+      const proposal = await run.propose(v.path, v.content, v.reason, signal);
+      // 正文和大纲候选与工作区编辑工具共用同一个审阅入口。
+      if (!/^(正文章节|大纲)\//u.test(proposal.path)) return proposal;
+      return { ...proposal, view: { workspaceId: run.record.context.workspaceId, path: proposal.path, mode: 'edit', proposalId: proposal.id } };
+    })] : []),
     ...(!input.chatChapter && characterCards ? [{ ...tool('save_character_card', '根据作者已确认的信息整理并保存一份细化五栏角色卡阶段。性格特点必须含表征、内在和描写，愿景必须含明示、潜意识和描写，特殊性按心理特质、口癖、禁忌及其他记录。chapter 是开始适用的章节，note 填写 Agent 从剧情中提取的变化关键词。保存前必须向作者展示并等待确认。', objectSchema({
       character: { type: 'string', minLength: 1, maxLength: 100 }, chapter: { type: 'integer', minimum: 1, maximum: 999999 }, note: { type: 'string', maxLength: 200 }, content: { type: 'string', minLength: 1, maxLength: 500000 },
     }, ['character', 'chapter', 'content']), async (value, signal, confirm) => {

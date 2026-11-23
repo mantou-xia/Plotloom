@@ -145,6 +145,105 @@ test('聊天附件与指定版本资料的独立 HTTP / SSE 验收', { timeout: 
       const snapshot = await history(b.id); await restart(); assert.deepEqual(await history(b.id), snapshot);
       assert.equal((await json(`/api/workspaces/${ws.id}/document/read`, 'POST', { path: old.path })).version, latest.version);
     });
+    await t.test('结构化文稿选区按顺序审批，写入只改所选字符，拒绝、停止与冲突保持原稿', async () => {
+      const root = await mkdtemp(join(directory, 'quoted-edits-'));
+      const ws = await json('/api/workspaces', 'POST', { title: '局部改稿', root }, 201);
+      const document = `/api/workspaces/${ws.id}/document`;
+      const path = '正文章节/第一章.md';
+      const content = '开头😀\r\n灯亮了，灯亮了。\r\n海鸥飞走。\r\n结尾';
+      const save = (content: string, baseVersion: string | null) => json(document, 'PUT', { path, content, baseVersion });
+      const read = () => json(document + '/read', 'POST', { path });
+      const initial = await save(content, null);
+      const session = await json(`/api/workspaces/${ws.id}/sessions`, 'POST', {}, 201);
+      const sessionPath = base(session.id);
+      const reference = (text: string, start: number, editComment: string) => ({ workspaceId: ws.id, path, version: initial.version,
+        selection: { start, end: start + text.length, text }, editComment });
+      const references = [reference('灯亮了', content.lastIndexOf('灯亮了'), '把第二处改成灯灭了'), reference('海鸥', content.indexOf('海鸥'), '换成白鹭')];
+      const edits = [{ referenceIndex: 2, replacement: '白鹭' }, { referenceIndex: 1, replacement: '灯灭了' }];
+      const plan = (steps: unknown[]) => 'WRITE:' + JSON.stringify({ steps });
+      const start = (steps: unknown[] = [{ name: 'edit_quoted_selections', args: { edits } }]) =>
+        server.request(sessionPath + '/messages', 'POST', { text: plan(steps), references });
+      for (const status of ['denied', 'stopped', 'conflict'] as const) {
+        const seen = [];
+        for await (const event of events(await start())) {
+          seen.push(event);
+          if (event.type !== 'tool_approval_required') continue;
+          assert.equal((await read()).content, content);
+          if (status === 'stopped') await json(sessionPath + '/stop', 'POST');
+          else {
+            if (status === 'conflict') await save(content + ' 外部修改', initial.version);
+            await json(sessionPath + '/tool-approvals/' + event.approval.id, 'POST', { decision: status === 'denied' ? 'deny' : 'approve' });
+          }
+        }
+        assert(seen.some(event => event.type === 'tool_approval_required'));
+        assertFinal(seen, status === 'stopped' ? 'aborted' : 'completed');
+        const current = await read();
+        assert.equal(current.content, status === 'conflict' ? content + ' 外部修改' : content);
+        if (status === 'conflict') await save(content, current.version);
+      }
+      const seen = [];
+      for await (const event of events(await start([
+        { name: 'edit', args: { path, oldText: '结尾', newText: '越界' } },
+        { name: 'edit_quoted_selections', args: { edits } },
+      ]))) {
+        seen.push(event);
+        if (event.type !== 'tool_approval_required') continue;
+        assert.equal(event.approval.label, '修改文稿选区');
+        assert.equal(event.approval.path, path);
+        assert.match(event.approval.preview, /灯灭了/);
+        await json(sessionPath + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'approve' });
+      }
+      assertFinal(seen, 'completed');
+      assert(seen.some(event => event.type === 'tool_end' && event.name === 'edit' && event.outcome === 'failed'));
+      assert(seen.some(event => event.type === 'tool_end' && event.manuscriptView?.mode === 'refresh'));
+      assert.equal((await read()).content, '开头😀\r\n灯亮了，灯灭了。\r\n白鹭飞走。\r\n结尾');
+      const actual = (await history(session.id)).findLast((message: any) => message.role === 'user');
+      assert.deepEqual(actual.references.map((item: any) => item.lineRange), [{ firstLine: 2, lastLine: 2 }, { firstLine: 3, lastLine: 3 }]);
+      assert.equal(actual.references[0].editComment, references[0].editComment);
+      assert.equal((await json(base(b.id) + '/messages', 'POST', { references }, 403)).error.code, 'REFERENCE_FORBIDDEN');
+      await json(sessionPath + '/messages', 'POST', { references: [{ ...references[0], selection: undefined }] }, 400);
+    });
+    await t.test('选区修改在审批前拦截误删、孤立句号和越改越长', async () => {
+      const root = await mkdtemp(join(directory, 'quoted-quality-'));
+      const ws = await json('/api/workspaces', 'POST', { title: '局部修改', root }, 201);
+      const document = `/api/workspaces/${ws.id}/document`;
+      const path = '正文章节/第一章.md';
+      const sentence = '第二声没喊全，他就哭得弯下了腰';
+      const memory = '他慢慢地回忆起了从前的那些往事。';
+      const content = `${sentence}。\r\n\r\n${memory}`;
+      const saved = await json(document, 'PUT', { path, content, baseVersion: null });
+      const session = await json(`/api/workspaces/${ws.id}/sessions`, 'POST', {}, 201);
+      const sessionPath = base(session.id);
+      const read = () => json(document + '/read', 'POST', { path });
+      const reference = (text: string, editComment: string) => {
+        const start = content.indexOf(text);
+        return { workspaceId: ws.id, path, version: saved.version, editComment, selection: { start, end: start + text.length, text } };
+      };
+      const deletion = reference(sentence, '第二声没喊全可以删掉');
+      const concise = reference(memory, '改简练一点');
+      async function tryEdit(references: unknown[], replacements: string[]) {
+        const edits = replacements.map((replacement, index) => ({ referenceIndex: index + 1, replacement }));
+        const text = 'WRITE:' + JSON.stringify({ steps: [{ name: 'edit_quoted_selections', args: { edits } }] });
+        const seen = [];
+        for await (const event of events(await server.request(`${sessionPath}/messages`, 'POST', { text, references }))) {
+          seen.push(event);
+          if (event.type === 'tool_approval_required')
+            await json(`${sessionPath}/tool-approvals/${event.approval.id}`, 'POST', { decision: 'approve' });
+        }
+        assertFinal(seen, 'completed');
+        return seen;
+      }
+      for (const [ref, replacement] of [[deletion, ''], [{ ...deletion, editComment: '删除选区' }, ''],
+        [concise, '他慢慢地回忆起了从前的那些历历在目的往事。'], [concise, '']] as const) {
+        const seen = await tryEdit([ref], [replacement]);
+        assert(seen.some(event => event.type === 'tool_end' && event.outcome === 'failed'));
+        assert(!seen.some(event => event.type === 'tool_approval_required'));
+        assert.equal((await read()).content, content);
+      }
+      const seen = await tryEdit([deletion, concise], ['他就哭得弯下了腰', '他想起了往事。']);
+      assert.equal(seen.filter(event => event.type === 'tool_approval_required').length, 1);
+      assert.equal((await read()).content, '他就哭得弯下了腰。\r\n\r\n他想起了往事。');
+    });
     await t.test('附件总量和发送/删除竞争在真实接口下保持一致', async () => {
       const largeImage = Buffer.alloc(8 * 1024 * 1024);
       Buffer.from(pictures[0].data, 'base64').copy(largeImage);

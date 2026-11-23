@@ -113,14 +113,14 @@ function DefaultModel({ models, defaults, onSaved }: { models: ModelInfo[]; defa
       { loading: '正在保存默认模型…', success: '新聊天默认配置已保存' });
     setBusy(false); if (result.ok) onSaved();
   }
-  return <SettingsSection title="新聊天默认配置">
+  return <SettingsSection title="新聊天默认配置" description="用于之后创建的聊天。"
+    actions={<Button size="sm" variant="secondary" disabled={!model} loading={busy} onClick={() => void save()}>保存默认配置</Button>}>
     <SettingsRow title="默认模型" description="可选择已配置凭据的供应商模型。"><Select aria-label="默认模型" value={model ? selected : null} clearable={false}
       disabled={busy || !available.length} options={available.map(m => ({ value: modelKey(m), label: m.provider + ' / ' + m.name }))}
       onValueChange={v => { if (v) { setSelected(v); setThinking(selectThinkingLevel(available.find(m => modelKey(m) === v)?.thinkingLevels, thinking)); } }} /></SettingsRow>
-    <SettingsRow title="默认思考档位"><Select aria-label="默认思考档位" value={thinking} disabled={busy || !model} clearable={false} searchable={false}
+    <SettingsRow title="默认思考档位" description="可选档位由所选模型决定。"><Select aria-label="默认思考档位" value={thinking} disabled={busy || !model} clearable={false} searchable={false}
       options={(model?.thinkingLevels ?? ['off']).map(value => ({ value, label: thinkingLabels[value] }))}
       onValueChange={v => v && setThinking(v as ThinkingLevel)} /></SettingsRow>
-    <Button size="sm" variant="secondary" disabled={!model} loading={busy} onClick={() => void save()}>保存默认配置</Button>
   </SettingsSection>;
 }
 

@@ -9,7 +9,8 @@ export const sourceProperties = {
   attachmentIds: { type: 'array', maxItems: SOURCE_LIMITS.attachmentCount, uniqueItems: true, items: id },
   references: { type: 'array', maxItems: SOURCE_LIMITS.referenceCount, items: { type: 'object', additionalProperties: false,
     required: ['workspaceId', 'path', 'version'], properties: { workspaceId: id, path: { type: 'string', minLength: 1, maxLength: 500 },
-      version: { type: 'string', pattern: '^[a-f0-9]{64}$' }, selection: { type: 'object', additionalProperties: false, required: ['start', 'end', 'text'],
+      version: { type: 'string', pattern: '^[a-f0-9]{64}$' }, editComment: { type: 'string', maxLength: SOURCE_LIMITS.editCommentChars },
+      selection: { type: 'object', additionalProperties: false, required: ['start', 'end', 'text'],
         properties: { start: { type: 'integer', minimum: 0 }, end: { type: 'integer', minimum: 0 }, text: { type: 'string', maxLength: SOURCE_LIMITS.inputChars } } } } } },
 };
 

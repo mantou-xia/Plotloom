@@ -2820,6 +2820,7 @@ function mountDeepAgentComposer(target, options = {}) {
       stopping = false,
       planMode = false,
       activeProjectPath = null,
+      conversationFiles,
       footer,
       contextUsage = null,
       contextUsageFallbackTokens = 0,
@@ -3139,6 +3140,21 @@ function mountDeepAgentComposer(target, options = {}) {
         const q = activeAtToken.query.trim().toLowerCase();
         const matches = (value2) => !q || value2.toLowerCase().includes(q);
         const sections = [];
+        // 历史附件通过 ID 区分同名文件；交付物仍使用可供项目工具读取的相对路径。
+        const mentionedPaths = new Set(selectedMentions.map(mention => mention.path));
+        const mentionedAttachments = new Set(selectedMentions.map(mention => mention.attachmentId));
+        const conversationItems = (conversationFiles ?? []).filter(file =>
+          (file.attachmentId ? !mentionedAttachments.has(file.attachmentId) : !mentionedPaths.has(file.path)) &&
+          (matches(file.name) || (file.path && matches(file.path)))
+        ).slice(0, 12).map(file => ({
+          id: `at-conversation.${file.attachmentId ?? file.path}`,
+          type: "file",
+          title: file.name,
+          description: file.attachmentId ? "聊天附件" : `交付产物 · ${file.path}`,
+          icon: file.attachmentId ? "paperclip" : "file",
+          entry: { path: file.path, rel_path: file.path, name: file.name, attachmentId: file.attachmentId }
+        }));
+        if (conversationItems.length) sections.push({ key: "conversation", label: "当前对话", items: conversationItems });
         const addChoices = [
           {
             id: "add-files",
@@ -3162,7 +3178,10 @@ function mountDeepAgentComposer(target, options = {}) {
             icon: "list-check"
           }
         ];
-        const addItems = addChoices.filter(item => (__deepAgentBridge.options.advancedMentions !== false || item.type === 'add-files') && (item.type !== 'add-files' || !!activeProjectPath || __deepAgentBridge.options.advancedMentions !== false)).filter((item) => matches(item.title) || matches(item.description));
+        const canSearchFiles = !!activeProjectPath || !!__deepAgentBridge.options.onSearchFiles;
+        const advanced = __deepAgentBridge.options.advancedMentions !== false;
+        const addItems = addChoices.filter(item => item.type === 'add-files' ? canSearchFiles || advanced : advanced)
+          .filter(item => matches(item.title) || matches(item.description));
         if (addItems.length > 0) {
           sections.push({ key: "add", label: "\u6DFB\u52A0", items: addItems });
         }
@@ -3194,33 +3213,14 @@ function mountDeepAgentComposer(target, options = {}) {
             ]
           });
         }
-        if (!q && activeProjectPath) {
-          sections.push({
-            key: "files",
-            label: "\u6587\u4EF6\u548C\u4EFB\u52A1",
-            items: [
-              {
-                id: "add-files",
-                type: "add-files",
-                title: "\u8F93\u5165\u4EE5\u641C\u7D22\u6587\u4EF6\u6216\u4EFB\u52A1",
-                description: "",
-                icon: "paperclip"
-              }
-            ]
-          });
-          setAtSections(sections);
-          setAtSelected(0);
-          return;
-        }
+        setAtSections(sections);
+        setAtSelected(0);
+        if (!q || !canSearchFiles) return;
+        const conversationPaths = new Set(conversationItems.map(item => item.entry.path));
         const timer = window.setTimeout(() => {
           searchProjectFiles(activeProjectPath, q, 24).then((result) => {
             if (cancelled) return;
-            const mentionedPaths = new Set(
-              selectedMentions.flatMap(
-                (mention) => mention.kind === "file" || mention.kind === "folder" ? [mention.path] : []
-              )
-            );
-            const fileItems = result.entries.filter((entry) => !mentionedPaths.has(entry.path)).slice(0, 12).map((entry) => ({
+            const fileItems = result.entries.filter(entry => !mentionedPaths.has(entry.path) && !conversationPaths.has(entry.path)).slice(0, 12).map((entry) => ({
               id: `at-file.${entry.path}`,
               type: "file",
               title: entry.name,
@@ -3229,22 +3229,15 @@ function mountDeepAgentComposer(target, options = {}) {
               entry
             }));
             if (fileItems.length > 0) {
-              sections.push({ key: "files", label: "\u6587\u4EF6\u548C\u4EFB\u52A1", items: fileItems });
+              setAtSections([...sections, { key: "files", label: "项目文件", items: fileItems }]);
             }
-            setAtSections(sections);
-            setAtSelected(0);
-          }).catch(() => {
-            if (!cancelled) {
-              setAtSections(sections);
-              setAtSelected(0);
-            }
-          });
+          }).catch(() => { /* 项目搜索失败时仍保留当前对话的文件候选。 */ });
         }, 80);
         return () => {
           cancelled = true;
           window.clearTimeout(timer);
         };
-      }, [activeAtToken, activeProjectPath, selectedMentions, selectedSkills, skills, slashOpen]);
+      }, [activeAtToken, activeProjectPath, conversationFiles, selectedMentions, selectedSkills, skills, slashOpen]);
       const chooseSlash = (cmd) => {
         const replaceWholeRootSlash = !activeSlashToken && draftValue.startsWith("/");
         const rawStart = activeSlashToken ? activeSlashToken.start : replaceWholeRootSlash ? 0 : cursorPos;
@@ -3372,6 +3365,7 @@ function mountDeepAgentComposer(target, options = {}) {
             kind: choice.entry.is_dir ? "folder" : "file",
             path: choice.entry.path,
             relPath: choice.entry.rel_path,
+            attachmentId: choice.entry.attachmentId,
             name: choice.entry.name,
             isDir: choice.entry.is_dir
           });
@@ -3450,7 +3444,7 @@ function mountDeepAgentComposer(target, options = {}) {
         finally { if (draftKey === __deepAgentBridge.options.draftKey) submitting.current = false; }
       };
       const hasComposerContent = Boolean(
-        stripSkillMarkers(draftValue).trim() || attachments.length > 0 || selectedSkills.length > 0 || selectedMentions.length > 0
+        stripSkillMarkers(draftValue).trim() || attachments.length > 0 || selectedSkills.length > 0 || selectedMentions.length > 0 || __deepAgentBridge.options.hasDraftContext
       );
       const addAttachment = (attachment) => {
         setAttachments((prev) => [...prev, attachment]);
@@ -4033,6 +4027,7 @@ function mountDeepAgentComposer(target, options = {}) {
                 /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(import_react_fontawesome4.FontAwesomeIcon, { icon: ["fas", "list-check"], className: "mr-1.5 text-[10px]" }),
                 "Plan Mode"
               ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("slot", { name: "draft-context" }),
               /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(ComposerAttachmentList, { attachments, onRemove: removeAttachment }),
               /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "relative w-full", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
@@ -4337,7 +4332,9 @@ function mountDeepAgentComposer(target, options = {}) {
           busy: bridge.options.busy ?? false,
           stopping: bridge.options.stopping ?? false,
           onStop: bridge.options.onStop,
+          placeholder: bridge.options.placeholder,
           activeProjectPath: bridge.options.projectPath ?? null,
+          conversationFiles: bridge.options.conversationFiles,
           contextUsage: bridge.options.context ? { measured_prompt_tokens: bridge.options.context.tokens, context_window: bridge.options.context.contextWindow } : null,
           onSubmit: async (attachments = [], skills = [], mentions = [], displayText) => {
             if (await bridge.submit(displayText ?? text, attachments, skills, mentions) === false) return false;

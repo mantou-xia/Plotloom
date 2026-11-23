@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { SettingsSection } from '../settings/settings-section.tsx';
 import { SettingsRow } from '../settings/settings-row.tsx';
+import { Button } from '../button/button.tsx';
 import { Switch } from '../form/switch.tsx';
 import { Select } from '../form/select.tsx';
 import { ColorSwatches } from '../color-swatches/color-swatches.tsx';
@@ -19,7 +20,7 @@ export function SettingsExample({ component, state, controls, style, onAction }:
   const props = { title: controls.settingsTitle, description: controls.settingsDescription,
     style: { ...style, width: style.width ?? (state === 'narrow' ? 280 : 720), maxWidth: style.maxWidth ?? '100%' } };
   if (component === 'settings-row') return <SettingsRow {...props}>{state === 'colors' ? swatches : toggle}</SettingsRow>;
-  return <SettingsSection {...props}>
+  return <SettingsSection {...props} actions={<Button size="sm" variant="secondary" onClick={() => onAction('保存示例设置')}>保存设置</Button>}>
     <SettingsRow title="示例开关" description="检查切换前后行高与位置。">{toggle}</SettingsRow>
     <SettingsRow title="示例选项">
       <Select aria-label="示例选项" value={choice} searchable={false} clearable={false}

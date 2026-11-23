@@ -27,7 +27,8 @@ export function WorkspaceFrameworkExample({ component, state, style, onAction }:
 
   return <div style={style}>
     {component === 'document-editor' && <DocumentEditor label="文稿正文" value={draft}
-      readOnly={state === 'read-only'} onValueChange={setDraft} />}
+      readOnly={state === 'read-only'} onValueChange={setDraft}
+      onSelectionAnchorChange={anchor => onAction('onSelectionAnchorChange(' + JSON.stringify(anchor) + ')')} />}
     {component === 'manuscript-frame' && <ManuscriptFrame label="文稿框架" directory={close => (
       ['第一章.md', '第二章.md'].map(file => <Button key={file} variant="ghost" size="sm" onClick={() => {
         setTitle(file);

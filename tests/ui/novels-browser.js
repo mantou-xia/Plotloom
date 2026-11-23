@@ -34,7 +34,7 @@ async page => {
     if (suffix === 'sidebar') {
       await page.getByText(/故事开头，主角生活在一个怎样的世界/).waitFor();
       const startPage = page.url();
-      await page.getByRole('textbox', { name: '尽管问...' }).fill(plan([{ name: 'propose_world_rule',
+      await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).fill(plan([{ name: 'propose_world_rule',
         args: { subject: '内功', fact: '归元境只见于古籍。', effective: 1, revealed: 10 } }]));
       const created = page.waitForResponse(response => response.url().endsWith('/workspaces/' + id + '/sessions') && response.request().method() === 'POST');
       await button('发送').click();

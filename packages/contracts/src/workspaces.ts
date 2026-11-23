@@ -28,5 +28,5 @@ export interface SaveDocumentRequest { path: string; baseVersion: string | null;
 export interface ChapterTextExport { filename: string; content: string; version: string }
 export interface ExportRequest { files: Array<{ path: string; revisionId?: string }> }
 export interface ExportResult { files: DocumentView[] }
-export interface PendingCommit { path: string; beforeVersion: string | null; afterVersion: string; revision: Revision; proposalId?: string; changeId?: string }
+export interface PendingCommit { path: string; beforeVersion: string | null; afterVersion: string; revision: Revision; proposalId?: string; changeId?: string; changeIds?: string[] }
 export interface RecoveryView { pending: PendingCommit | null; current?: DocumentView; intendedContent?: string }

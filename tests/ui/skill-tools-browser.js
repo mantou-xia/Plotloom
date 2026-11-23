@@ -2,6 +2,7 @@
 async (page) => {
   const passed = [];
   const assert = (value, label) => { if (!value) throw new Error(label); passed.push(label); };
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('http://127.0.0.1:4433');
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const settingsNav = page.getByRole('navigation', { name: '设置导航' });
@@ -34,8 +35,13 @@ async (page) => {
     const tool = toolsPanel.getByRole('group', { name, exact: true });
     assert(await tool.getByText('项目聊天、小说聊天', { exact: true }).isVisible(), `${name} 显示适用于全部会话`);
   }
-  assert(await writeTool.getByText('项目聊天', { exact: true }).isVisible(), '文件写入工具显示项目会话范围');
-  assert(await writeTool.getByText(/每次变更都需批准/).isVisible(), '文件写入工具显示批准限制');
+  assert(await writeTool.getByText('项目聊天、小说聊天', { exact: true }).isVisible(), '文件写入工具显示实际会话范围');
+  assert(await writeTool.getByText(/按会话审批模式决定/).isVisible(), '文件写入工具显示批准限制');
+  const details = toolsPanel.locator('.plotloom-tool-row dl');
+  assert(await details.evaluateAll(nodes => nodes.length > 1 && nodes.every(node =>
+    Math.abs(node.getBoundingClientRect().left - nodes[0].getBoundingClientRect().left) < 1
+    && Math.abs(node.querySelector('dd').getBoundingClientRect().left - nodes[0].querySelector('dd').getBoundingClientRect().left) < 1
+  )), '工具清单右栏标签和值逐行对齐');
   assert(JSON.stringify(await toolStatus.boundingBox()) === JSON.stringify(statusBox), '成功加载后状态位置稳定');
   await page.reload();
   await browserTool.waitFor();
@@ -50,9 +56,13 @@ async (page) => {
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'novel-writing' });
   await dialog.waitFor();
-  assert(await dialog.getByText('技能声明的工具', { exact: true }).isVisible(), '点击技能展示工具声明');
-  assert(await dialog.locator('code', { hasText: 'propose_change' }).count() === 1, '展示小说工具用途与参数');
-  assert(await dialog.locator('code', { hasText: 'web_fetch' }).count() === 1, '基础目录包含网页抓取');
+  assert(await dialog.getByText(/参照作者样文与作品声音写章/).isVisible(), '技能详情展示实际用途');
+  assert(await dialog.getByText(/适用聊天：小说聊天/).isVisible(), '技能详情展示用户可识别的适用范围');
+  assert(await dialog.getByRole('heading', { name: '技能专用 ToolCall' }).isVisible(), '技能详情展示专用工具');
+  for (const name of ['propose_change', 'write_chapter_part', 'deliver_chapter', 'manuscript_workspace']) {
+    assert(await dialog.getByText(name, { exact: true }).isVisible(), `技能详情含 ${name}`);
+  }
+  assert(await dialog.getByText(/聊天基础工具|环境要求|^read$|^read_skill$|^browser$|^web_fetch$|^import_chapters$/).count() === 0, '技能详情略去通用工具及无关工具');
   assert(await dialog.getByRole('switch').count() === 0, '一级技能详情只读');
   await page.keyboard.press('Escape');
   assert(await trigger.evaluate(node => node === document.activeElement), 'Escape 关闭并恢复焦点');

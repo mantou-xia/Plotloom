@@ -18,10 +18,11 @@ export const REFERENCE_FIELDS = [
   field('selection', 'object', false, '可选原文选区；不传则引用全文。', '{"start":0,"end":2,"text":"林舟"}'),
   field('selection.start', 'number', false, 'UTF-16 起点，含。', '0'), field('selection.end', 'number', false, 'UTF-16 终点，不含。', '2'),
   field('selection.text', 'string', false, '必须等于指定版本对应选区，不得切开 emoji。', '林舟'),
+  field('editComment', 'string', false, '传入后启用本书正文或大纲的选区修改工具，须同时提供非空选区。空字符串表示该选区没有单独备注。最多 2000 字符。', '请改成“陆舟”。'),
 ];
 export const SOURCE_REQUEST_FIELDS = [
   field('attachmentIds', 'array', false, '当前会话附件 ID，最多 10 个，不重复、合计不超过 20 MiB；图片需模型 input 包含 image。', '["attachment-id"]'),
-  field('references', 'array', false, '最多 20 个显式文档引用，同一工作区的同一路径不能重复。文字及实际引用文本合计最多 100000 字符。', '[{"workspaceId":"workspace-id","path":"角色/林舟.md","version":"替换为文档版本"}]'),
+  field('references', 'array', false, '最多 20 个显式文档引用。普通引用按文档去重，同一文档可提交多个不同的修改选区。文字、备注及引用原文合计最多 100000 字符。', '[{"workspaceId":"workspace-id","path":"角色/林舟.md","version":"替换为文档版本"}]'),
   ...REFERENCE_FIELDS.map(item => ({ ...item, name: `references[].${item.name}`, required: false })),
 ];
 const example = { id: 'attachment-id', sessionId: 'session-id', name: '线索.txt', mimeType: 'text/plain', size: 5, createdAt: '2026-11-19T04:00:00.000Z' };

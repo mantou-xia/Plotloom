@@ -31,6 +31,7 @@
 | POST /api/workspaces/:workspaceId/proposals | `{path,baseVersion,content,selection?,references?}` | 201，保存候选但不写正式稿 |
 | GET /api/workspaces/:workspaceId/proposals/:proposalId | 无 | 候选基础稿、目标稿及差异 |
 | POST /api/workspaces/:workspaceId/proposals/:proposalId/changes/:changeId | `{action:"accept"或"reject"}` | 更新后的候选；仅处理该处 |
+| POST /api/workspaces/:workspaceId/proposals/:proposalId/decision | `{action:"accept"或"reject"}` | 更新后的候选；处理全部剩余差异，采纳一次写入 |
 | POST /api/workspaces/:workspaceId/search | `{query,paths?}` | `{matches,limit:100}`，字面子串与 UTF-16 位置 |
 | POST /api/workspaces/:workspaceId/export | `{files:[{path,revisionId?}]}` | `{files:[{path,content,version}]}`，原始 Markdown |
 | POST /api/workspaces/:workspaceId/backup | `{destination}` | `{destination,files}`，写入新的资产备份目录 |

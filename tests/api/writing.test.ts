@@ -347,7 +347,72 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
         else assert.equal((await read(world)).version, before.version);
       }
     });
-    await t.test('面板工具逐次确认，拒绝不留档，回退核对确认前的磁盘版本', async () => {
+    await t.test('普通聊天的润色候选可在右侧审阅，也可从旧工具结果恢复', async () => {
+      const path = '正文章节/润色验证.md';
+      const before = '雨下得很大。';
+      const after = '雨点敲着窗沿。';
+      await save(path, before);
+      const session = '/api/sessions/' + chat.id;
+      const result = await collect(await server.request(session + '/messages', 'POST', { text: plan([
+        { name: 'read_document', args: { path } }, review, proposal(path, after),
+      ]) }));
+      assertFinal(result, 'completed');
+      const completion = result.find(event => event.type === 'tool_end' && event.name === 'propose_change');
+      assert(completion?.type === 'tool_end' && completion.manuscriptView?.proposalId);
+      const view = completion.manuscriptView;
+      assert.deepEqual((await json(session)).manuscriptRequest.view, view);
+      const pending = await json(`${prefix}/proposals/${view.proposalId}`);
+      assert.equal(pending.status, 'pending');
+      assert.equal((await read(path)).content, before);
+
+      await server.close();
+      const sessions = join(env.PLOTLOOM_DATA_DIR, 'sessions');
+      const name = (await readdir(sessions)).find(file => file.endsWith(chat.id + '.jsonl'));
+      assert(name);
+      const log = join(sessions, name);
+      const entries = (await readFile(log, 'utf8')).trimEnd().split('\n').map(line => JSON.parse(line));
+      const viewIndex = entries.findIndex(entry => entry.customType === 'plotloom-manuscript-view' && entry.data?.view?.proposalId === view.proposalId);
+      assert(viewIndex >= 0);
+      const [removed] = entries.splice(viewIndex, 1);
+      // 模拟产生候选却未保存定位的旧会话，保留工具结果及可读分支。
+      for (const entry of entries) if (entry.parentId === removed.id) entry.parentId = removed.parentId;
+      const legacy = entries.find(entry => entry.message?.role === 'toolResult' && entry.message?.details?.id === view.proposalId);
+      assert(legacy);
+      delete legacy.message.details.view;
+      await writeFile(log, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n');
+      server = await startServer(env);
+      const recovered = (await json(session)).manuscriptRequest;
+      assert.equal(recovered.id, legacy.id);
+      assert.deepEqual(recovered.view, view);
+      await decide(pending);
+      assert.equal((await read(path)).content, after);
+    });
+    await t.test('面板修改直接生成右侧候选，只有采纳才更新正式稿', async () => {
+      const path = '正文章节/局部修改.md';
+      const before = '开头保持\n原来的对白。\n结尾保持';
+      const after = before.replace('原来的对白。', '修改后的对白。');
+      await save(path, before);
+      const session = '/api/sessions/' + chat.id;
+      for (const action of ['reject', 'accept']) {
+        const response = await server.request(session + '/messages', 'POST', { text: plan([
+          { name: 'read_document', args: { path } }, { name: 'manuscript_workspace', args: { action: 'edit', path, content: after } },
+        ]) });
+        const result = await collect(response);
+        assertFinal(result, 'completed');
+        assert(!result.some(event => event.type === 'tool_approval_required' || event.type === 'user_answer_required'));
+        const applied = result.find(event => event.type === 'tool_end' && event.name === 'manuscript_workspace');
+        assert(applied?.type === 'tool_end' && applied.manuscriptView?.proposalId);
+        const view = applied.manuscriptView;
+        assert.deepEqual((await json(session)).manuscriptRequest.view, view);
+        assert.equal(view.path, path);
+        const proposal = await json(`${prefix}/proposals/${view.proposalId}`);
+        assert.equal(proposal.status, 'pending');
+        assert.equal((await read(path)).content, before);
+        await decide(proposal, action);
+        assert.equal((await read(path)).content, action === 'accept' ? after : before);
+      }
+    });
+    await t.test('定稿和回退仍需确认，拒绝不留档，回退核对确认前的磁盘版本', async () => {
       const path = '正文章节/第三章.md';
       const doc = await save(path, '第三章初稿');
       const session = '/api/sessions/' + chat.id;

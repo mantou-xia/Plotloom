@@ -66,6 +66,25 @@ interface TurnRequest {
 const skillVersions = (skills: SkillSnapshot[]): Array<[string, string, boolean]> =>
   skills.map(skill => [skill.id, skill.version, skill.autoLoad]);
 
+/** 旧版创作工具只保存候选结果。按记录顺序恢复定位，避免旧候选覆盖后续面板操作。 */
+function latestManuscriptRequest(manager: SessionManager, workspaceId: string | null): SessionDetail['manuscriptRequest'] {
+  const entries = manager.getEntries();
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index];
+    if (entry.type === 'custom' && entry.customType === 'plotloom-manuscript-view') {
+      const data = entry.data as Omit<NonNullable<SessionDetail['manuscriptRequest']>, 'id'>;
+      return { id: entry.id, ...data };
+    }
+    if (!workspaceId || entry.type !== 'message' || entry.message.role !== 'toolResult') continue;
+    const { toolName, isError, details } = entry.message;
+    if (toolName === 'propose_change' && !isError && details && typeof details === 'object' && !('view' in details) &&
+      'id' in details && typeof details.id === 'string' && 'path' in details && typeof details.path === 'string' &&
+      /^(正文章节|大纲)\//u.test(details.path) && 'status' in details && details.status === 'pending') {
+      return { id: entry.id, createdAt: entry.timestamp, view: { workspaceId, path: details.path, mode: 'edit', proposalId: details.id } };
+    }
+  }
+}
+
 /** Pi 会在执行时写入实际模型和思考档位。临时重试覆盖结束后，恢复会话原先的设置。 */
 function restoreReplayModel(manager: SessionManager, model: ModelSettings) {
   const current = manager.buildSessionContext();
@@ -425,9 +444,7 @@ export class AgentService {
     const user = messages.findLast(message => message.role === 'user');
     const pendingApprovals = record.approvals?.list();
     const pendingQuestion = record.questions?.current;
-    const manuscript = record.manager.getEntries().findLast(entry => entry.type === 'custom' && entry.customType === 'plotloom-manuscript-view');
-    const manuscriptData = manuscript?.type === 'custom' ? manuscript.data as Omit<NonNullable<SessionDetail['manuscriptRequest']>, 'id'> : undefined;
-    const manuscriptRequest = manuscript && manuscriptData ? { id: manuscript.id, ...manuscriptData } : undefined;
+    const manuscriptRequest = latestManuscriptRequest(record.manager, this.skillProfile(record.manager).workspaceId);
     const fileChanges = this.finishedFileChanges(record, messages);
     return { ...this.summary(record), messages, ...(fileChanges.length ? { fileChanges } : {}), ...(pendingApprovals?.length ? { pendingApprovals } : {}),
       ...(pendingQuestion ? { pendingQuestion } : {}), ...(manuscriptRequest ? { manuscriptRequest } : {}),
@@ -802,7 +819,7 @@ export class AgentService {
         if (event.type === 'tool_execution_start') emit({ type: 'tool_start', sessionId: id, callId: event.toolCallId, name: event.toolName });
         if (event.type === 'tool_execution_end') {
           // 只向客户端发送定位指令，工具文稿原文仍走公开文档读取接口。
-          const manuscriptView = !event.isError && ['manuscript_workspace', 'import_chapters', 'deliver_chapter'].includes(event.toolName) ? event.result?.details?.view : undefined;
+          const manuscriptView = !event.isError && ['manuscript_workspace', 'import_chapters', 'deliver_chapter', 'edit_quoted_selections', 'propose_change'].includes(event.toolName) ? event.result?.details?.view : undefined;
           if (manuscriptView) record.manager.appendCustomEntry('plotloom-manuscript-view', { view: manuscriptView, createdAt: new Date().toISOString() });
           emit({ type: 'tool_end', sessionId: id, callId: event.toolCallId, name: event.toolName,
             outcome: event.isError ? 'failed' : 'completed', ...(manuscriptView ? { manuscriptView } : {}) });

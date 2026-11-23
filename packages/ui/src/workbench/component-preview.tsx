@@ -138,7 +138,8 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   if (component === 'code-block') target = <Suspense fallback={<p role="status">正在加载代码块…</p>}><CodeBlockExample key={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (component === 'markdown') target = <Suspense fallback={<p role="status">正在加载渲染器…</p>}><MarkdownExample key={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
   if (formCatalog.some(entry => entry.id === component)) target = <Suspense fallback={<p role="status">正在加载组件…</p>}><FormExample key={`${component}-${state}`} component={component} state={state} controls={controls} style={style} onAction={onAction} /></Suspense>;
-  if (component === 'tooltip') target = <Tooltip content={controls.tooltipContent} delay={controls.tooltipDelay} shake={controls.tooltipShake} disabled={controls.disabled}>
+  if (component === 'tooltip') target = <Tooltip content={state === 'sections' ? <><strong>文件位置</strong><div>{controls.tooltipContent}</div></> : controls.tooltipContent}
+    delay={controls.tooltipDelay} shake={controls.tooltipShake} disabled={controls.disabled}>
     <Button style={style} variant="secondary" onClick={() => onAction('Tooltip.children.onClick')}>悬停或聚焦查看提示</Button>
   </Tooltip>;
   if (component === 'morphing-popover') target = <MorphingPopoverExample key={state} state={state} controls={controls} onAction={onAction} />;
