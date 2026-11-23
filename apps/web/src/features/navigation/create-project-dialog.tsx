@@ -34,7 +34,7 @@ export function CreateProjectDialog({ onCancel, onCreated }: { onCancel: () => v
     try { onCreated(await requestJson<Project>('/api/projects', 'POST', { name: name.trim(), path })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : '创建项目失败。'); setSaving(false); }
   }
-  return <Dialog open title="创建项目" onOpenChange={open => { if (!open && !saving) onCancel(); }}
+  return <Dialog open dismissOnBackdrop={false} title="创建项目" onOpenChange={open => { if (!open && !saving) onCancel(); }}
     footer={<><Button variant="ghost" disabled={saving} onClick={onCancel}>取消</Button>
       <Button disabled={!name.trim() || !path || selecting || saving} loading={saving} onClick={() => void create()}>创建项目</Button></>}>
     <div className="plotloom-project-dialog">

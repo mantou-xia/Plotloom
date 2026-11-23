@@ -10,6 +10,7 @@ import type { PreviewControls } from './controls.ts';
 import './workbench.css';
 
 export interface WorkbenchProps {
+  catalog?: readonly ComponentExample[];
   example: ComponentExample;
   state: string;
   width: number;
@@ -29,7 +30,7 @@ export interface WorkbenchProps {
 }
 
 /** 仅用于开发调试的界面；iframe 尺寸是实际 CSS 像素，原生缩放通过观察器回写控件。 */
-export function ComponentWorkbench({ example, state, width, height, color, mode, onModeChange, controls, onControlsChange, lastAction, frameRef, onSelect, onStateChange, onSizeChange, onColorChange, onReset }: WorkbenchProps) {
+export function ComponentWorkbench({ catalog = componentCatalog, example, state, width, height, color, mode, onModeChange, controls, onControlsChange, lastAction, frameRef, onSelect, onStateChange, onSizeChange, onColorChange, onReset }: WorkbenchProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const [pickerRevision, setPickerRevision] = useState(0);
   const [search, setSearch] = useState('');
@@ -39,7 +40,7 @@ export function ComponentWorkbench({ example, state, width, height, color, mode,
   const directoryId = useId();
   const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const searching = terms.length > 0;
-  const matches = componentCatalog.filter((entry) => {
+  const matches = catalog.filter((entry) => {
     const text = [entry.id, entry.name, entry.category, entry.description, ...entry.states.map((item) => item.name)].join(' ').toLowerCase();
     return terms.every((term) => text.includes(term));
   });
@@ -85,7 +86,7 @@ export function ComponentWorkbench({ example, state, width, height, color, mode,
       </div>
       <ScrollBox className="pl-workbench__directory" tabIndex={-1}>
         <nav aria-label="组件目录">
-          {[...new Set(componentCatalog.map((entry) => entry.category))].map((category, index) => {
+          {[...new Set(catalog.map((entry) => entry.category))].map((category, index) => {
             const entries = matches.filter((entry) => entry.category === category);
             if (!entries.length) return null;
             const expanded = !(searching ? searchCollapsed : collapsed).includes(category);
@@ -104,7 +105,7 @@ export function ComponentWorkbench({ example, state, width, height, color, mode,
           {!matches.length ? <p className="pl-workbench__search-empty">没有匹配的组件，请尝试其他名称或关键词。</p> : null}
         </nav>
       </ScrollBox>
-      <footer role="status">{searching ? `找到 ${matches.length} / ${componentCatalog.length} 个组件` : `${componentCatalog.length} 个组件 · 直接引用组件库`}</footer>
+      <footer role="status">{searching ? `找到 ${matches.length} / ${catalog.length} 个组件` : `${catalog.length} 个组件`}</footer>
     </aside>
     <main className="pl-workbench__main">
       <header className="pl-workbench__heading"><div><p>{example.category}</p><h1>{example.name}</h1><p>{example.description}</p></div><Button variant="ghost" onClick={() => { setPickerRevision((value) => value + 1); onReset(); }}>重置预览</Button></header>
@@ -114,7 +115,7 @@ export function ComponentWorkbench({ example, state, width, height, color, mode,
           <iframe ref={frameRef} src="?preview=1" title="组件预览" />
         </div>
       </div>
-      <div className="pl-workbench__details"><p>{example.states.find((item) => item.id === state)?.description}</p><p>{example.interaction}</p><p>拖动画布右下角调整环境；组件宽高和属性在右侧独立设置。画布四周保留 24px 预览留白。</p><code>@plotloom/ui{example.exportPath.slice(1)}</code><p role="status">{lastAction || '尚未触发回调'}</p></div>
+      <div className="pl-workbench__details"><p>{example.states.find((item) => item.id === state)?.description}</p><p>{example.interaction}</p><p>拖动画布右下角调整环境；组件宽高和属性在右侧独立设置。画布四周保留 24px 预览留白。</p><code>{example.exportPath.startsWith('./') ? '@plotloom/ui' + example.exportPath.slice(1) : example.exportPath}</code><p role="status">{lastAction || '尚未触发回调'}</p></div>
     </main>
     <aside className="pl-workbench__controls" aria-label="预览控制">
       <h2>预览控制</h2>

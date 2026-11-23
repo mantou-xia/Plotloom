@@ -1,4 +1,4 @@
-.pl-dialog { box-sizing: border-box; width: 560px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 0; border-radius: 20px; color: var(--pl-text, #202124); background: var(--pl-surface, #fff); box-shadow: 0 24px 80px rgb(0 0 0 / 18%); }
+.pl-dialog { box-sizing: border-box; width: 560px; inset-block-start: env(titlebar-area-height, 0px); max-width: calc(100vw - 32px); max-height: calc(100dvh - 48px - env(titlebar-area-height, 0px)); margin: auto; padding: 0; border: 0; border-radius: 20px; color: var(--pl-text, #202124); background: var(--pl-surface, #fff); box-shadow: 0 24px 80px rgb(0 0 0 / 18%); }
 .pl-dialog[open] { display: flex; flex-direction: column; }
 .pl-dialog::backdrop { background: var(--pl-overlay, rgb(20 24 32 / 28%)); }
 .pl-dialog__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 16px; }

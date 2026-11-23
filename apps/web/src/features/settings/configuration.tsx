@@ -73,7 +73,7 @@ function ProviderEditor({ provider, onClose, onSaved }: { provider: ProviderSett
     setBusy(false);
     if (result.ok) onSaved(body.id);
   }
-  return <Dialog open className="plotloom-provider-dialog" title={provider ? '编辑供应商' : '添加自定义供应商'} onOpenChange={open => { if (!open && !busy) onClose(); }}
+  return <Dialog open dismissOnBackdrop={false} className="plotloom-provider-dialog" title={provider ? '编辑供应商' : '添加自定义供应商'} onOpenChange={open => { if (!open && !busy) onClose(); }}
     footer={<><Button variant="ghost" disabled={busy} onClick={onClose}>取消</Button><Button type="submit" form="provider-form" loading={busy}>保存</Button></>}>
     <form id="provider-form" className="plotloom-provider-form" onSubmit={event => { event.preventDefault(); void save(); }}>
       <FormField label="供应商名称" required><Input required pattern=".*\S.*" maxLength={120} value={name} onValueChange={setName} /></FormField>

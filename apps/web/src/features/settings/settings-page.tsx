@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Archive, ArrowLeft, Box, Palette, Plug, Puzzle, Sparkles, Wrench } from 'lucide-react';
+import { Archive, ArrowLeft, Box, HardDrive, Palette, Plug, Puzzle, Sparkles, Wrench } from 'lucide-react';
 import { ProviderConfiguration, DefaultModelConfiguration, GlobalSkills } from './configuration';
 import { ToolsSettings } from './tools-settings';
 import { AgentProfileSettings } from './agent-profile';
+import { StorageSettings } from './storage-settings';
 import { ColorSwatches } from '@plotloom/ui/color-swatches';
 import { Sidebar } from '@plotloom/ui/sidebar';
 import { SidebarNavItem } from '@plotloom/ui/sidebar/nav-item';
@@ -28,7 +29,7 @@ interface SettingsPageProps extends ArchiveListProps {
 const appearanceOptions = Object.entries(THEME_MODES).map(([value, label]) => ({ value, label }));
 
 /** 进入设置时将焦点交给返回按钮，侧栏宽度和拖拽把手由应用外层布局管理。 */
-export const settingsCategories = { appearance: '外观', providers: '模型服务', defaults: '默认模型', persona: 'Agent 人设', skills: '技能', tools: '工具', archive: '归档' } as const;
+export const settingsCategories = { appearance: '外观', providers: '模型服务', defaults: '默认模型', persona: 'Agent 人设', skills: '技能', tools: '工具', storage: '存储', archive: '归档' } as const;
 export type SettingsCategory = keyof typeof settingsCategories;
 export function SettingsSidebar({ onBack, section, onSelect }: { onBack: () => void; section: SettingsCategory; onSelect: (section: SettingsCategory) => void }) {
   const back = useRef<HTMLDivElement>(null);
@@ -41,14 +42,22 @@ export function SettingsSidebar({ onBack, section, onSelect }: { onBack: () => v
       </div>}
       navItems={<>
         <p className="plotloom-settings-sidebar__group">偏好设置</p>
-        {(['providers', 'defaults', 'persona', 'skills', 'tools', 'appearance', 'archive'] as const).map(id => <SidebarNavItem key={id} label={settingsCategories[id]}
-          icon={{ appearance: <Palette />, providers: <Plug />, defaults: <Box />, persona: <Sparkles />, skills: <Puzzle />, tools: <Wrench />, archive: <Archive /> }[id]} active={section === id} onClick={() => onSelect(id)} />)}
+        {(['providers', 'defaults', 'persona', 'skills', 'tools', 'appearance', 'storage', 'archive'] as const)
+          .map(id => <SidebarNavItem key={id} label={settingsCategories[id]}
+            icon={{ appearance: <Palette />, providers: <Plug />, defaults: <Box />, persona: <Sparkles />, skills: <Puzzle />, tools: <Wrench />, storage: <HardDrive />, archive: <Archive /> }[id]} active={section === id} onClick={() => onSelect(id)} />)}
       </>} />;
 }
 
 /** 设置正文嵌入共享主内容区，主题保存由应用管理。 */
 export function SettingsPage({ color, onColorChange, mode, onModeChange, section, onModelsChange, onSkillsChange, archived, archiveStatus, ...archiveActions }: SettingsPageProps) {
   if (section === 'providers') return <ProviderConfiguration onChange={onModelsChange} />;
+  if (section === 'storage') {
+    const storage = window.plotloomDesktop?.storage;
+    return <div className="plotloom-settings-content">
+      <h2 className="plotloom-settings-content__title">存储</h2>
+      <StorageSettings storage={storage} />
+    </div>;
+  }
   return <div className="plotloom-settings-content">
       <h2 className="plotloom-settings-content__title">{section === 'archive' ? '已归档的对话' : settingsCategories[section]}</h2>
       {section === 'archive' && !archived.length ? (

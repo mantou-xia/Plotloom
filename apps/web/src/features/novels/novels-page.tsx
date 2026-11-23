@@ -59,7 +59,7 @@ export function CreateNovelDialog({ onClose, onCreated }: { onClose: () => void;
     setBusy(null);
     if (result.ok) onCreated(result.value);
   }
-  return <Dialog open title="新建小说" description="选择空文件夹，系统将在其中创建大纲、正文章节和角色卡目录。" onOpenChange={open => { if (!open && !busy) onClose(); }}
+  return <Dialog open dismissOnBackdrop={false} title="新建小说" description="选择空文件夹，系统将在其中创建大纲、正文章节和角色卡目录。" onOpenChange={open => { if (!open && !busy) onClose(); }}
     footer={<><Button variant="ghost" disabled={!!busy} onClick={onClose}>取消</Button>
       <Button loading={busy === 'save'} disabled={!!busy || !title.trim() || !root.trim()} onClick={() => void create()}>创建并开始对话</Button></>}>
     <div className="plotloom-novel-fields">

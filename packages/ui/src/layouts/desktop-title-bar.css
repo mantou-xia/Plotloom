@@ -6,6 +6,11 @@
   border-bottom: 1px solid var(--pl-border);
 }
 
+/* 桌面宿主读取已解析的主题蒙层色，用它同步原生按钮。 */
+.plotloom-desktop-titlebar::after {
+  background-color: var(--pl-overlay);
+}
+
 /* Electron 提供可拖动区尺寸，右侧留给最小化、最大化和关闭按钮。 */
 .plotloom-desktop-titlebar__drag {
   display: flex;

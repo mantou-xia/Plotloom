@@ -31,7 +31,7 @@ export function CharacterCardsPanel({ base, onClose }: { base: string; onClose: 
     if (!result.ok) return;
     setCreating(false); setCharacter(''); setNote(''); setContent(template); setSelected(result.value); setReload(value => value + 1);
   }
-  return <Dialog open title={creating ? '新建角色卡阶段' : '五栏角色卡'} onOpenChange={open => { if (!open) onClose(); }}
+  return <Dialog open dismissOnBackdrop={!creating} title={creating ? '新建角色卡阶段' : '五栏角色卡'} onOpenChange={open => { if (!open) onClose(); }}
     footer={creating ? <><Button variant="ghost" onClick={() => setCreating(false)}>取消</Button><Button disabled={!character.trim() || !/^\d+$/.test(chapter) || !content.trim()} onClick={() => void save()}>保存阶段</Button></> : undefined}>
     {creating ? <div className="plotloom-novel-fields"><label>角色名称<Input value={character} onValueChange={setCharacter} /></label><label>适用章节<Input value={chapter} onValueChange={setChapter} /></label><label>阶段备注<Input value={note} onValueChange={setNote} placeholder="例如 黑化、失去双亲、获得神力" /></label><label>五栏内容<Textarea rows={14} value={content} onValueChange={setContent} /></label></div> : <div className="plotloom-character-cards">
       <div className="plotloom-novel-actions"><strong>角色</strong><Button size="sm" onClick={() => setCreating(true)}>新建阶段</Button></div>

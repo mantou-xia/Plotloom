@@ -2,6 +2,7 @@ import type { AgentSession, SessionManager } from '@earendil-works/pi-coding-age
 import type { Message, MessageBlock, Outcome, Usage } from '@plotloom/contracts';
 import type { MessageSourceSnapshot } from '@plotloom/contracts/sources';
 import { attachCitations } from './citations.ts';
+import { modelFailure } from './errors.ts';
 
 export const TURN_START = 'plotloom.turn.start';
 export const TURN_END = 'plotloom.turn.end';
@@ -27,7 +28,7 @@ export function mapMessage(id: string, message: SdkMessage, running = false): Me
       }
     }
   } else if (message.role === 'assistant' && message.stopReason === 'error') {
-    content.push({ type: 'text', text: '模型生成失败，请检查本机模型配置后重试。' });
+    content.push({ type: 'text', text: modelFailure(message.errorMessage).message });
   } else if (typeof message.content === 'string') {
     content.push({ type: 'text', text: message.content });
   } else {

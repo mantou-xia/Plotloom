@@ -161,7 +161,7 @@ function ChatGroupView({ group, onNewChat, onGroupUpdate, onArchiveGroup, chatSt
     actions={onNewChat ? <SidebarActionButton label={`在 ${group.label} 中新建聊天`} icon={<SquarePen />} onClick={onNewChat} /> : undefined}>
     {group.chats.map(chat => <ChatRow key={chat.id} chat={chat} {...shared} />)}
   </SidebarGroup>
-    {dialog && <Dialog open title={(dialog === 'rename' ? '重命名' + noun : dialog === 'remove' ? '移除' + noun : '归档所有聊天')}
+    {dialog && <Dialog open dismissOnBackdrop={dialog !== 'rename'} title={(dialog === 'rename' ? '重命名' + noun : dialog === 'remove' ? '移除' + noun : '归档所有聊天')}
       onOpenChange={open => { if (!open && !busy) setDialog(null); }}
       footer={<><Button variant="ghost" disabled={busy} onClick={() => setDialog(null)}>取消</Button>
         <Button loading={busy} disabled={dialog === 'rename' ? !name.trim() : dialog === 'archive' && !group.chats.length}

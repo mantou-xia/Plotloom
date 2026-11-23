@@ -192,10 +192,11 @@ test('试验台可提交正文段落候选并按同一处采纳多段改写', as
 });
 
 test('SSE 中文字节跨块、CRLF、心跳、失败和断流结果可区分', async () => {
+  const example = SSE_EVENTS.find(event => event.name === 'failed')?.fields.find(field => field.name === 'error.message');
   const raw = ': heartbeat\r\n\r\nevent: accepted\r\ndata: {"sessionId":"test","messageId":"m1"}\r\n\r\n'
     + 'event: text_delta\r\ndata: {"sessionId":"test","delta":"灯塔-731"}\r\n\r\n'
     + 'event: thinking_delta\r\ndata: {"sessionId":"test","delta":"可见思考"}\r\n\r\n'
-    + 'event: failed\r\ndata: {"sessionId":"test","error":{"code":"MODEL_FAILED","message":"失败"}}\r\n\r\n';
+    + 'event: failed\r\ndata: ' + JSON.stringify({ sessionId: 'test', error: { code: 'MODEL_FAILED', message: example?.example } }) + '\r\n\r\n';
   const bytes = new TextEncoder().encode(raw);
   const stream = new ReadableStream<Uint8Array>({ start(controller) { for (const byte of bytes) controller.enqueue(new Uint8Array([byte])); controller.close(); } });
   const events: AgentEvent[] = [];
@@ -203,6 +204,7 @@ test('SSE 中文字节跨块、CRLF、心跳、失败和断流结果可区分', 
   assert.equal(events.length, 4);
   assert.equal(events[1].type === 'text_delta' && events[1].delta, '灯塔-731');
   assert.equal(events[2].type === 'thinking_delta' && events[2].delta, '可见思考');
+  assert.equal(events[3].type === 'failed' && events[3].error.message, '模型服务商当前没有可用的上游账号，请稍后重试或切换模型。');
   assert(checkStream(events, 'test').some((check) => !check.passed && check.name === '生成结果'));
   assert(checkStream(events.slice(0, 2), 'test').some((check) => !check.passed && check.name === '唯一结束事件'));
   assert(checkStream([events[0], { type: 'aborted', sessionId: 'test' }], 'test').every((check) => check.passed));

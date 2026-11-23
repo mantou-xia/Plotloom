@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ComponentPreview, ComponentWorkbench, defaultControls, type PreviewControls } from '@plotloom/ui/workbench';
-import { componentCatalog } from '@plotloom/ui/workbench/catalog';
+import { componentCatalog as libraryCatalog } from '@plotloom/ui/workbench/catalog';
 import { ThemeRoot } from '@plotloom/ui/theme-root';
 import { DEFAULT_THEME_COLOR, normalizeThemeColor, normalizeThemeMode, readThemeMode, writeThemeMode, type ThemeMode } from '@plotloom/ui/theme';
+import { StorageSettingsExample, storageSettingsExample } from './storage-settings-example';
 
 interface PreviewConfig { component: string; state: string; color: string; mode: ThemeMode; revision: number; controls: PreviewControls }
+const componentCatalog = [...libraryCatalog, storageSettingsExample];
 const initial = componentCatalog[0];
 const initialConfig: PreviewConfig = { component: initial.id, state: initial.states[0].id, color: DEFAULT_THEME_COLOR, mode: readThemeMode(), revision: 0, controls: defaultControls(initial.id, initial.states[0].id) };
 
@@ -33,7 +35,7 @@ export function WorkbenchApp() {
   }, [config]);
 
   return <ThemeRoot color={config.color} mode={config.mode} documentTheme><ComponentWorkbench
-    example={example} state={config.state} color={config.color} controls={config.controls} {...size} lastAction={lastAction} frameRef={frameRef}
+    catalog={componentCatalog} example={example} state={config.state} color={config.color} controls={config.controls} {...size} lastAction={lastAction} frameRef={frameRef}
     mode={config.mode} onModeChange={mode => { writeThemeMode(mode); setConfig(current => ({ ...current, mode })); }}
     onControlsChange={(patch) => setConfig((current) => ({ ...current, controls: { ...current.controls, ...patch } }))}
     onSelect={(id) => {
@@ -64,9 +66,12 @@ export function PreviewApp() {
     window.parent.postMessage({ type: 'plotloom:ready' }, location.origin);
     return () => window.removeEventListener('message', receive);
   }, []);
+  const onAction = (action: string) => window.parent.postMessage({ type: 'plotloom:action', action }, location.origin);
   return <ThemeRoot color={config.color} mode={config.mode} documentTheme><ComponentPreview
     key={`${config.component}:${config.state}:${config.revision}`} component={config.component} state={config.state} color={config.color} controls={config.controls}
     onColorChange={(color) => { setConfig((current) => ({ ...current, color })); window.parent.postMessage({ type: 'plotloom:color', color }, location.origin); }}
-    onAction={(action) => window.parent.postMessage({ type: 'plotloom:action', action }, location.origin)}
-  /></ThemeRoot>;
+    onAction={onAction}
+  >
+    {config.component === storageSettingsExample.id ? <StorageSettingsExample state={config.state} onAction={onAction} /> : null}
+  </ComponentPreview></ThemeRoot>;
 }

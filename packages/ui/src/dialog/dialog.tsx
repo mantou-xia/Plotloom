@@ -13,10 +13,12 @@ export interface DialogProps {
   footer?: ReactNode;
   className?: string;
   style?: CSSProperties;
+  /** 表单可设为 false，避免误点遮罩丢失已填写内容。 */
+  dismissOnBackdrop?: boolean;
 }
 
 /** 原生模态层负责焦点约束、背景不可交互与关闭后焦点恢复；业务内容和提交均由调用方管理。 */
-export function Dialog({ open, onOpenChange, title, description, children, footer, className = '', style }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, className = '', style, dismissOnBackdrop = true }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -34,7 +36,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
     onClose={event => { if (open && !event.currentTarget.open) onOpenChange(false); }}
     onClick={event => {
       // 遮罩事件会落到 dialog；只关闭真正位于面板外的点击，内部空白不算取消。
-      if (event.target !== event.currentTarget) return;
+      if (!dismissOnBackdrop || event.target !== event.currentTarget) return;
       const rect = event.currentTarget.getBoundingClientRect();
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onOpenChange(false);
     }}>

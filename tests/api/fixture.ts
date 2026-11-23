@@ -27,6 +27,11 @@ export async function createModelFixture() {
       const prompt = contentText(body.messages.findLast((message: any) => message.role === 'user')?.content);
       const count = (attempts.get(prompt) ?? 0) + 1;
       attempts.set(prompt, count);
+      if (prompt === 'ACCOUNTS_EXHAUSTED') {
+        response.writeHead(500, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: 'All available accounts exhausted: ' + TEST_KEY, type: 'server_error' } }));
+        return;
+      }
       if (!body.tools?.length && compactionMode === 'fail') {
         response.writeHead(401, { 'Content-Type': 'application/json' });
         response.end(JSON.stringify({ error: { message: `upstream secret ${TEST_KEY}`, type: 'server_error' } }));

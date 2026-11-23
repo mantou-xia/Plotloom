@@ -1,8 +1,8 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, session, shell, utilityProcess } = require('electron');
 const { randomBytes } = require('node:crypto');
-const { mkdir } = require('node:fs/promises');
-const { join, resolve, sep } = require('node:path');
+const { dirname, join, resolve, sep } = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { storageLocation } = require('./storage-location.cjs');
 
 const host = 'plotloom://app';
 const token = randomBytes(32).toString('hex');
@@ -18,8 +18,10 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'plotloom', privileges: {
 
 /** 等服务完成监听才加载窗口，退出时先等待正在处理的生成与文件写入。 */
 async function openDesktop() {
-  const dataDir = join(app.getPath('userData'), 'data');
-  await mkdir(dataDir, { recursive: true });
+  const profileDir = app.getPath('userData');
+  const storage = storageLocation(profileDir);
+  const { dataDir, migrationFailed } = await storage.open();
+  if (migrationFailed) dialog.showErrorBox('应用数据迁移失败', 'Plotloom 将继续使用原目录。请检查目标位置的权限和可用空间后重试。');
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (/^(PLOTLOOM_|NODE_OPTIONS$|ELECTRON_RUN_AS_NODE$)/i.test(key)) delete env[key];
@@ -50,6 +52,7 @@ async function openDesktop() {
     icon: join(__dirname, 'plotloom.ico'),
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: join(__dirname, 'preload.cjs') },
   });
+  registerStorageSettings(storage, profileDir, dataDir, address);
   // 原生窗口按钮与应用共用底色和图标色，悬停和按压由 Electron 绘制。
   ipcMain.on('desktop:titlebar-color', (event, symbolColor, color) => {
     if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame
@@ -63,6 +66,63 @@ async function openDesktop() {
     return { action: 'deny' };
   });
   await window.loadURL(host + '/');
+}
+
+/** 目录只由桌面主进程选择和登记，页面不能传入任意文件路径。 */
+function registerStorageSettings(storage, profileDir, dataDir, address) {
+  function checkSender(event) {
+    if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame
+      || event.senderFrame?.url.split('#', 1)[0] !== host + '/') throw new Error('桌面窗口不可用。');
+  }
+
+  async function readDirectories(path) {
+    const response = await fetch(address + path, { headers: { 'x-plotloom-desktop': token } });
+    if (!response.ok) throw new Error('无法核对项目和小说目录，请稍后重试。');
+    return response.json();
+  }
+
+  let choosing = false;
+  ipcMain.handle('desktop:storage-location', event => {
+    checkSender(event);
+    return dataDir;
+  });
+  const selectStorage = importing => async event => {
+    checkSender(event);
+    if (choosing || closing) return null;
+    choosing = true;
+    try {
+      const selection = await dialog.showOpenDialog(window, {
+        title: importing ? '选择旧版 Plotloom 的数据目录' : '选择应用数据的存放位置',
+        properties: ['openDirectory'],
+      });
+      if (selection.canceled) return null;
+      let location;
+      if (importing) {
+        location = await storage.importLocation(selection.filePaths[0], dataDir);
+      } else {
+        const [{ projects }, { workspaces }] = await Promise.all([readDirectories('/api/projects'), readDirectories('/api/workspaces')]);
+        location = { pendingDir: await storage.destination(selection.filePaths[0], [
+          profileDir, dataDir, dirname(process.execPath), ...projects.map(project => project.path), ...workspaces.map(workspace => workspace.root),
+        ]) };
+      }
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'question', buttons: [importing ? '重启并导入' : '重启并迁移', '取消'], defaultId: 1, cancelId: 1,
+        message: importing ? '重启 Plotloom 并导入旧版数据？' : '重启 Plotloom 并迁移应用数据？',
+        detail: importing
+          ? `旧版目录：${location.sourceDir}\n请先退出旧版应用。重启后将打开旧会话、模型设置及 Agent 人设的副本，当前数据仍保存在：\n${dataDir}`
+          : `新位置：${location.pendingDir}\n应用将在退出后复制数据，原目录会保留一份备份。数据较多时请等待应用重新打开。`,
+      });
+      if (response !== 0) return null;
+      await storage.schedule(dataDir, location.pendingDir, location.sourceDir);
+      app.relaunch();
+      app.quit();
+      return null;
+    } catch (error) {
+      return error.code ? '无法访问或保存应用数据位置，请检查文件夹权限。' : error.message;
+    } finally { choosing = false; }
+  };
+  ipcMain.handle('desktop:change-storage-location', selectStorage(false));
+  ipcMain.handle('desktop:import-storage', selectStorage(true));
 }
 
 /** 同源请求保留状态、响应头和 SSE 流，外部客户端拿不到用于访问后端的令牌。 */

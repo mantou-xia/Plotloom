@@ -1,0 +1,22 @@
+.plotloom-storage-path {
+  display: block;
+  block-size: 2.8em;
+  line-height: 1.4;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.plotloom-storage-feedback {
+  margin: 0;
+  block-size: 3em;
+  padding-block-start: 8px;
+  overflow: auto;
+  color: var(--pl-danger);
+  font-size: 13px;
+}
+
+.plotloom-storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

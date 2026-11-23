@@ -800,6 +800,7 @@ export class AgentService {
       let accepted = false;
       let aborted = false;
       let outcome: Outcome = 'failed';
+      let modelError: string | undefined;
       const unsubscribe = session.subscribe((event) => {
         if (event.type === 'message_end') {
           // SDK 在同步通知之后才保存条目；微任务读取可取得真实且重启稳定的消息 ID。
@@ -841,6 +842,10 @@ export class AgentService {
         const prompt = `${input?.prompt ?? text}\n\n${dateContext()}`;
         await session.prompt(prompt, input ? { images: input.images.map(image => ({ type: 'image', ...image })) } : undefined);
         const last = record.manager.getEntries().slice(startIndex).findLast((entry) => entry.type === 'message' && entry.message.role === 'assistant');
+        // 只使用本轮最终模型消息的错误，已经恢复的自动重试不影响提示。
+        if (last?.type === 'message' && last.message.role === 'assistant' && last.message.stopReason === 'error') {
+          modelError = last.message.errorMessage;
+        }
         outcome = aborted || (last?.type === 'message' && last.message.role === 'assistant' && last.message.stopReason === 'aborted') ? 'aborted'
           : last?.type === 'message' && last.message.role === 'assistant' && ['stop', 'length'].includes(last.message.stopReason) ? 'completed' : 'failed';
       } catch {
@@ -865,7 +870,7 @@ export class AgentService {
       }
       if (outcome === 'completed') emit({ type: 'completed', sessionId: id, usage: turnUsage(record.manager, startIndex) });
       else if (outcome === 'aborted') emit({ type: 'aborted', sessionId: id });
-      else emit({ type: 'failed', sessionId: id, error: modelFailure });
+      else emit({ type: 'failed', sessionId: id, error: modelFailure(modelError) });
     };
   }
 

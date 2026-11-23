@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { AgentQuestionAnswer, SessionDetail } from '../../packages/contracts/src/index.ts';
-import { assertFinal, events, startServer } from './client.ts';
+import { assertFinal, collect, events, startServer } from './client.ts';
 import { createModelFixture, TEST_KEY } from './fixture.ts';
 
 /** 只替换模型响应。提问、状态、答复、停止与历史使用实际 HTTP/SSE 和 SDK。 */
@@ -26,6 +26,38 @@ test('Agent 等待选择、自填、跳过或停止，答复只消费一次', { 
     const novel = await server.json(`/api/workspaces/${workspace.id}/sessions`, 'POST', {}, 201);
     const args = { question: '采用哪个视角？', options: ['第一人称', '第三人称'] };
     const text = 'WRITE:' + JSON.stringify({ steps: [{ name: 'ask_user', args }], finalText: '继续原轮次' });
+    await t.test('工具定义兼容模型网关，重复选项由后端拒绝', async () => {
+      const requestStart = fixture.requests.length;
+      const duplicate = { ...args, options: [args.options[0], args.options[0]] };
+      const text = 'WRITE:' + JSON.stringify({ steps: [{ name: 'ask_user', args: duplicate }] });
+      const path = `/api/sessions/${chat.id}`;
+      const received = await collect(await server.request(path + '/messages', 'POST', { text }));
+
+      assertFinal(received, 'completed');
+      assert(!received.some(event => event.type === 'user_answer_required'));
+      assert(received.some(event => event.type === 'tool_end' && event.name === 'ask_user' && event.outcome === 'failed'));
+      assert.equal((await server.json<SessionDetail>(path)).pendingQuestion, undefined);
+      const [first, followup] = fixture.requests.slice(requestStart);
+      const tool = first.tools.find((tool: { function: { name: string } }) => tool.function.name === 'ask_user');
+      assert(tool);
+      assert(!Object.hasOwn(tool.function.parameters.properties.options, 'uniqueItems'));
+      assert(followup.messages.some((message: { role: string; content: string }) =>
+        message.role === 'tool' && message.content.includes('提问选项不能重复')));
+    });
+    await t.test('小说聊天重试耗尽后显示脱敏的供应商账号提示', async () => {
+      const path = `/api/sessions/${novel.id}`;
+      const received = await collect(await server.request(path + '/messages', 'POST', { text: 'ACCOUNTS_EXHAUSTED' }));
+      assertFinal(received, 'failed');
+      assert.equal(received.filter(event => event.type === 'retrying').length, 2);
+      assert.equal(fixture.attempts.get('ACCOUNTS_EXHAUSTED'), 3);
+      const publicMessage = '模型服务商当前没有可用的上游账号，请稍后重试或切换模型。';
+      const final = received.find(event => event.type === 'failed');
+      assert.deepEqual(final?.error, { code: 'MODEL_FAILED', message: publicMessage });
+      const snapshot = JSON.stringify(await server.json<SessionDetail>(path));
+      assert(snapshot.includes(publicMessage));
+      assert(!snapshot.includes(TEST_KEY));
+      assert(!JSON.stringify(received).includes(TEST_KEY));
+    });
     const cases: { name: string; session: string; answer?: AgentQuestionAnswer; result?: string }[] = [
       { name: '项目聊天单选', session: chat.id, answer: { kind: 'option', index: 2 }, result: '用户选择：第三人称' },
       { name: '小说聊天自填', session: novel.id, answer: { kind: 'custom', text: ' 书信体 ' }, result: '用户自填：书信体' },

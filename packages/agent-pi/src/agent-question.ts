@@ -52,9 +52,11 @@ export function createAskUserTool(wait: QuestionWaiter) {
     executionMode: 'sequential',
     parameters: Type.Object({
       question: Type.String({ minLength: 1, maxLength: 500, pattern: '\\S' }),
-      options: Type.Array(Type.String({ minLength: 1, maxLength: 200, pattern: '\\S' }), { minItems: 2, maxItems: 5, uniqueItems: true }),
+      options: Type.Array(Type.String({ minLength: 1, maxLength: 200, pattern: '\\S' }), { minItems: 2, maxItems: 5 }),
     }),
     async execute(callId, { question, options }, signal) {
+      // 部分模型网关拒绝 uniqueItems，改在发布问题前检查选项是否重复。
+      if (new Set(options).size !== options.length) throw new Error('提问选项不能重复，请提供互不相同的选项。');
       const answer = await wait({ callId, question, options }, signal);
       const text = answer.kind === 'option' ? `用户选择：${options[answer.index - 1]}`
         : answer.kind === 'custom' ? `用户自填：${answer.text.trim()}`

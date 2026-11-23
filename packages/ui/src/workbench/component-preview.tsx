@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from 'react';
+import { lazy, Suspense, useRef, useState, type ReactNode } from 'react';
 import { BoxModelOverlay } from './box-model-overlay.tsx';
 import { ArrowRight, ChevronRight, Copy, Ellipsis, Minus, Plus, Square, Trash2, X } from 'lucide-react';
 import { DocumentListItem } from '../document-list/document-list-item.tsx';
@@ -72,6 +72,7 @@ const exampleDiff: FileDiffBlock[] = [
 ];
 
 export interface ComponentPreviewProps {
+  children?: ReactNode;
   component: string;
   state: string;
   color: string;
@@ -81,7 +82,7 @@ export interface ComponentPreviewProps {
 }
 
 /** 样例只组合通用组件与占位内容；尺寸和属性走公开 props，不通过外层盒子伪造组件尺寸。 */
-export function ComponentPreview({ component, state, color, controls, onColorChange, onAction }: ComponentPreviewProps) {
+export function ComponentPreview({ component, state, color, controls, onColorChange, onAction, children }: ComponentPreviewProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [clicks, setClicks] = useState(0);
   const [disclosureDialogOpen, setDisclosureDialogOpen] = useState(false);
@@ -91,7 +92,7 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
   const style = componentSizeStyle(controls);
   const click = () => { setClicks((count) => count + 1); onAction('onClick'); };
   const content = state === 'empty' ? null : Array.from({ length: state === 'overflow' ? 24 : 3 }, (_, index) => <div className="pl-example-block" key={index}>内容块 {index + 1}</div>);
-  let target;
+  let target = children;
   if (component === 'document-quote-chip') target = <DocumentQuoteChip style={style}
     path={controls.quotePath} location={controls.quoteLocation} text={controls.quoteText} comment={controls.quoteComment}
     onRemove={controls.quoteRemovable ? () => onAction('onRemove()') : undefined} />;
@@ -186,12 +187,20 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
     </ScrollBox>
   </>;
   // 调试台复用实际标题栏，并模拟原生按钮的悬停反馈。
-  if (component === 'desktop-title-bar') target = <div className="pl-example-desktop-titlebar">
-    <DesktopTitleBar title="Plotloom" style={{ height: 36 }} />
-    <div className="pl-example-desktop-titlebar__controls" aria-hidden="true">
-      <span><Minus /></span><span><Square /></span><span><X /></span>
+  if (component === 'desktop-title-bar') target = <>
+    <div className="pl-example-desktop-titlebar">
+      <DesktopTitleBar title="Plotloom" style={{ height: 36 }} />
+      <div className="pl-example-desktop-titlebar__controls" aria-hidden="true">
+        <span><Minus /></span><span><Square /></span><span><X /></span>
+      </div>
     </div>
-  </div>;
+    {state === 'modal' ? <>
+      <Button onClick={() => setDisclosureDialogOpen(true)}>打开弹窗</Button>
+      <Dialog open={disclosureDialogOpen} onOpenChange={setDisclosureDialogOpen} title="模态遮罩">
+        <p>关闭弹窗后恢复标题栏颜色。</p>
+      </Dialog>
+    </> : null}
+  </>;
   if (component === 'global-layout') target = <GlobalLayout variant={state === 'flat' ? 'flat' : 'inset'} style={style} sidebarWidth={controls.sidebarWidth} gap={controls.gap} contentPadding={controls.padding}
     sidebar={state === 'empty' ? null : <SidebarExample key={state} state={state} style={{ height: '100%' }} onAction={onAction} />}>
     {state === 'empty' ? null : <div style={{ display: 'grid', gap: 16 }}><strong>内容区</strong><p>侧栏融入主题背景，右侧内容卡片独立滚动。</p>{content}</div>}

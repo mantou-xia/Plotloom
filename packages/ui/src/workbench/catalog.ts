@@ -30,7 +30,7 @@ export const componentCatalog: ComponentExample[] = [
     interaction: '点击触发按钮展开，使用方向键选择，Enter 执行，Esc 或点击外部关闭。', width: 320, height: 240,
     states: [{ id: 'default', name: '操作菜单', description: '普通操作与危险操作共用同一菜单。' }] },
   { id: 'drawer', name: 'Drawer', category: '布局组件', exportPath: './drawer', description: '从右侧滑入的模态抽屉。',
-    interaction: '点击打开，再用关闭键、遮罩或 Esc 退出。open 控制显示，title 设置标题，children 提供正文。', width: 760, height: 480,
+    interaction: '点击打开，再用关闭键、遮罩或 Esc 退出。open 控制显示，title 设置标题，children 提供正文。桌面宿主中抽屉让出原生标题栏高度。', width: 760, height: 480,
     states: [{ id: 'default', name: '打开与关闭', description: '查看双向动效和背景遮罩。' }] },
   { id: 'notice', name: 'Notice', category: '反馈组件', exportPath: './notice', description: '在原位反馈操作结果。',
     interaction: 'tone 控制状态，children 提供提示文本。', width: 520, height: 220,
@@ -403,12 +403,13 @@ export const componentCatalog: ComponentExample[] = [
   {
     id: 'dialog', name: 'Dialog', category: '反馈组件', exportPath: './dialog',
     description: '通用模态弹窗，标题、说明、正文和底部操作由调用方传入。',
-    interaction: 'Esc、关闭按钮或点击遮罩关闭；焦点保持在弹窗内，关闭后返回触发按钮。右侧可调整标题、说明和尺寸。',
+    interaction: 'Esc、关闭按钮或点击遮罩关闭；dismissOnBackdrop 为 false 时点击遮罩保留弹窗。焦点保持在弹窗内，关闭后返回触发按钮。',
     width: 720, height: 640,
     states: [
       { id: 'default', name: '打开', description: '展示基础内容和底部操作。' },
       { id: 'closed', name: '关闭', description: '点击触发按钮打开，检查焦点恢复。' },
       { id: 'overflow', name: '长内容', description: '正文独立滚动，标题和操作区保持可见。' },
+      { id: 'form', name: '保留表单', description: '填写内容后点击遮罩，确认文字仍在。可以用取消、关闭或 Esc 退出。' },
     ],
   },
   {
@@ -472,7 +473,7 @@ export const componentCatalog: ComponentExample[] = [
     interaction: '点击模型与权限胶囊体验形变展开；拖动思考滑块，悬停上下文环；选择附件或输入后发送，观察原版动画与回调。',
     width: 800, height: 540,
     states: [
-      { id: 'default', name: '原版输入框', description: '保留原版布局、样式与动效，输入提示词或添加附件后发送。' },
+      { id: 'default', name: '输入框', description: '切换浅色和深色，检查输入框的底色、阴影以及聚焦反馈。' },
       { id: 'busy', name: '生成中', description: '显示原版停止按钮，点击触发停止回调。' },
       { id: 'stopping', name: '停止处理中', description: '原版停止中加载状态，阻止重复点击。' },
       { id: 'disabled', name: '禁用', description: '通过原版 disabled 参数禁止组件交互。' },
@@ -762,7 +763,10 @@ export const componentCatalog: ComponentExample[] = [
     description: '桌面窗口标题栏，展示应用名称、可拖动区域和原生窗口按钮的位置。',
     interaction: 'title 设置标题文字，style 可调整预览尺寸。切换主色和主题，悬停三个窗口按钮查看反馈。窗口操作在 Windows 桌面应用中验证。',
     width: 520, height: 180,
-    states: [{ id: 'default', name: '标准标题栏', description: '标题栏随主色变化，右侧三个图标模拟原生按钮的悬停反馈。' }],
+    states: [
+      { id: 'default', name: '标准标题栏', description: '标题栏随主色变化，右侧三个图标模拟原生按钮的悬停反馈。' },
+      { id: 'modal', name: '模态遮罩', description: '打开弹窗后观察标题栏和右侧按钮区域的蒙层。原生按钮的色值同步在 Windows 桌面应用中验证。' },
+    ],
   },
   {
     id: 'global-layout', name: 'GlobalLayout', category: '布局组件', exportPath: './layouts/global-layout',

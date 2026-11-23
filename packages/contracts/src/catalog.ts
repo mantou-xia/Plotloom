@@ -535,7 +535,7 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
   { name: 'completed', description: '整轮请求最终完成。', fields: [field('usage', 'object', false, 'SDK 提供的整轮用量；缺失不代表无消耗。', '{}'),
     ...['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].map((name, i) => field(`usage.${name}`, 'number', false, ['输入 token', '输出 token', '缓存读取 token', '缓存写入 token', '合计 token'][i], '100'))] },
   { name: 'aborted', description: '整轮请求已停止，无额外字段。', fields: [] },
-  { name: 'failed', description: '整轮请求最终失败。', fields: [field('error.code', 'string', true, '公开错误码。', 'MODEL_FAILED'), field('error.message', 'string', true, '脱敏后的错误说明。', '模型生成失败，请检查本机模型配置后重试。')] },
+  { name: 'failed', description: '整轮请求最终失败。', fields: [field('error.code', 'string', true, '公开错误码。', 'MODEL_FAILED'), field('error.message', 'string', true, '脱敏后的错误说明。供应商无可用上游账号时会明确提示。', '模型服务商当前没有可用的上游账号，请稍后重试或切换模型。')] },
 ];
 
 export const API_ERRORS = [

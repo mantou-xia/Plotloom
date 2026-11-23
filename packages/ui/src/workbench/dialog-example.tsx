@@ -12,7 +12,7 @@ export function DialogExample({ state, title, description, style, onAction }: {
   const change = (next: boolean) => { setOpen(next); onAction(`onOpenChange(${next})`); };
   return <>
     <Button onClick={() => change(true)}>打开弹窗</Button>
-    <Dialog open={open} onOpenChange={change} title={title} description={description} style={style}
+    <Dialog open={open} onOpenChange={change} title={title} description={description} style={style} dismissOnBackdrop={state !== 'form'}
       footer={<><Button variant="ghost" onClick={() => change(false)}>取消</Button><Button onClick={() => { onAction(`onConfirm(${value})`); setOpen(false); }}>确认</Button></>}>
       <Input aria-label="示例内容" placeholder="输入内容检查焦点与取消操作" value={value} onValueChange={setValue} />
       {state === 'overflow' ? Array.from({ length: 20 }, (_, index) => <p key={index}>内容示例 {index + 1}</p>) : null}

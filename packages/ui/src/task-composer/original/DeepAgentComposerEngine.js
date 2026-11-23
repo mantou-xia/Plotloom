@@ -30,9 +30,15 @@ function mountOriginalDeepAgent(target, initial, variant, css, tokens, dictionar
   element.style.cssText = "display:block;position:relative;min-width:0;width:100%;";
   const root = element.attachShadow({ mode: "open" });
   const style = owner.createElement("style");
-  // 仅输入框表面半透明；外层透明且无留白，保持文字与按钮完全清晰。
+  // 输入区沿用主题语义色，深色下抬高底色并使用低透明度亮影分出层级。
   style.textContent = css + `
-    [data-message-composer-surface] { background: color-mix(in srgb, var(--theme-bg) 88%, transparent); }
+    [data-message-composer-surface] {
+      background: var(--pl-composer-surface, var(--theme-elevated));
+      box-shadow: 0 8px 24px var(--pl-composer-shadow, rgb(31 38 48 / 9%));
+    }
+    [data-message-composer-surface]:focus-within {
+      box-shadow: 0 10px 30px var(--pl-composer-shadow-focus, rgb(31 38 48 / 13%));
+    }
     .bg-text-base.text-white:not(.bg-red-600) { color: var(--theme-bg); }
     .bg-text-base.text-white:hover:not(.bg-red-600) { background-color: var(--theme-fg); }
     .bg-primary.text-white { color: var(--pl-on-primary, #fff); }
@@ -3990,7 +3996,7 @@ function mountDeepAgentComposer(target, options = {}) {
           InputSurface,
           {
             "data-message-composer-surface": true,
-            className: "flex flex-col overflow-visible rounded-[24px] shadow-[0_8px_24px_rgba(31,38,48,0.09)] focus-within:shadow-[0_10px_30px_rgba(31,38,48,0.13)]",
+            className: "flex flex-col overflow-visible rounded-[24px]",
             onDragOver: onFileDragOver,
             onDrop,
             children: /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "relative flex w-full flex-col p-3.5 pb-2.5", children: [

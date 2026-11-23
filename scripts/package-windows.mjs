@@ -101,7 +101,7 @@ async function makeInstaller() {
   const resources = join(stage, 'resources');
   const main = join(resources, 'app');
   await mkdir(main, { recursive: true });
-  for (const file of ['package.json', 'main.cjs', 'preload.cjs', 'plotloom.ico']) await cp(join(desktop, file), join(main, file));
+  for (const file of ['package.json', 'main.cjs', 'preload.cjs', 'storage-location.cjs', 'plotloom.ico']) await cp(join(desktop, file), join(main, file));
   await cp(join(root, 'apps', 'web', 'dist'), join(resources, 'web'), { recursive: true });
   await prepareServer(join(resources, 'server'), compiled);
   const require = createRequire(join(root, 'packages', 'agent-pi', 'package.json'));

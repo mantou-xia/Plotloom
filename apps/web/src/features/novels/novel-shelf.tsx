@@ -7,6 +7,7 @@ import { Dialog } from '@plotloom/ui/dialog';
 import { Select } from '@plotloom/ui/select';
 import { requestJson } from '../../utils/http';
 import { runWithToast } from '../../utils/feedback';
+import { NOVEL_SHELF_SORT_KEY } from '../settings/preference-transfer';
 import forest from './covers/forest.webp';
 import dunes from './covers/dunes.webp';
 import ocean from './covers/ocean.webp';
@@ -20,7 +21,6 @@ const covers = {
 } satisfies Record<NovelCoverId, { name: string; src: string; background: string }>;
 const sorts = [{ value: 'newest', label: '最近创建' }, { value: 'oldest', label: '最早创建' }, { value: 'title', label: '书名' }];
 const collator = new Intl.Collator('zh-CN', { numeric: true });
-const sortKey = 'plotloom:novel-shelf-sort';
 
 /** 未选封面的小说按稳定 ID 分配预设，刷新或重排时保持同一本书的外观。 */
 function coverFor(book: Workspace) {
@@ -36,7 +36,7 @@ interface ShelfProps {
 }
 
 export function NovelShelf({ books, onOpen, onUpdate }: ShelfProps) {
-  const [sort, setSort] = useState(() => localStorage.getItem(sortKey) ?? 'newest');
+  const [sort, setSort] = useState(() => localStorage.getItem(NOVEL_SHELF_SORT_KEY) ?? 'newest');
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const inFlight = useRef(new Set<string>());
   const [editing, setEditing] = useState<{ id: string; cover: NovelCoverId }>();
@@ -96,12 +96,12 @@ export function NovelShelf({ books, onOpen, onUpdate }: ShelfProps) {
           searchable={false} clearable={false} onValueChange={value => {
             if (!value) return;
             setSort(value);
-            localStorage.setItem(sortKey, value);
+            localStorage.setItem(NOVEL_SHELF_SORT_KEY, value);
           }} />
       </div>
       {bookGrid(sorted)}
     </section>
-    {editing && editedBook && <Dialog open title="更换封面" description={editedBook.title}
+    {editing && editedBook && <Dialog open dismissOnBackdrop={false} title="更换封面" description={editedBook.title}
       onOpenChange={open => { if (!open && !savingCover) setEditing(undefined); }}
       footer={<>
         <Button variant="ghost" disabled={savingCover} onClick={() => setEditing(undefined)}>取消</Button>
