@@ -1,38 +1,20 @@
 import type { AgentEvent } from '@plotloom/contracts';
 import type { EndpointDoc, FieldDoc } from '@plotloom/contracts/catalog';
+import { readSseFrames } from '@plotloom/contracts/sse';
 
 export interface CheckResult { name: string; passed: boolean; detail: string }
 export interface StreamItem { event: AgentEvent; elapsedMs: number }
 
-/** 流按 SSE 空行分帧；保留 UTF-8 解码状态，兼容中文跨网络块和 CRLF。 */
+/** 试验台报告会话标识缺失和残帧，完整事件继续交给目录对应的检查。 */
 export async function consumeSse(response: Response, receive: (event: AgentEvent) => void): Promise<void> {
   if (!response.body) throw new Error('响应没有可读取的流。');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const drain = () => {
-    let match: RegExpExecArray | null;
-    while ((match = /\r?\n\r?\n/.exec(buffer))) {
-      const frame = buffer.slice(0, match.index);
-      buffer = buffer.slice(match.index + match[0].length);
-      const lines = frame.split(/\r?\n/);
-      const type = lines.find((line) => line.startsWith('event:'))?.slice(6).trim();
-      const data = lines.filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
-      if (!type || !data) continue;
-      const parsed: unknown = JSON.parse(data);
-      if (!isObject(parsed) || typeof parsed.sessionId !== 'string') throw new Error('SSE 事件缺少合法 sessionId。');
-      receive({ ...parsed, type } as AgentEvent);
-    }
-  };
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) { buffer += decoder.decode(); drain(); break; }
-      buffer += decoder.decode(value, { stream: true });
-      drain();
-    }
-    if (buffer.trim() && !buffer.trim().startsWith(':')) throw new Error('连接结束时存在不完整的 SSE 数据。');
-  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  const remainder = await readSseFrames(response.body, (type, data) => {
+    const parsed: unknown = JSON.parse(data);
+    if (!isObject(parsed) || typeof parsed.sessionId !== 'string') throw new Error('SSE 事件缺少合法 sessionId。');
+    receive({ ...parsed, type } as AgentEvent);
+  });
+  const tail = remainder.trim();
+  if (tail && !tail.startsWith(':')) throw new Error('连接结束时存在不完整的 SSE 数据。');
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {

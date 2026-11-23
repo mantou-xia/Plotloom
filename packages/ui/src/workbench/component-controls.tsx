@@ -31,6 +31,13 @@ export function ComponentControls({ component, controls, onChange }: Props) {
   if (component === 'page-layout') numbers.push({ key: 'maxWidth', label: '正文最大宽度（px）', min: 1, max: 2400 });
   if (component === 'color-swatches') numbers.push({ key: 'swatchSize', label: '圆点直径（px）', min: 24, max: 80 });
   return <>
+    {component === 'document-quote-chip' ? <fieldset><legend>文稿引用参数</legend>
+      <label>文稿路径<input value={controls.quotePath} onChange={event => onChange({ quotePath: event.target.value })} /></label>
+      <label>引用位置<input value={controls.quoteLocation} onChange={event => onChange({ quoteLocation: event.target.value })} /></label>
+      <FormField label="选中原文"><Textarea rows={4} value={controls.quoteText} onValueChange={value => onChange({ quoteText: value })} /></FormField>
+      <FormField label="修改要求"><Textarea rows={3} value={controls.quoteComment} onValueChange={value => onChange({ quoteComment: value })} /></FormField>
+      <label className="pl-workbench__check"><input type="checkbox" checked={controls.quoteRemovable} onChange={event => onChange({ quoteRemovable: event.target.checked })} />提供移除回调</label>
+    </fieldset> : null}
     {component === 'settings-section' || component === 'settings-row' ? <fieldset><legend>设置组件参数</legend>
       <label>标题<input value={controls.settingsTitle} onChange={event => onChange({ settingsTitle: event.target.value })} /></label>
       <FormField label="说明"><Textarea rows={3} value={controls.settingsDescription} onValueChange={value => onChange({ settingsDescription: value })} /></FormField>

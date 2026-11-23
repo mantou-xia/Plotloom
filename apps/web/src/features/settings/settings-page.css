@@ -99,9 +99,6 @@
 }
 
 .plotloom-tools-status { margin: 0; padding: 12px clamp(16px, 3vw, 24px); color: var(--pl-text-muted); font-size: 13px; line-height: 20px; }
-.pl-settings-row.plotloom-tool-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 12px 24px; }
-/* 工具详情填满网格列，起点由列宽决定，避免继承通用控件的靠右对齐。 */
-.plotloom-tool-row > .pl-settings-row__control { margin-inline-start: 0; }
 .plotloom-tools-status + .plotloom-tool-row { border-top: 1px solid var(--pl-border); }
 .plotloom-tool-row dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
 .plotloom-tool-row dt { color: var(--pl-text-muted); }

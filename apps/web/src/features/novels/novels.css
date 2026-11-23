@@ -129,17 +129,14 @@
   .plotloom-novel-directory-tabs.pl-primary-tabs { gap: 4px; }
 }
 .plotloom-candidate-panel { display: flex; height: 100%; flex-direction: column; min-width: 0; min-height: 0; background: var(--pl-surface-muted); }
+.plotloom-candidate-panel--queue { background: var(--pl-surface); }
 .plotloom-candidate-panel__header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; }
 .plotloom-candidate-panel__header h2 { margin: 0; font-size: 15px; }
 .plotloom-candidate-panel__header > div { min-width: 0; }
-.plotloom-candidate-panel__list { flex: 1; padding: 0 14px 14px; }
-.plotloom-candidate-panel__list > p { margin: 4px 0; color: var(--pl-text-muted); }
-.plotloom-candidate-panel__list ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.plotloom-candidate-panel__list .plotloom-candidate-panel__item { width: 100%; height: auto; min-height: 52px; background: var(--pl-surface); text-align: start; }
-.plotloom-candidate-panel__item .plotloom-button__content { width: 100%; justify-content: space-between; }
-.plotloom-candidate-panel__item-text { display: grid; min-width: 0; }
-.plotloom-candidate-panel__item-text strong { overflow: hidden; text-overflow: ellipsis; color: var(--pl-text); }
-.plotloom-candidate-panel__item-text > span { font-size: 12px; color: var(--pl-text-muted); }
+.plotloom-candidate-panel__list { flex: 1; padding-bottom: 14px; }
+.plotloom-candidate-panel__list > p { margin: 0; padding: 12px 16px; color: var(--pl-text-muted); font-size: 13px; }
+.plotloom-candidate-panel__list > button { margin: 8px 16px; }
+.plotloom-candidate-panel__list ul { margin: 0; padding: 0; list-style: none; }
 .plotloom-candidate-panel__header p { min-height: 1.5em; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pl-text-muted); font-size: 12px; }
 .plotloom-candidate-panel__progress { min-height: 28px; padding-inline: 14px; color: var(--pl-text-muted); font-size: 12px; }
 .plotloom-candidate-panel__diff { flex: 1; margin-inline: 8px; padding: 8px; border-radius: 6px; background: var(--pl-surface); }

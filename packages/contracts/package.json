@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./catalog": "./src/catalog.ts",
+    "./sse": "./src/sse.ts",
     "./workspaces": "./src/workspaces.ts",
     "./skills": "./src/skills.ts",
     "./writing": "./src/writing.ts",

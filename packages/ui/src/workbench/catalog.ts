@@ -15,8 +15,16 @@ export interface ComponentExample {
 /** 产品组件的展示登记；与公开 TSX 导出做覆盖校验，新增组件时必须同步补充。 */
 export const componentCatalog: ComponentExample[] = [
   { id: 'document-list-item', name: 'DocumentListItem', category: '基础组件', exportPath: './document-list-item',
-    description: '展示文稿类别、日期、标题、扩展名与两行摘要。', interaction: '点击选中，右键展开传入的操作。',
-    width: 320, height: 180, states: [{ id: 'default', name: '普通', description: '文稿列表项。' }, { id: 'selected', name: '已选中', description: '加深底色。' }] },
+    description: '展示文稿类别、日期、标题、扩展名与两行摘要。', interaction: '点击整行，右键展开传入的操作。endContent 提供行尾状态或方向提示。',
+    width: 320, height: 180, states: [{ id: 'default', name: '普通', description: '文稿列表项。' }, { id: 'selected', name: '已选中', description: '加深底色。' },
+      { id: 'navigation', name: '行尾状态', description: '标题优先展示，行尾同时显示状态与导航图标。' }] },
+  { id: 'document-quote-chip', name: 'DocumentQuoteChip', category: 'AI 对话组件', exportPath: './document-quote-chip',
+    description: '显示文稿引用，悬停或聚焦时查看引用位置、修改要求和原文。',
+    interaction: 'path 和 location 设置标签，text 和 comment 设置预览内容。有 onRemove 时可点击独立移除按钮。',
+    width: 560, height: 320, states: [
+      { id: 'draft', name: '可移除引用', description: '查看修改要求和原文，点击移除触发回调。' },
+      { id: 'sent', name: '历史引用', description: '可查看原文，适用于已发送消息。' },
+    ] },
   { id: 'action-menu', name: 'ActionMenu', category: '基础组件', exportPath: './action-menu',
     description: '紧贴触发按钮显示一组操作，支持图标和危险操作。',
     interaction: '点击触发按钮展开，使用方向键选择，Enter 执行，Esc 或点击外部关闭。', width: 320, height: 240,
@@ -46,11 +54,13 @@ export const componentCatalog: ComponentExample[] = [
   },
   {
     id: 'settings-row', name: 'SettingsRow', category: '布局组件', exportPath: './settings-row',
-    description: '设置行：名称、可选说明与右侧控件插槽。', interaction: '调整 title / description；children 提供控件及其可访问名称。保存与禁用逻辑由调用方控制。', width: 820, height: 340,
+    description: '设置行：名称、可选说明与右侧内容插槽。', interaction: '调整 title / description；children 提供控件或详情。切换样例查看 layout 的控件和等宽两列布局。', width: 820, height: 340,
     states: [
       { id: 'default', name: '开关行', description: '切换控件，检查布局稳定。' },
       { id: 'without-description', name: '无说明', description: '仅名称和控件。' },
       { id: 'colors', name: '选色控件', description: '复用 ColorSwatches，检查不同控件宽度。' },
+      { id: 'columns', name: '两列详情', description: '说明与详情等宽并从顶部对齐。' },
+      { id: 'narrow-columns', name: '窄容器详情', description: '空间不足时详情换到说明下方。' },
       { id: 'narrow', name: '窄容器', description: '280px 容器检查自动换行。' },
     ],
   },

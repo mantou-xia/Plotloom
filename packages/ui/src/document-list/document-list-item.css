@@ -11,3 +11,22 @@
 .pl-document-list-item__title strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-document-list-item__title small { color: var(--pl-text-muted); }
 .pl-document-list-item__excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; line-height: 1.5; font-size: 13px; color: var(--pl-text-muted); }
+
+/* 导航条目突出标题，路径较长时优先保留日期和行尾状态。 */
+.pl-document-list-item:has(> .pl-document-list-item__end) {
+  grid-template: "title end" auto "meta end" auto "excerpt end" auto / minmax(0, 1fr) auto;
+  align-content: center; gap: 0 12px; min-height: 64px;
+}
+.pl-document-list-item:has(> .pl-document-list-item__end) > .pl-document-list-item__title { grid-area: title; }
+.pl-document-list-item:has(> .pl-document-list-item__end) > .pl-document-list-item__meta {
+  grid-area: meta; justify-content: start; flex-wrap: wrap; gap: 0 10px; margin-top: 3px; font-size: 12px;
+}
+.pl-document-list-item:has(> .pl-document-list-item__end) > .pl-document-list-item__meta > span:first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pl-document-list-item:has(> .pl-document-list-item__end) > .pl-document-list-item__excerpt { grid-area: excerpt; margin-top: 4px; }
+.pl-document-list-item__end {
+  grid-area: end; align-self: center; display: inline-flex; align-items: center; gap: 6px;
+  color: var(--pl-primary-text); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.pl-document-list-item__end svg { flex: none; width: 16px; height: 16px; color: var(--pl-text-muted); }

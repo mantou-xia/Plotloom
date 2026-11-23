@@ -12,3 +12,6 @@
 .pl-settings-row__description h4 { margin: 0; font-size: 14px; font-weight: 600; }
 .pl-settings-row__description p { margin: 4px 0 0; color: var(--pl-text-muted); font-size: 13px; }
 .pl-settings-row__control { min-width: 0; max-width: 100%; margin-inline-start: auto; }
+/* 长详情与说明按统一列宽对齐，空间不足时整列换行。 */
+.pl-settings-row[data-layout='columns'] { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: start; }
+.pl-settings-row[data-layout='columns'] > .pl-settings-row__control { margin-inline-start: 0; }

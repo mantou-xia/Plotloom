@@ -23,7 +23,7 @@ export function ToolsSettings() {
   const status = failed ? '工具清单加载失败' : tools ? (tools.length ? `共 ${tools.length} 个工具` : '暂无工具') : '正在加载工具…';
   return <SettingsSection title="ToolCall 工具清单" description="工具按聊天类型和启用条件提供，具体可用项取决于当前会话。">
     <p className="plotloom-tools-status" role="status">{status}</p>
-    {tools?.map(tool => <SettingsRow key={tool.name} className="plotloom-tool-row"
+    {tools?.map(tool => <SettingsRow key={tool.name} layout="columns" className="plotloom-tool-row"
       title={<code>{tool.name}</code>} description={tool.description}>
       <dl>
         <dt>提供方</dt><dd>{tool.provider || '未提供来源'}</dd>

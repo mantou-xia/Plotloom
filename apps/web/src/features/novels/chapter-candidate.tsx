@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronRight } from 'lucide-react';
 import type { Change, Proposal } from '@plotloom/contracts/workspaces';
 import { Button } from '@plotloom/ui/button';
 import { FileDiff, type FileDiffBlock } from '@plotloom/ui/file-diff';
+import { DocumentListItem } from '@plotloom/ui/document-list-item';
 import { ScrollBox } from '@plotloom/ui/scroll-box';
 import { requestJson } from '../../utils/http';
 import { notifyRequestError, runWithToast } from '../../utils/feedback';
@@ -28,6 +29,7 @@ export function ChapterReviewWorkspace({ workspaceId, request, onOpened, onAccep
     : <ChapterCandidateList base={base} onOpen={setSelected} />;
 }
 
+/** 待审列表由服务端状态驱动，文件名与目录分开显示，便于定位同名章节。 */
 function ChapterCandidateList({ base, onOpen }: { base: string; onOpen: (id: string) => void }) {
   const [items, setItems] = useState<Proposal[]>();
   const [failed, setFailed] = useState(false);
@@ -46,18 +48,21 @@ function ChapterCandidateList({ base, onOpen }: { base: string; onOpen: (id: str
       });
     return () => controller.abort();
   }, [base, attempt]);
-  return <section className="plotloom-candidate-panel" aria-label="候选章节审阅">
+  return <section className="plotloom-candidate-panel plotloom-candidate-panel--queue" aria-label="候选章节审阅">
     <header className="plotloom-candidate-panel__header"><h2>待审候选</h2></header>
     <ScrollBox className="plotloom-candidate-panel__list" aria-label="待审候选列表">
       {failed ? <Button size="sm" onClick={() => { setFailed(false); setAttempt(value => value + 1); }}>重试读取候选</Button>
         : !items ? <p role="status">正在读取候选…</p>
-          : items.length === 0 ? <p role="status">暂无待审候选</p> : <ul>{items.map(item => <li key={item.id}>
-            <Button variant="ghost" className="plotloom-candidate-panel__item" onClick={() => onOpen(item.id)}>
-              <span className="plotloom-candidate-panel__item-text"><strong>{item.path}</strong>
-                <span>{reviewDate.format(new Date(item.createdAt))} · 剩余 {item.changes.filter(change => change.status === 'pending').length} 处</span></span>
-              <ChevronRight aria-hidden="true" />
-            </Button>
-          </li>)}</ul>}
+          : items.length === 0 ? <p role="status">暂无待审候选</p> : <ul>{items.map(item => {
+            const divider = item.path.lastIndexOf('/');
+            const title = item.path.slice(divider + 1);
+            const remaining = item.changes.filter(change => change.status === 'pending').length;
+            return <li key={item.id}>
+              <DocumentListItem title={title} label={item.path} category={item.path.slice(0, divider)}
+                date={reviewDate.format(new Date(item.createdAt))} selected={false} onSelect={() => onOpen(item.id)}
+                endContent={<>剩余 {remaining} 处<ChevronRight aria-hidden="true" /></>} />
+            </li>;
+          })}</ul>}
     </ScrollBox>
   </section>;
 }

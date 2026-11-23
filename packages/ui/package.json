@@ -42,6 +42,7 @@
     "./manuscript-frame": "./src/workspace-frames/manuscript-frame.tsx",
     "./document-list-item": "./src/document-list/document-list-item.tsx",
     "./document-editor": "./src/document-editor/document-editor.tsx",
+    "./document-quote-chip": "./src/document-quote-chip/document-quote-chip.tsx",
     "./image-viewer-frame": "./src/workspace-frames/image-viewer-frame.tsx",
     "./citation-sources-frame": "./src/workspace-frames/citation-sources-frame.tsx",
     "./file-changes-frame": "./src/workspace-frames/file-changes-frame.tsx",

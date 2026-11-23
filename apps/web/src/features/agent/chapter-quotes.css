@@ -9,29 +9,4 @@
   list-style: none;
 }
 .plotloom-chapter-quotes--sent { flex-wrap: wrap; min-height: 0; }
-.plotloom-chapter-quotes li {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  max-width: min(270px, 100%);
-  border-radius: 8px;
-  background: var(--pl-surface-muted);
-}
-.plotloom-chapter-quote-label { min-width: 0; }
-.plotloom-chapter-quote-label .plotloom-button__content { min-width: 0; }
-.plotloom-chapter-quote-caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl-tooltip.plotloom-chapter-quote-details {
-  width: min(360px, calc(100vw - 24px));
-  max-width: none;
-  padding: 10px;
-  background: var(--pl-surface, #fff);
-  color: var(--pl-text, #202124);
-  white-space: normal;
-  font-size: 13px;
-}
-.plotloom-chapter-quote-details .pl-tooltip__arrow { background: var(--pl-surface, #fff); }
-.plotloom-chapter-quote-source { display: block; margin: 0 3px 8px; }
-.plotloom-chapter-quote-preview { display: grid; gap: 6px; max-height: min(234px, 42dvh); }
-.plotloom-chapter-quote-preview > div { padding: 8px 10px; border-radius: 6px; background: var(--pl-surface-muted, #f4f4f5); }
-.plotloom-chapter-quote-preview .plotloom-chapter-quote-comment { background: var(--pl-surface-selected, #eaf1fb); }
-.plotloom-chapter-quote-preview p { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plotloom-chapter-quotes > li { display: flex; flex: 0 0 auto; max-width: 100%; }

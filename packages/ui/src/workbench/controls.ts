@@ -16,6 +16,11 @@ export interface ComponentDimension { mode: 'auto' | 'fixed' | 'fill'; value: nu
 export interface PreviewControls {
   settingsTitle: string;
   settingsDescription: string;
+  quotePath: string;
+  quoteLocation: string;
+  quoteText: string;
+  quoteComment: string;
+  quoteRemovable: boolean;
   readerFrameName: string;
   readerFramePath: string;
   readerFrameContent: string;
@@ -141,6 +146,11 @@ export function defaultControls(component: string, state: string): PreviewContro
   return {
     settingsTitle: component === 'settings-section' ? '示例分组' : '示例设置',
     settingsDescription: state === 'without-description' ? '' : '说明此设置的用途，实际值和保存逻辑由调用方管理。',
+    quotePath: '正文/第一章.md',
+    quoteLocation: '第 12–14 行',
+    quoteText: '潮水淹过石阶。\n远处的灯塔亮了起来。',
+    quoteComment: state === 'draft' ? '加强雾中的氛围。' : '',
+    quoteRemovable: state === 'draft',
     readerFrameName: '工作区阅读指南.md',
     readerFramePath: 'docs/工作区阅读指南.md',
     readerFrameContent: readerFrameSample,
