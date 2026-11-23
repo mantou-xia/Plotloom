@@ -27,7 +27,7 @@ const proposal = [f('id', 'string', '候选 ID。', 'proposal-id'), path, baseVe
   f('createdAt', 'string', '候选创建时间。', '2026-11-18T00:00:00.000Z'),
   f('origin', 'object', 'AI 创作候选的来源，手工候选不含此字段。', '{}', false),
   f('origin.sessionId', 'string', '来源小说聊天。', 'session-id', false), f('origin.requestId', 'string', '创作记录 ID。', 'request-id', false), f('origin.reason', 'string', '模型提交候选的改动说明。', '强化对白差异。', false),
-  f('changes', 'array', '按原文顺序排列的独立差异；前端无需重新计算位置。', '[]'), ...nested('changes[]', change),
+  f('changes', 'array', '按原文顺序排列的审批单元。新章节和大纲候选按完整段落对齐，跨段移动的关联变化合为一处；已有候选保留原编号和范围。', '[]'), ...nested('changes[]', change),
   f('references', 'array', '实际参考资料，采纳前检查是否变化。', '[]'), ...nested('references[]', ref)];
 const wsExample = { id: 'workspace-id', title: '灯塔', root: 'D:/Novels/灯塔', createdAt: '2026-11-18T00:00:00.000Z' };
 const docExample = { path: '章节/0001.md', content: '# 第一章\n灯塔亮了。', version: 'a'.repeat(64) };
@@ -93,7 +93,7 @@ export const WORKSPACE_CATALOG: EndpointDoc[] = [
   endpoint({ id: 'proposals.list', module: 'proposals', name: '列出修改候选', method: 'GET', path: '/api/workspaces/:workspaceId/proposals', success: 200,
     description: '查看工作区所有已保存候选及每处处理状态。', note: '未采纳候选不成为正式文件；重启后仍保留。', response: [f('proposals', 'array', '候选列表。', '[]'), ...nested('proposals[]', proposal)], responseExample: { proposals: [proposalExample] } }),
   endpoint({ id: 'proposals.create', module: 'proposals', name: '创建修改候选', method: 'POST', path: '/api/workspaces/:workspaceId/proposals', success: 201,
-    description: '后端计算真实差异，保存独立候选；可仅修改选区。', note: 'selection 存在时 content 只替换选区；范围外原文不变。基础/参考版本过期 409；无修改或错误选区 400；超时 422。',
+    description: '后端计算真实差异，保存独立候选。正文与大纲按完整段落生成可独立采纳的修改。', note: 'selection 存在时 content 只替换选区，文稿选区整处处理。版本过期 409，无修改或错误选区 400，通用行差异计算超时 422。',
     request: [path, baseVersion, content, f('selection', 'object', '可选 UTF-16 原文选区。', '{"start":0,"end":2,"text":"旧稿"}', false),
       f('selection.start', 'number', '起始偏移（含），不切开 emoji。', '0', false), f('selection.end', 'number', '结束偏移（不含）。', '2', false), f('selection.text', 'string', '该范围原文，需精确相同。', '旧稿', false),
       f('references', 'array', '实际参考资料的 path/version；不能含目标文件。', '[]', false), ...nested('references[]', ref).map((v) => ({ ...v, required: false }))],

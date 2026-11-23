@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { diffLines } from 'diff';
 import type { Change, Proposal, Selection } from '@plotloom/contracts/workspaces';
+export { manuscriptChanges } from './manuscript-changes.ts';
 
 /** 公开业务错误只包含可行动说明；文件绝对路径和底层异常不随错误返回。 */
 export class WorkspaceError extends Error {

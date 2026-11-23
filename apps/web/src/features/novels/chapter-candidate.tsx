@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { diffArrays } from 'diff';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import type { Change, Proposal } from '@plotloom/contracts/workspaces';
 import { Button } from '@plotloom/ui/button';
-import { FileDiff, type FileDiffBlock } from '@plotloom/ui/file-diff';
 import { DocumentListItem } from '@plotloom/ui/document-list-item';
 import { ScrollBox } from '@plotloom/ui/scroll-box';
 import { requestJson } from '../../utils/http';
 import { notifyRequestError, runWithToast } from '../../utils/feedback';
 
-const splitLines = (value: string) => value.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-const countNewlines = (value: string) => value.match(/\n/g)?.length ?? 0;
+const countNewlines = (value: string) => value.match(/\r\n|\r|\n/gu)?.length ?? 0;
+const words = new Intl.Segmenter('zh', { granularity: 'word' });
 const reviewDate = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
 
 /** 手动打开时先看本书待审候选，Agent 可以直接定位同一标签内的指定候选。 */
@@ -67,13 +67,35 @@ function ChapterCandidateList({ base, onOpen }: { base: string; onOpen: (id: str
   </section>;
 }
 
-/** 行号基于候选前后两版；显示公开差异范围，决定时提交该处的 ID。 */
-function changeBlocks(proposal: Proposal, change: Change, lineDelta: number): FileDiffBlock[] {
-  const beforeStart = 1 + countNewlines(proposal.baseContent.slice(0, change.start));
-  const blocks: FileDiffBlock[] = [];
-  if (change.before) blocks.push({ kind: 'removed', beforeStart, afterStart: null, lines: splitLines(change.before) });
-  if (change.after) blocks.push({ kind: 'added', beforeStart: null, afterStart: beforeStart + lineDelta, lines: splitLines(change.after) });
-  return blocks;
+function reviewLines(start: number, value: string) {
+  if (!value) return '';
+  const end = start + countNewlines(value.trimEnd());
+  return end === start ? `第 ${start} 行` : `第 ${start}–${end} 行`;
+}
+
+/** 两版分开排版，词句高亮只帮助阅读，使用后端已确定的整处差异做审批。 */
+function ManuscriptComparison({ change, beforeLine, afterLine, context }: {
+  change: Change; beforeLine: number; afterLine: number; context: string;
+}) {
+  const highlights = useMemo(() => {
+    const tokenize = (text: string) => Array.from(words.segment(text), ({ segment }) => segment);
+    return diffArrays(tokenize(change.before), tokenize(change.after), { timeout: 100 });
+  }, [change.before, change.after]);
+  return <div className="plotloom-candidate-comparison">
+    {(['before', 'after'] as const).map(side => {
+      const text = change[side];
+      const label = side === 'before' ? '修改前' : '修改后';
+      return <section key={side} aria-label={label} data-side={side}>
+        <header><h3>{label}</h3><span>{reviewLines(side === 'before' ? beforeLine : afterLine, text)}</span></header>
+        {text ? <div className="plotloom-candidate-comparison__text">{highlights ? highlights.map((part, index) => {
+          if (side === 'before' ? part.added : part.removed) return null;
+          const value = part.value.join('');
+          return part.added || part.removed ? <mark key={index}>{value}</mark> : value;
+        }) : text}</div> : <p>{side === 'before' ? '此处新增' : '此处删除'}</p>}
+      </section>;
+    })}
+    {context ? <details><summary>查看后文</summary><div className="plotloom-candidate-comparison__text">{context}</div></details> : null}
+  </div>;
 }
 
 /** 审阅只请求这一轮交付的候选，逐处决定仍走公开协议。 */
@@ -119,7 +141,11 @@ function ChapterCandidate({ base, id, onBack, onAccepted }: {
   const index = change && proposal ? proposal.changes.indexOf(change) : -1;
   const lineDelta = index >= 0 && proposal ? proposal.changes.slice(0, index)
     .reduce((delta, item) => item.status === 'accepted' ? delta + countNewlines(item.after) - countNewlines(item.before) : delta, 0) : 0;
-  const display = proposal && change ? changeBlocks(proposal, change, lineDelta) : [];
+  const beforeLine = proposal && change ? 1 + countNewlines(proposal.baseContent.slice(0, change.start)) : 1;
+  const afterLine = beforeLine + lineDelta;
+  // 只展示下一处差异前的原文。正文后移时仍可核对同一段落。
+  const context = proposal && change ? proposal.baseContent.slice(change.end, proposal.changes[index + 1]?.start)
+    .trimStart().split(/(?:\r\n|\r|\n)[\t ]*(?:\r\n|\r|\n)/u, 1)[0] : '';
   const disabled = busy || !change;
   return <section className="plotloom-candidate-panel" aria-label="审阅候选差异">
     <header className="plotloom-candidate-panel__header">
@@ -129,8 +155,8 @@ function ChapterCandidate({ base, id, onBack, onAccepted }: {
     <div className="plotloom-candidate-panel__progress" role="status">
       {change ? `第 ${index + 1} / ${proposal!.changes.length} 处 · 剩余 ${pending.length} 处` : proposal ? '全部差异已处理' : ' '}
     </div>
-    <ScrollBox key={change?.id} orientation="both" reserveScrollbarSpace={false} className="plotloom-candidate-panel__diff" aria-label="当前差异">
-      {change ? <FileDiff blocks={display} label={`第 ${index + 1} 处差异`} /> : !proposal ?
+    <ScrollBox key={change?.id} reserveScrollbarSpace={false} className="plotloom-candidate-panel__diff" aria-label="当前差异">
+      {change ? <ManuscriptComparison change={change} beforeLine={beforeLine} afterLine={afterLine} context={context} /> : !proposal ?
         (failed ? <Button size="sm" onClick={() => { setFailed(false); setAttempt(value => value + 1); }}>重试读取候选</Button> : <p role="status">正在读取候选…</p>) : null}
     </ScrollBox>
     <footer className="plotloom-candidate-panel__actions">

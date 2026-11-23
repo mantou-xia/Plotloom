@@ -18,7 +18,7 @@ const parameters = Type.Object({
 }, { additionalProperties: false });
 interface BrowserInput { action: string; url?: string; ref?: string; selector?: string; text?: string; key?: string; deltaY?: number; tab?: number }
 interface BrowserSession { context: BrowserContext; page: Page }
-export interface BrowserOptions { headless?: boolean; channel?: 'chrome' | 'msedge' }
+export interface BrowserOptions { headless?: boolean; channel?: 'chrome' | 'msedge'; executablePath?: string }
 
 /** 每个聊天独占持久浏览器目录；懒启动避免普通聊天和读取历史时打开窗口。 */
 export class SessionBrowsers {
@@ -40,7 +40,9 @@ export class SessionBrowsers {
     if (!opening) {
       opening = (async () => {
         const context = await chromium.launchPersistentContext(resolve(this.dataDir, 'browsers', id), {
-          channel: this.options.channel ?? (process.platform === 'win32' ? 'msedge' : 'chrome'),
+          // 桌面版固定使用随包分发的 Playwright 浏览器，Web 开发仍按原渠道启动。
+          ...(this.options.executablePath ? { executablePath: this.options.executablePath }
+            : { channel: this.options.channel ?? (process.platform === 'win32' ? 'msedge' : 'chrome') }),
           headless: this.options.headless ?? false, viewport: null, timeout: 20000,
         });
         context.setDefaultTimeout(12000);

@@ -11,6 +11,7 @@
   "dependencies": {
     "@plotloom/contracts": "workspace:*",
     "@plotloom/ui": "workspace:*",
+    "diff": "8.0.4",
     "lucide-react": "1.74.0",
     "mdast-util-from-markdown": "2.1.0",
     "react": "19.3.1",

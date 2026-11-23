@@ -7,6 +7,12 @@
 .pl-box-model-info span:nth-child(4) { color: #c4b5fd; }
 .pl-example-stage { position: relative; height: 100dvh; padding: 24px; overflow: auto; }
 .pl-example-target { height: 100%; }
+.pl-example-desktop-titlebar { position: relative; color: var(--pl-primary-text); }
+.pl-example-desktop-titlebar__controls { position: absolute; inset: 0 0 1px auto; display: flex; }
+.pl-example-desktop-titlebar__controls span { display: grid; place-items: center; width: 46px; }
+.pl-example-desktop-titlebar__controls svg { width: 12px; height: 12px; }
+.pl-example-desktop-titlebar__controls span:hover { background: color-mix(in srgb, currentColor 15%, transparent); }
+.pl-example-desktop-titlebar__controls span:last-child:hover { background: var(--pl-danger-surface); color: var(--pl-danger); }
 .pl-example-stage--tooltip .pl-example-target { display: flex; align-items: center; justify-content: center; }
 .pl-example-stage--glass .pl-example-target { position: relative; display: grid; align-items: center; justify-items: center; }
 .pl-card-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }

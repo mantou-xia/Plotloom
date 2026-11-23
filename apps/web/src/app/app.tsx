@@ -22,6 +22,7 @@ import { AppSidebar, type AppPage } from '../features/navigation/app-sidebar';
 import { CreateProjectDialog } from '../features/navigation/create-project-dialog';
 import { ProjectSwitcher } from '../features/navigation/project-switcher';
 import { useAppRoute } from './app-route';
+import { DesktopTitleBar } from './desktop-title-bar';
 import './app.css';
 
 /** 品牌、页面导航和保存反馈属于应用；布局、按钮及选色能力来自通用组件库。 */
@@ -204,6 +205,7 @@ export function App() {
   return (
     <ThemeRoot color={theme.color} mode={theme.mode} documentTheme>
       <ToastViewport />
+      <DesktopTitleBar accentColor={theme.color} />
       {/* 两级页面共用外壳和侧栏宽度；保留主导航节点，返回时可恢复展开状态与焦点。 */}
       <GlobalLayout sidebar={<>
         <div hidden={settingsOpen} style={{ height: '100%' }}>

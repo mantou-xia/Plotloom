@@ -31,6 +31,7 @@ import { registerCharacterCardRoutes } from './routes/character-cards.ts';
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
 export async function buildServer(options: AgentOptions & { logger?: boolean }, dependencies: {
   folderPicker?: FolderPicker; openFolder?: typeof openRegisteredFolder; openDeliverable?: typeof openDeliverableExternally;
+  desktopToken?: string;
 } = {}) {
   const workspaces: WorkspaceService = new WorkspaceService(new FileWorkspaceStore(options.dataDir),
     (origin, change) => agent.recordFileWrite(origin.sessionId, change, origin.requestId));
@@ -86,6 +87,10 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
   app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: '接口不存在。' } }));
   // 本机无登录服务拒绝异站浏览器请求；P7 接入时在同源部署下使用本契约。
   app.addHook('onRequest', async (request, reply) => {
+    // 桌面窗口经主进程转发；仅监听回环仍需防止同机其他客户端直接调用桌面服务。
+    if (dependencies.desktopToken && request.headers['x-plotloom-desktop'] !== dependencies.desktopToken) {
+      return reply.code(403).send({ error: { code: 'ORIGIN_FORBIDDEN', message: '桌面服务仅接受应用窗口的请求。' } });
+    }
     const origin = request.headers.origin;
     if (origin && origin !== `http://${request.headers.host}`) {
       return reply.code(403).send({ error: { code: 'ORIGIN_FORBIDDEN', message: '不允许跨站访问本机服务。' } });

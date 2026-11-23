@@ -139,6 +139,34 @@ test('P2 Markdown 工作区公开接口闭环', async (t) => {
       assert(conflict.changes.every(c => c.status === 'pending'));
       assert.equal((await read(a, path)).content, '外部稿');
     });
+    await t.test('文稿按完整段落审批，保留后移原文并合并跨段移动', async () => {
+      const path = '正文章节/段落审阅.md';
+      const build = async (before: string, after: string, version: string | null = null) => {
+        const doc = await save(path, before, version);
+        return server.json<Proposal>(`/api/workspaces/${a}/proposals`, 'POST', { path, baseVersion: doc.version, content: after }, 201);
+      };
+      const first = '事情甲第一行。\r\n事情甲第二行。\r\n\r\n';
+      const expanded = '甲第一行改写。\r\n甲第二行改写。\r\n\r\n甲多了第三行。\r\n甲多了第四行。\r\n\r\n';
+      const next = '事情乙第一行。\r\n事情乙第二行。\r\n\r\n';
+      const before = first + next + '尾声。';
+      const expandedProposal = await build(before, expanded + next + '尾声改写。');
+      assert.deepEqual(expandedProposal.changes.map(({ before, after }) => [before, after]), [[first, expanded], ['尾声。', '尾声改写。']]);
+      await decide(expandedProposal, 0);
+      assert.equal((await read(a, path)).content, expanded + next + '尾声。');
+      await decide(expandedProposal, 1, 'reject');
+
+      const moved = '他带走了铜钥匙。';
+      const original = `他出门了。${moved}\n\n天色未变。\n\n她到了港口。\n\n隔开下一处。\n\n不相关旧段。`;
+      const relocated = `他出门了。\n\n天色未变。\n\n她到了港口。${moved}\n\n隔开下一处。\n\n不相关新段。`;
+      const movedProposal = await build(original, relocated, (await read(a, path)).version);
+      assert.equal(movedProposal.changes[0].before.includes(moved), true);
+      assert.equal(movedProposal.changes[0].after.includes(moved), true);
+      assert.equal(movedProposal.changes.length, 2);
+      await decide(movedProposal, 0);
+      const applied = (await read(a, path)).content;
+      assert.equal(applied, relocated.replace('不相关新段。', '不相关旧段。'));
+      assert.equal(applied.split(moved).length, 2);
+    });
     await t.test('先采纳前处再采纳后处；选区定位重复文字及 emoji', async () => {
       await save('选区.md', '相同😀\n保留\n相同😀\n结尾', null);
       const doc = await read(a, '选区.md'); const start = doc.content.lastIndexOf('相同');

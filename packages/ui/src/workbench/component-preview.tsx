@@ -1,6 +1,6 @@
 import { lazy, Suspense, useRef, useState } from 'react';
 import { BoxModelOverlay } from './box-model-overlay.tsx';
-import { ArrowRight, ChevronRight, Copy, Ellipsis, Plus, Trash2 } from 'lucide-react';
+import { ArrowRight, ChevronRight, Copy, Ellipsis, Minus, Plus, Square, Trash2, X } from 'lucide-react';
 import { DocumentListItem } from '../document-list/document-list-item.tsx';
 import { DocumentQuoteChip } from '../document-quote-chip/document-quote-chip.tsx';
 import { ActionMenu, ActionMenuItem } from '../action-menu/action-menu.tsx';
@@ -41,6 +41,7 @@ import { AsciiOcean } from '../ascii-ocean/ascii-ocean.tsx';
 import { ColorPicker } from '../color-picker/color-picker.tsx';
 import { ColorSwatches } from '../color-swatches/color-swatches.tsx';
 import { GlobalLayout } from '../layouts/global-layout.tsx';
+import { DesktopTitleBar } from '../layouts/desktop-title-bar.tsx';
 import { PageLayout } from '../layouts/page-layout.tsx';
 import { ThemeRoot } from '../theme/theme-root.tsx';
 import { THEME_PRESETS } from '../theme/theme.ts';
@@ -184,6 +185,13 @@ export function ComponentPreview({ component, state, color, controls, onColorCha
       </div>
     </ScrollBox>
   </>;
+  // 调试台复用实际标题栏，并模拟原生按钮的悬停反馈。
+  if (component === 'desktop-title-bar') target = <div className="pl-example-desktop-titlebar">
+    <DesktopTitleBar title="Plotloom" style={{ height: 36 }} />
+    <div className="pl-example-desktop-titlebar__controls" aria-hidden="true">
+      <span><Minus /></span><span><Square /></span><span><X /></span>
+    </div>
+  </div>;
   if (component === 'global-layout') target = <GlobalLayout variant={state === 'flat' ? 'flat' : 'inset'} style={style} sidebarWidth={controls.sidebarWidth} gap={controls.gap} contentPadding={controls.padding}
     sidebar={state === 'empty' ? null : <SidebarExample key={state} state={state} style={{ height: '100%' }} onAction={onAction} />}>
     {state === 'empty' ? null : <div style={{ display: 'grid', gap: 16 }}><strong>内容区</strong><p>侧栏融入主题背景，右侧内容卡片独立滚动。</p>{content}</div>}

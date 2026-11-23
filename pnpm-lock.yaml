@@ -28,6 +28,8 @@ importers:
         specifier: 8.3.8
         version: 8.3.8(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.0)
 
+  apps/desktop: {}
+
   apps/server:
     dependencies:
       '@plotloom/agent-pi':
@@ -88,6 +90,9 @@ importers:
       '@plotloom/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      diff:
+        specifier: 8.0.4
+        version: 8.0.4
       lucide-react:
         specifier: 1.74.0
         version: 1.74.0(@types/react@19.3.0)(react@19.3.1)

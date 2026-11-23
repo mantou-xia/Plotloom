@@ -1,0 +1,21 @@
+.plotloom-desktop-titlebar {
+  height: env(titlebar-area-height, 0px);
+  overflow: hidden;
+  background: var(--pl-primary-subtle);
+  color: var(--pl-primary-text);
+  border-bottom: 1px solid var(--pl-border);
+}
+
+/* Electron 提供可拖动区尺寸，右侧留给最小化、最大化和关闭按钮。 */
+.plotloom-desktop-titlebar__drag {
+  display: flex;
+  align-items: center;
+  width: env(titlebar-area-width, 100%);
+  height: 100%;
+  margin-left: env(titlebar-area-x, 0px);
+  padding-inline: 16px;
+  font-size: 13px;
+  font-weight: 650;
+  user-select: none;
+  app-region: drag;
+}

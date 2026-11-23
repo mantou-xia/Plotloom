@@ -4,7 +4,7 @@ import { EventEmitter, on } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { chapterFromTitle } from '@plotloom/contracts/writing';
 import type { ImportedChapter } from './chapter-import.ts';
-import { changesFor, checkSelection, checkVersion, documentPath, hash, invalid, missing, proposalStatus, renderProposal, WorkspaceError } from '@plotloom/domain';
+import { changesFor, checkSelection, checkVersion, documentPath, hash, invalid, manuscriptChanges, missing, proposalStatus, renderProposal, WorkspaceError } from '@plotloom/domain';
 import type { DocumentListEntry, DocumentView, ExportRequest, NovelShelfUpdate, PendingCommit, Proposal, ProposalRequest, RecoveryView, Reference, Revision, SaveDocumentRequest, Workspace } from '@plotloom/contracts/workspaces';
 import { countManuscriptCharacters, type NovelManuscriptStats } from '@plotloom/contracts/workspaces';
 
@@ -235,7 +235,9 @@ export class WorkspaceService {
         references.push({ path: chapter.path, version: hash(chapter.content) });
       }
       const selection = input.selection;
-      const changes = changesFor(selection ? selection.text : base.content, input.content, selection?.start ?? 0);
+      const before = selection?.text ?? base.content;
+      const changes = /^(正文章节|大纲)\//u.test(input.path) ? manuscriptChanges(before, input.content, selection?.start)
+        : changesFor(before, input.content, selection?.start ?? 0);
       if (!changes.length) invalid('候选没有实际修改。');
       const proposal: Proposal = { id: randomUUID(), path: input.path, baseVersion: base.version, baseContent: base.content,
         content: selection ? base.content.slice(0, selection.start) + input.content + base.content.slice(selection.end) : input.content,

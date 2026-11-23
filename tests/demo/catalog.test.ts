@@ -160,6 +160,37 @@ test('试验台书架示例和正文统计可提交并检查响应字段', async
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
+test('试验台可提交正文段落候选并按同一处采纳多段改写', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'plotloom-paragraph-demo-'));
+  const book = join(directory, 'book');
+  await mkdir(book);
+  const app = await buildServer({ dataDir: join(directory, 'data') });
+  try {
+    const workspace = await app.inject({ method: 'POST', url: '/api/workspaces', payload: { title: '段落比较', root: book } });
+    const workspaceId = workspace.json().id;
+    const path = '正文章节/第一章.md';
+    const document = await app.inject({ method: 'PUT', url: `/api/workspaces/${workspaceId}/document`, payload: {
+      path, baseVersion: null, content: '第一段原文。\n\n下一段不改。',
+    } });
+    assert.equal(document.statusCode, 200, document.body);
+    const create = API_CATALOG.find(endpoint => endpoint.id === 'proposals.create')!;
+    const replacement = '第一段改写。\n\n补充一段。\n\n';
+    const response = await app.inject({ method: create.method, url: create.path.replace(':workspaceId', workspaceId), payload: {
+      path, baseVersion: document.json().version, content: replacement + '下一段不改。',
+    } });
+    assert.equal(response.statusCode, create.success, response.body);
+    const candidate = response.json();
+    assert(checkFields(candidate, create.response).every(check => check.passed));
+    assert.equal(candidate.changes.length, 1);
+    assert.equal(candidate.changes[0].after, replacement);
+    const decide = API_CATALOG.find(endpoint => endpoint.id === 'proposals.decide')!;
+    const accepted = await app.inject({ method: decide.method, url: decide.path.replace(':workspaceId', workspaceId)
+      .replace(':proposalId', candidate.id).replace(':changeId', candidate.changes[0].id), payload: decide.examples[0].body });
+    assert.equal(accepted.statusCode, decide.success, accepted.body);
+    assert.equal(accepted.json().status, 'accepted');
+  } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
 test('SSE 中文字节跨块、CRLF、心跳、失败和断流结果可区分', async () => {
   const raw = ': heartbeat\r\n\r\nevent: accepted\r\ndata: {"sessionId":"test","messageId":"m1"}\r\n\r\n'
     + 'event: text_delta\r\ndata: {"sessionId":"test","delta":"灯塔-731"}\r\n\r\n'

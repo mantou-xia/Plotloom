@@ -758,6 +758,13 @@ export const componentCatalog: ComponentExample[] = [
     ],
   },
   {
+    id: 'desktop-title-bar', name: 'DesktopTitleBar', category: '布局组件', exportPath: './layouts/desktop-title-bar',
+    description: '桌面窗口标题栏，展示应用名称、可拖动区域和原生窗口按钮的位置。',
+    interaction: 'title 设置标题文字，style 可调整预览尺寸。切换主色和主题，悬停三个窗口按钮查看反馈。窗口操作在 Windows 桌面应用中验证。',
+    width: 520, height: 180,
+    states: [{ id: 'default', name: '标准标题栏', description: '标题栏随主色变化，右侧三个图标模拟原生按钮的悬停反馈。' }],
+  },
+  {
     id: 'global-layout', name: 'GlobalLayout', category: '布局组件', exportPath: './layouts/global-layout',
     description: '侧栏融入同色主题外壳，右侧保留白色内容卡片，弹性把手调节侧栏宽度。', interaction: '靠近中间显示把手；拖动调宽，越界阻尼并在松手后回弹。聚焦后方向键调整，Shift 加速，Home/End 到边界，双击或 Esc 恢复初始宽度。两侧独立滚动。', width: 1000, height: 600,
     states: [

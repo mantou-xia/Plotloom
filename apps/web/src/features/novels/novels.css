@@ -141,3 +141,12 @@
 .plotloom-candidate-panel__progress { min-height: 28px; padding-inline: 14px; color: var(--pl-text-muted); font-size: 12px; }
 .plotloom-candidate-panel__diff { flex: 1; margin-inline: 8px; padding: 8px; border-radius: 6px; background: var(--pl-surface); }
 .plotloom-candidate-panel__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 10px 8px; }
+.plotloom-candidate-comparison { display: grid; gap: 8px; min-width: 0; }
+.plotloom-candidate-comparison > section, .plotloom-candidate-comparison > details { padding: 10px 12px; border-radius: 6px; background: var(--pl-surface-muted); }
+.plotloom-candidate-comparison header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.plotloom-candidate-comparison h3, .plotloom-candidate-comparison p { margin: 0; font-size: 13px; }
+.plotloom-candidate-comparison header span, .plotloom-candidate-comparison p, .plotloom-candidate-comparison summary { color: var(--pl-text-muted); font-size: 12px; }
+.plotloom-candidate-comparison summary { cursor: pointer; }
+.plotloom-candidate-comparison__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plotloom-candidate-comparison mark { color: inherit; background: var(--pl-danger-surface, #f8d9da); }
+.plotloom-candidate-comparison [data-side='after'] mark { background: var(--pl-success-surface, #d5efdf); }

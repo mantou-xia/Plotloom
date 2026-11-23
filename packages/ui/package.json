@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./icons/dom": "./src/icons/dom.ts",
+    "./layouts/desktop-title-bar": "./src/layouts/desktop-title-bar.tsx",
     "./layouts/global-layout": "./src/layouts/global-layout.tsx",
     "./layouts/page-layout": "./src/layouts/page-layout.tsx",
     "./layouts/split-pane-layout": "./src/layouts/split-pane-layout.tsx",

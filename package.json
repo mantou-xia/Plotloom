@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=.env apps/server/src/main.ts",
     "web": "pnpm --filter @plotloom/web dev",
     "web:build": "pnpm --filter @plotloom/web build",
+    "desktop:win": "node scripts/package-windows.mjs",
     "web:preview": "pnpm --filter @plotloom/web preview",
     "ui": "pnpm --filter @plotloom/ui-demo dev",
     "ui:build": "pnpm --filter @plotloom/ui-demo build",

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": ".",
+    "outDir": "output/desktop-compiled"
+  },
+  "include": ["apps/server/src/**/*.ts", "packages/agent-pi/src/**/*.ts", "packages/application/src/**/*.ts", "packages/contracts/src/**/*.ts", "packages/domain/src/**/*.ts", "packages/storage/src/**/*.ts"]
+}
