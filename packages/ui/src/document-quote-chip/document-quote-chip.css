@@ -21,5 +21,6 @@
 .plotloom-chapter-quote-source { display: block; margin: 0 3px 8px; }
 .plotloom-chapter-quote-preview { display: grid; gap: 6px; max-height: min(234px, 42dvh); }
 .plotloom-chapter-quote-preview > div { padding: 8px 10px; border-radius: 6px; background: var(--pl-surface-muted, #f4f4f5); }
-.plotloom-chapter-quote-preview .plotloom-chapter-quote-comment { background: var(--pl-surface-selected, #eaf1fb); }
+/* 保留修改要求与原文的底色区分，两种主题都使用对应的背景色。 */
+.plotloom-chapter-quote-preview .plotloom-chapter-quote-comment { background: var(--pl-info-surface); }
 .plotloom-chapter-quote-preview p { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }

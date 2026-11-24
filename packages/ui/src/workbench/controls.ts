@@ -149,7 +149,7 @@ export function defaultControls(component: string, state: string): PreviewContro
     quotePath: '正文/第一章.md',
     quoteLocation: '第 12–14 行',
     quoteText: '潮水淹过石阶。\n远处的灯塔亮了起来。',
-    quoteComment: state === 'draft' ? '加强雾中的氛围。' : '',
+    quoteComment: component === 'document-quote-chip' ? '加强雾中的氛围。' : '',
     quoteRemovable: state === 'draft',
     readerFrameName: '工作区阅读指南.md',
     readerFramePath: 'docs/工作区阅读指南.md',

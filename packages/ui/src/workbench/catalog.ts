@@ -23,7 +23,7 @@ export const componentCatalog: ComponentExample[] = [
     interaction: 'path 和 location 设置标签，text 和 comment 设置预览内容。有 onRemove 时可点击独立移除按钮。',
     width: 560, height: 320, states: [
       { id: 'draft', name: '可移除引用', description: '查看修改要求和原文，点击移除触发回调。' },
-      { id: 'sent', name: '历史引用', description: '可查看原文，适用于已发送消息。' },
+      { id: 'sent', name: '历史引用', description: '在浅色和深色模式下查看修改要求与原文。清空 comment 可预览仅有原文的情况。' },
     ] },
   { id: 'action-menu', name: 'ActionMenu', category: '基础组件', exportPath: './action-menu',
     description: '紧贴触发按钮显示一组操作，支持图标和危险操作。',

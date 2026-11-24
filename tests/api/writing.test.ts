@@ -259,6 +259,20 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
     await t.test('世界观需逐条确认，按生效与揭示章节引用；交稿建议依赖对应正式稿', async () => {
       const world = '世界观.md';
       const session = '/api/sessions/' + chat.id;
+      const directWrite = await server.request(session + '/messages', 'POST', { text: plan([
+        { name: 'write', args: { path: world, content: '第五、六章全城宵禁。' } },
+      ]) });
+      const directEvents = [];
+      for await (const event of events(directWrite)) {
+        directEvents.push(event);
+        if (event.type === 'tool_approval_required') {
+          await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'deny' });
+        }
+      }
+      assertFinal(directEvents, 'completed');
+      assert(!directEvents.some(event => event.type === 'tool_approval_required' || event.type === 'user_answer_required'));
+      assert(directEvents.some(event => event.type === 'tool_end' && event.name === 'write' && event.outcome === 'failed'));
+      assert.equal((await read(world)).version, null);
       const rule = { subject: '内功境界', fact: '宗师之上还有归元境。', effective: 1, revealed: 10,
         evidence: { quote: '宗师之上还有归元境。' } };
       const steps = (args: typeof rule) => [{ name: 'propose_world_rule', args }];
@@ -291,48 +305,51 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert.equal(toolMessages.length, 4);
       assert.doesNotMatch(JSON.stringify(toolMessages), /归元境/);
       const source = { path: '正文章节/第十二章.md', baseVersion: null };
-      const quote = '江湖最后一座练功塔倒塌了。';
+      const quote = '凡以血契传功，师徒都要承受同样的伤。';
       const { result } = await send({ task: 'chapter', instructions: plan([review, proposal(source.path, quote),
-        { name: 'propose_world_rule', args: { subject: '练功塔', fact: '练功塔已全部倒塌。', effective: 12, revealed: 12, impact: '此后各门派都无法借练功塔传授内功。', evidence: { path: source.path, quote } } }]),
+        { name: 'propose_world_rule', args: { subject: '血契传功', fact: quote, effective: 1, revealed: 12, impact: '全书任何一次以血契传功，师徒都须承受同样的伤。', evidence: { path: source.path, quote } } }]),
         target: source, outline: { path: outline.path, version: outline.version } });
       const chapter = result.proposals.find((p: any) => p.path === source.path);
       const change = result.proposals.find((p: any) => p.path === world);
       assert(chapter && change);
       await json(prefix + '/proposals/' + change.id + '/changes/' + change.changes[0].id, 'POST', { action: 'accept' }, 409);
       await decide(chapter); await decide(change);
-      assert.doesNotMatch(await context(11), /倒塌/);
-      assert.match(await context(12), /倒塌/);
-      assert.doesNotMatch(await context(4), /归元|倒塌/);
+      assert.doesNotMatch(await context(11), /血契/);
+      assert.match(await context(12), /血契/);
+      assert.doesNotMatch(await context(4), /归元|血契/);
     });
-    await t.test('新章交稿后用正式版本核对重要世界观变化，普通细节和过期证据无法保存', async () => {
+    await t.test('新章交稿后可提议全书规则，阶段性剧情、缺少影响说明和过期证据无法保存', async () => {
       const session = '/api/sessions/' + chat.id;
       const world = '世界观.md';
       const before = await read(world);
-      const impact = '此后沿海城镇都必须改用陆路补给。';
-      for (const scenario of ['minor', 'edited', 'accepted']) {
-        const number = { minor: 21, edited: 22, accepted: 23 }[scenario]!;
-        const quote = scenario === 'minor' ? '林舟今天改走陆路。' : '潮门封闭之后，沿海所有港口从此无法通航。';
+      const rule = '任何人施术复活死者，都要折损自己的寿命。';
+      const impact = '全书任何一章出现复活，施术者均须承担折寿的代价。';
+      for (const scenario of ['temporary', 'missingImpact', 'edited', 'accepted'] as const) {
+        const number = { temporary: 21, missingImpact: 24, edited: 22, accepted: 23 }[scenario];
+        const temporary = scenario === 'temporary';
+        const quote = temporary ? '城门从今日起关闭两天，林舟只能走水路。' : rule;
         const seen = [];
         const text = `写第${number}章：${quote}\n` + plan([
           { name: 'write_chapter_part', args: { part: 1, content: quote } }, review,
           { name: 'deliver_chapter', args: { partCount: 1, reason: '交稿' } },
           { name: 'list_documents', args: {} },
           { name: 'propose_world_rule', args: {
-            subject: '沿海通航', fact: quote, effective: number, revealed: number,
-            evidence: { path: `正文章节/第${number}章.md`, quote }, ...(scenario === 'minor' ? {} : { impact }),
+            subject: temporary ? '城门关闭' : '复活代价', fact: quote, effective: temporary ? number : 1, revealed: number,
+            evidence: { path: `正文章节/第${number}章.md`, quote },
+            ...(scenario === 'missingImpact' ? {} : { impact: temporary ? '接下来两章，进城必须走水路。' : impact }),
           } },
         ]);
         for await (const event of events(await server.request(session + '/messages', 'POST', { text }))) {
           seen.push(event);
           if (event.type !== 'tool_approval_required' && event.type !== 'user_answer_required') continue;
           const preview = event.type === 'tool_approval_required' ? event.approval.preview : event.question.question;
-          if (preview.includes('对后续剧情的影响')) {
-            assert.notEqual(scenario, 'minor');
+          if (preview.includes('对全书写作的约束')) {
+            assert(scenario === 'edited' || scenario === 'accepted');
             assert(preview.includes(impact));
             if (scenario === 'edited') {
               const path = `正文章节/第${number}章.md`;
               const doc = await read(path);
-              await save(path, '作者改稿：只有潮门港暂时封闭。', doc.version);
+              await save(path, '作者改稿：复活代价暂未揭示。', doc.version);
             }
           }
           if (event.type === 'tool_approval_required')
@@ -343,7 +360,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
         const result = seen.find(event => event.type === 'tool_end' && event.name === 'propose_world_rule');
         assert(result?.type === 'tool_end');
         assert.equal(result.outcome, scenario === 'accepted' ? 'completed' : 'failed');
-        if (scenario === 'accepted') assert((await read(world)).content.includes(quote));
+        if (scenario === 'accepted') assert.match((await read(world)).content, /生效章节：1\n揭示章节：23\n\n任何人施术复活死者/);
         else assert.equal((await read(world)).version, before.version);
       }
     });

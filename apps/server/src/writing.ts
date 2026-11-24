@@ -102,10 +102,11 @@ export async function writingResources(service: WritingService, sessionId: strin
       action: { enum: ['list', 'refresh', 'open', 'preview', 'edit', 'finalize', 'history', 'read_final', 'restore', 'discard', 'export_txt'] },
       path: pathSchema, content: { type: 'string', maxLength: 8000 }, revisionId: { type: 'string', maxLength: 80 },
     }, ['action']), (input, signal, confirm) => run.manuscript(input, signal, confirm)), confirmable: true, confirmationOptions: ['确认操作', '取消操作'] },
-    { ...tool('propose_world_rule', '提交一条世界设定。effective 是规则生效章，revealed 是主角得知章或 null。作者直接讲的设定可省略 evidence，或只给 quote 引用本轮原话。章节取证时，只提持续影响后续的世界规则变化或明确补充的重要背景，须给出 evidence 和 impact。普通情节与人物变化留在正文。同主题沿用原名称。', objectSchema({
+    { ...tool('propose_world_rule', '提交一条从开篇到结尾都必须遵守的世界底层规则，请作者确认。阶段性情节、局部见闻和人物变化留在对应文稿。作者直接讲的规则可省略 evidence，或只给 quote 引用本轮原话。章节取证须给出明确确立该规则的原句 evidence 和全书适用场景 impact。同主题沿用原名称。', objectSchema({
       subject: { ...text, maxLength: 80 }, fact: { ...text, maxLength: 500 },
-      effective: { type: 'integer', minimum: 1, maximum: 999999 }, revealed: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 999999 }] },
-      impact: { ...text, maxLength: 300, description: '章节建议须说明后续哪些情节受该变化持续约束。' },
+      effective: { type: 'integer', minimum: 1, maximum: 999999, description: '全书规则从开篇成立，填 1。' },
+      revealed: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 999999 }], description: '主角实际得知的章号，未揭示填 null。' },
+      impact: { ...text, maxLength: 300, description: '章节建议须说明全书任一章节出现哪些情形时都必须遵守这条规则。' },
       evidence: objectSchema({ path: { ...pathSchema, description: '实际章节的 .md 相对路径；作者本轮口述请省略。' }, quote: { ...text, maxLength: 300 } }, ['quote']),
     }, ['subject', 'fact', 'effective', 'revealed']), (input, signal, confirm) => run.proposeRule(input, signal, confirm)), confirmable: true },
     ...((input.chatChapter || input.task === 'discuss') && characterCards ? [{ ...tool('propose_character_change', '提交交稿后的单个角色卡变化建议。必须引用本章交稿原句；确认卡会展示原阶段、证据和建议新阶段，作者确认后才保存。', objectSchema({
