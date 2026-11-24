@@ -39,6 +39,9 @@ export default async function verifyChapterExport(page, origin, bookRoot) {
     { name: 'review_writing', args: { status: 'clear', issues: [] } },
     { name: 'deliver_chapter', args: { partCount: 1, reason: '交付第四章' } },
   ]);
+  const outlineApproval = page.getByRole('region', { name: '保存本章大纲' });
+  await outlineApproval.getByRole('button', { name: '允许一次', exact: true }).click();
+  await outlineApproval.waitFor({ state: 'hidden' });
   const approve = page.getByRole('button', { name: '允许一次', exact: true });
   const legacy = page.getByRole('form', { name: /新建正文/ });
   await approve.or(legacy).first().waitFor();
@@ -46,6 +49,7 @@ export default async function verifyChapterExport(page, origin, bookRoot) {
   else await answer(/新建正文/, true);
   const panel = page.getByRole('region', { name: '正文章节工作区' });
   await panel.getByRole('heading', { name: '第四章 归舟' }).waitFor();
+  assert((await readFile(join(bookRoot, '大纲', '第4章.md'), 'utf8')).startsWith('承接前三章，林舟决定开船。'));
   const files = await readdir(join(bookRoot, '正文章节'));
   const chapters = files.filter(name => /^第(?:四|4)章.*\.md$/.test(name));
   assert.equal(chapters.length, 1);

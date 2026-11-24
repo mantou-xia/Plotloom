@@ -1,10 +1,10 @@
-import type { BusinessTool, RequestResources } from '@plotloom/agent-pi';
+import { AgentError, type BusinessTool, type RequestResources } from '@plotloom/agent-pi';
 import { CHAPTER_PART_LIMIT, WritingService, WRITING_ENTRY, writingPrompt, type ChapterChatRequest } from '@plotloom/application/writing';
 import type { WorkspaceService } from '@plotloom/application';
 import type { MessageSources } from '@plotloom/contracts/sources';
 import type { SubmitMessageRequest } from '@plotloom/contracts';
 import type { WritingRecord, WritingRequest } from '@plotloom/contracts/writing';
-import { checkVersion, invalid } from '@plotloom/domain';
+import { checkVersion, invalid, WorkspaceError } from '@plotloom/domain';
 import { chapterFromTitle, newChapterPath, WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import type { MessageSourceService } from '@plotloom/application/sources';
 import type { CharacterCardService } from '@plotloom/application/character-cards';
@@ -22,7 +22,8 @@ export async function chapterChat(workspaces: WorkspaceService, cards: Character
   const command = /^(?:请\s*)?(?:帮我\s*)?(?:重写|写出|写完|写|生成|完成|创作|撰写)[ \t]*(第[0-9一二两三四五六七八九十百千零〇]+章)(?=[\s：:，,。]|$)/.exec(text);
   if (!command) return { task: 'discuss', instructions: text, references };
   const chapterNumber = chapterFromTitle(command[1]);
-  if (!chapterNumber || chapterNumber > 999999 || !text.slice(command[0].length).replace(/^[\s：:，,。]+/, '').trim())
+  const outlineContent = text.slice(command[0].length).replace(/^[ \t]*(?:[：:，,。][ \t]*)?(?:\r?\n)?/, '');
+  if (!chapterNumber || chapterNumber > 999999 || !outlineContent.replace(/^[\s：:，,。]+/, '').trim())
     invalid('请提供有效章号和本章大纲，例如“写第四章：主角赴约”。');
   const { paths } = await workspaces.listDocuments(id);
   const chapters = paths.filter(path => path.startsWith('正文章节/'))
@@ -30,6 +31,10 @@ export async function chapterChat(workspaces: WorkspaceService, cards: Character
   const matches = chapters.filter(item => item.number === chapterNumber);
   if (matches.length > 1) invalid('本书有多份同章号正文，请先整理目标章节。');
   const path = matches[0]?.path ?? newChapterPath(chapterNumber);
+  const outlinePath = `大纲/第${chapterNumber}章.md`;
+  const existingOutlines = paths.filter(path => path.startsWith('大纲/') && chapterFromTitle(path.split('/').at(-1)!) === chapterNumber);
+  if (!existingOutlines.includes(outlinePath) && existingOutlines.length > 1) invalid('本书有多份同章号大纲，请先整理大纲目录。');
+  const chatOutline = { path: existingOutlines.includes(outlinePath) ? outlinePath : existingOutlines[0] ?? outlinePath, content: outlineContent };
   const previous = chapters.filter(item => item.number !== undefined && item.number < chapterNumber)
     .sort((a, b) => b.number! - a.number!).slice(0, 3);
   const applicable = (await cards.list(id, chapterNumber)).applicable;
@@ -46,7 +51,7 @@ export async function chapterChat(workspaces: WorkspaceService, cards: Character
     const doc = await workspaces.peek(id, item.path);
     if (doc.version) contextReferences.push({ path: item.path, version: doc.version, role: 'history' });
   }
-  return { task: 'chapter', chatChapter: true, chapterNumber, instructions: text, references: contextReferences, maxOutputChars: 20000,
+  return { task: 'chapter', chatChapter: true, chatOutline, chapterNumber, instructions: text, references: contextReferences, maxOutputChars: 20000,
     target: { path, baseVersion: (await workspaces.peek(id, path)).version } };
 }
 export const writingSchema = objectSchema({
@@ -85,10 +90,21 @@ export async function writingResources(service: WritingService, sessionId: strin
   if (input.worldviewVersion !== undefined) checkVersion(worldviewVersion, input.worldviewVersion);
   const tool = (name: string, description: string, parameters: Record<string, unknown>, execute: BusinessTool['execute']): BusinessTool => ({ name, description, parameters,
     execute: (value, signal, confirm) => service.trackWrites(sessionId, () => execute(value, signal, confirm)) });
-  const importPrompt = files.length ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。' : '';
+  const importPrompt = files.length
+    ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。'
+      + '作者若只要求导入，先简短说明导入结果。工具有 nextSteps 时，在最终回复中给出这三个可选方向并问他想从哪一个开始。用普通聊天文字提示，不发起选择卡或开始后续工作。写下一章可直接发「写第四章：」加大纲（章号按实际替换）。重复导入没有新增时只报告跳过。作者已明确安排后续工作时按原要求处理。'
+    : '';
   const chapterPrompt = input.chatChapter ? '\n作者的本轮消息就是大纲。依据前文和当章资料按自然段分批调用 write_chapter_part，每批建议 500–1000 字，章标题只写一次。收到暂存成功后再写下一批。全部暂存后调用 review_writing 审校，再用 deliver_chapter 提交总段数和理由，等待作者确认。交稿确认后先说明本章人物有无阶段变化；如确有变化，每次只用 propose_character_change 提交一个角色，必须引用本章交稿原句。'
     + (run.restoredParts.length ? '\n重试已恢复的草稿如下（按段号从 1 排列）。从最后一段接着写；已写完则直接审校交稿。\n' + JSON.stringify(run.restoredParts) : '') : '';
+  const archiveOutline = run.archiveOutline;
   return { key: run.record.id, fileScope: run.fileScope, replayInput: { ...input, worldviewVersion, chapterDraftId: run.draftId }, persistReplayInput: input.chatChapter,
+    beforeGenerate: archiveOutline ? async (signal, confirm) => {
+      try { await archiveOutline(signal, confirm); }
+      catch (error) {
+        if (error instanceof WorkspaceError) throw new AgentError(error.statusCode, error.code, error.message);
+        throw error;
+      }
+    } : undefined,
     systemPrompt: writingPrompt(run.record.context, input.chatChapter) + importPrompt + chapterPrompt, start: run.start, finish: run.finish, tools: [
     ...(input.chatChapter ? [{ ...tool('write_chapter_part', '暂存本章一段正文。段号从 1 连续递增，同号替换，段间自动插入空行。', objectSchema({
       part: { type: 'integer', minimum: 1 }, content: { ...text, maxLength: CHAPTER_PART_LIMIT },

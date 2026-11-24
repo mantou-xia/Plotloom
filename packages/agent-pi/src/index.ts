@@ -9,9 +9,9 @@ import type {
   AgentEvent, ModelConfig, ModelInfo, ModelSelection, SessionDetail, SessionOrganization, SessionListItem, SessionSummary, Outcome,
   ThinkingLevel, ModelSettings, ModelCapabilities, SessionActivity, SessionConfig, SessionConfigRequest,
   AgentQuestionAnswer, AgentPersona, AgentProfile, AgentProfileUpdate,
-  CreateSessionRequest, CreateProjectSessionRequest, ProjectFileChange, TurnFileChanges, SessionContext, SessionStats, SessionTools, CompactionResult, SubmitMessageRequest, ToolApprovalDecision, ProjectApprovalMode,
+  CreateSessionRequest, CreateProjectSessionRequest, ProjectFileChange, TurnFileChanges, SessionContext, SessionStats, SessionTools, CompactionResult, SubmitMessageRequest, ToolApprovalDecision, ProjectApprovalMode, PublicError,
 } from '@plotloom/contracts';
-import { AgentError, modelFailure } from './errors.ts';
+import { AgentError, modelFailure, publicError } from './errors.ts';
 import { ProviderStore } from './provider-settings.ts';
 import { dateContext } from './date-context.ts';
 import { readMessages, TURN_START, TURN_END, TURN_EVENT, turnUsage } from './messages.ts';
@@ -631,6 +631,24 @@ export class AgentService {
     return { id, status: this.summary(record).status };
   }
 
+  /** 轮次前置确认和模型工具共用审批记录、权限模式及停止语义。 */
+  private async approve(record: RecordState, ...[callId, request, signal, requireDecision = false]: Parameters<Approval>): ReturnType<Approval> {
+    if (!record.activeTurn || !record.emit || record.stopRequested) return 'cancelled';
+    const turnId = record.activeTurn;
+    const emit = record.emit;
+    // 模式受会话锁保护；调用方仍负责复核目标及取消信号。
+    if (this.projectApprovalMode(record) === 'full_access' && !requireDecision) {
+      record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation,
+        path: request.path, decision: 'full_access' });
+      return 'approve';
+    }
+    const approvals = record.approvals ??= new ToolApprovals();
+    const decision = await approvals.wait({ ...request, turnId, callId }, signal, approval =>
+      emit({ type: 'tool_approval_required', sessionId: record.manager.getSessionId(), approval }));
+    record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation, path: request.path, decision });
+    return decision;
+  }
+
   private async open(record: RecordState, execution?: TurnRequest['execution']): Promise<AgentSession> {
     if (record.session) return record.session;
     if (!record.opening) record.opening = (async () => {
@@ -642,22 +660,7 @@ export class AgentService {
         throw new AgentError(422, 'PROJECT_PATH_INVALID', '项目目录已变化，请重新选择项目。');
       const id = record.manager.getSessionId();
       // 项目文件工具使用受控定义。联网工具下方统一注册，继续沿用各自的会话隔离和访问规则。
-      const approve: Approval = async (callId, request, signal, requireDecision = false) => {
-        if (!record.activeTurn || !record.emit || record.stopRequested) return 'cancelled';
-        const turnId = record.activeTurn;
-        const emit = record.emit;
-        // 模式受会话锁保护；文件工具仍负责复核目标及取消信号。
-        if (this.projectApprovalMode(record) === 'full_access' && !requireDecision) {
-          record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation,
-            path: request.path, decision: 'full_access' });
-          return 'approve';
-        }
-        const approvals = record.approvals ??= new ToolApprovals();
-        const decision = await approvals.wait({ ...request, turnId, callId }, signal, approval =>
-          emit({ type: 'tool_approval_required', sessionId: id, approval }));
-        record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation, path: request.path, decision });
-        return decision;
-      };
+      const approve: Approval = (...args) => this.approve(record, ...args);
       const novel = Boolean(this.skillProfile(record.manager).workspaceId);
       const tools = projectPath
         ? createProjectTools(projectPath, await validateProjectPath(this.options.dataDir), approve,
@@ -801,6 +804,24 @@ export class AgentService {
       let aborted = false;
       let outcome: Outcome = 'failed';
       let modelError: string | undefined;
+      let preparationError: PublicError | undefined;
+      const transformContext = session.agent.transformContext;
+      const beforeGenerate = resources?.beforeGenerate;
+      if (beforeGenerate) {
+        let preparation: Promise<void> | undefined;
+        // SDK 已追加用户消息才组装模型上下文。把审批放在首个请求前，便于新聊天立刻展示审批卡。
+        session.agent.transformContext = async (messages, signal) => {
+          try {
+            await (preparation ??= beforeGenerate(signal, async (preview, target) =>
+              await this.approve(record, crypto.randomUUID(), { ...target, preview }, signal, true) === 'approve'));
+          } catch (error) {
+            preparationError = publicError(error);
+            throw error;
+          }
+          signal?.throwIfAborted();
+          return transformContext ? transformContext(messages, signal) : messages;
+        };
+      }
       const unsubscribe = session.subscribe((event) => {
         if (event.type === 'message_end') {
           // SDK 在同步通知之后才保存条目；微任务读取可取得真实且重启稳定的消息 ID。
@@ -851,6 +872,8 @@ export class AgentService {
       } catch {
         outcome = record.stopRequested ? 'aborted' : 'failed';
       } finally {
+        if (beforeGenerate) session.agent.transformContext = transformContext;
+        if (preparationError && outcome !== 'aborted') outcome = 'failed';
         unsubscribe();
         record.approvals?.cancel();
         record.questions?.cancel();
@@ -870,7 +893,7 @@ export class AgentService {
       }
       if (outcome === 'completed') emit({ type: 'completed', sessionId: id, usage: turnUsage(record.manager, startIndex) });
       else if (outcome === 'aborted') emit({ type: 'aborted', sessionId: id });
-      else emit({ type: 'failed', sessionId: id, error: modelFailure(modelError) });
+      else emit({ type: 'failed', sessionId: id, error: preparationError ?? modelFailure(modelError) });
     };
   }
 

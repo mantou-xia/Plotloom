@@ -111,7 +111,7 @@ async (page) => {
   await page.screenshot({ path: 'output/playwright/work-start-narrow.png' });
   noModels = true;
   await page.reload();
-  await page.getByText('暂无已配置凭据的模型，请先配置本机模型。', { exact: true }).waitFor();
+  await page.getByText('在「设置 → 模型服务」配置好模型后，就可以开始对话了。', { exact: true }).waitFor();
   await page.locator('.plotloom-work-start .plotloom-task-composer [data-motion-surface][inert]').waitFor();
   assert(creations.length === 2, '无模型时显示提示且输入区不可操作');
   await page.unroute('**/api/**');

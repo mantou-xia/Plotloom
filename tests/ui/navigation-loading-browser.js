@@ -49,7 +49,7 @@ async page => {
   project.resolve({ projects: [] });
   await nav.getByText('暂无项目', { exact: true }).waitFor();
   assert((await recent.boundingBox()).y === before, '骨架换成空态时不应推挤侧栏分类');
-  await page.getByText('暂无已配置凭据的模型，请先配置本机模型。').waitFor();
+  await page.getByText('在「设置 → 模型服务」配置好模型后，就可以开始对话了。', { exact: true }).waitFor();
   const initialModelReads = modelReads;
 
   await navButton('小说管理').click();
@@ -66,7 +66,7 @@ async page => {
   skills.resolve([skill]);
   await page.getByText(skill.name, { exact: true }).waitFor();
   await navButton('新聊天').click();
-  await page.getByText('暂无已配置凭据的模型，请先配置本机模型。').waitFor();
+  await page.getByText('在「设置 → 模型服务」配置好模型后，就可以开始对话了。', { exact: true }).waitFor();
   assert(modelReads === initialModelReads, '返回新聊天应复用已经读取的模型配置');
   skills = Promise.withResolvers();
   await navButton('技能').click();

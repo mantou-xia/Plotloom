@@ -3,6 +3,7 @@ async page => {
   const origin = new URL(page.url()).origin;
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const button = name => page.getByRole('button', { name, exact: true });
+  const guide = page.getByText('把旧稿（TXT 或 Markdown）发给我，说「导入这些章节」。我也能从正文整理角色卡、提炼全书设定，或按大纲起草新章。', { exact: true });
   const read = async (base, path) => (await page.request.post(base + "/document/read", { data: { path } })).json();
   const plan = (steps, extra) => 'WRITE:' + JSON.stringify({ steps, ...extra });
 
@@ -27,12 +28,12 @@ async page => {
     await dialog.getByLabel('本机文件夹').fill(project.path + '-novel-' + suffix);
     await button('创建并开始对话').click();
     await page.getByRole('heading', { name: '继续创作《' + name + '》' }).waitFor();
+    await guide.waitFor();
     const id = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('workspace');
     assert(id && (await (await page.request.get(origin + '/api/workspaces/' + id)).json()).title === name, '初始聊天归属新书');
     await page.reload();
     await page.getByRole('heading', { name: '继续创作《' + name + '》' }).waitFor();
     if (suffix === 'sidebar') {
-      await page.getByText(/故事开头，主角生活在一个怎样的世界/).waitFor();
       const startPage = page.url();
       await page.getByRole('textbox', { name: '输入消息，/ 调用技能，@ 引用文件' }).fill(plan([{ name: 'propose_world_rule',
         args: { subject: '内功', fact: '归元境只见于古籍。', effective: 1, revealed: 10 } }]));
@@ -47,7 +48,7 @@ async page => {
         return (await doc.json()).content.includes('归元境');
       }, id);
       await page.goto(startPage);
-      await page.getByText('从这里开始一段新的对话。').waitFor();
+      await guide.waitFor();
     }
   }
   await page.goto(origin + '/#page=novels');

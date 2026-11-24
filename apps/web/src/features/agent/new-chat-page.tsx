@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, 
 import type { ModelConfig, ModelInfo, ProjectApprovalMode, ProjectFiles, SessionSummary, ThinkingLevel } from '@plotloom/contracts';
 import type { Attachment } from '@plotloom/contracts/sources';
 import type { SkillInfo, SkillSettings } from '@plotloom/contracts/skills';
-import { WORLDVIEW_PATH } from '@plotloom/contracts/writing';
 import { ATTACHMENT_TYPES, SOURCE_LIMITS } from '@plotloom/contracts/sources';
 import { AsciiOcean } from '@plotloom/ui/ascii-ocean';
 import { chatDraft } from './chat-draft';
@@ -64,16 +63,6 @@ export function NewChatPage({ modelRevision, modelSnapshotRef, skillRevision, dr
 }) {
   const modelState = useNewChatModels(modelRevision, modelSnapshotRef);
   const [pending, setPending] = useState(false);
-  const [unstartedWorld, setUnstartedWorld] = useState<string | null>(null);
-  // 以本书正式资料为准，换会话或换浏览器都能识别已确认的世界观。
-  useEffect(() => {
-    if (!workspaceId) return;
-    const controller = new AbortController();
-    requestJson<{ paths: string[] }>('/api/workspaces/' + encodeURIComponent(workspaceId) + '/documents', 'GET', undefined, controller.signal)
-      .then(({ paths }) => { if (!controller.signal.aborted) setUnstartedWorld(paths.includes(WORLDVIEW_PATH) ? null : workspaceId); })
-      .catch(() => { if (!controller.signal.aborted) setUnstartedWorld(null); });
-    return () => controller.abort();
-  }, [workspaceId]);
   const attachmentDropTarget = useRef<HTMLElement>(null);
   const root = projectPath.trim();
   return <section ref={attachmentDropTarget} className="plotloom-work-start" aria-label="工作初始页">
@@ -83,8 +72,8 @@ export function NewChatPage({ modelRevision, modelSnapshotRef, skillRevision, dr
       <div className="plotloom-work-start__heading" role="heading" aria-level={1}>
         {workspaceId ? (workspaceTitle ? <>继续创作《{workspaceTitle}》</> : '小说对话') : root ? <>你想在 {renderProjectControl(pending)} 中完成什么？</> : renderProjectControl(pending)}
       </div>
-      <p>{workspaceId && unstartedWorld === workspaceId ? '故事开头，主角生活在一个怎样的世界？可以先讲一条规则，或把已有的章节发给我。'
-        : workspaceId || root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
+      <p>{workspaceId ? '把旧稿（TXT 或 Markdown）发给我，说「导入这些章节」。我也能从正文整理角色卡、提炼全书设定，或按大纲起草新章。'
+        : root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
     </div>
     <NewChatDraft draftRevision={draftRevision} projectPath={workspaceId ? novelRoot ?? '' : projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
       modelState={modelState} skillRevision={skillRevision} pending={pending} setPending={setPending} onStarted={onStarted} quoteDraft={quoteDraft} />
@@ -185,7 +174,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
       <div className="plotloom-work-start__feedback" role="status">
         {/* 首次进入时静默加载模型；项目切换复用配置，只在失败或无可用模型时提示。 */}
         {failed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新加载模型</Button>
-          : !loaded ? null : !chosen ? '暂无已配置凭据的模型，请先配置本机模型。' : pending ? '正在开始对话…' : null}
+          : !loaded ? null : !chosen ? '在「设置 → 模型服务」配置好模型后，就可以开始对话了。' : pending ? '正在开始对话…' : null}
       </div>
       <TaskComposer draftContext={quoteDraft?.items.length ? <ChapterQuoteList draft={quoteDraft} /> : null}
         options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !loaded || !chosen || failed, busy: pending,

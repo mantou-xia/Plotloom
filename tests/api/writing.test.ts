@@ -353,7 +353,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
             }
           }
           if (event.type === 'tool_approval_required')
-            await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'approve' });
+            await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: event.approval.path.startsWith('大纲/') ? 'deny' : 'approve' });
           else await json(session + '/questions/' + event.question.id + '/answer', 'POST', { kind: 'option', index: 1 });
         }
         assertFinal(seen, 'completed');
@@ -502,6 +502,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       const ids = await Promise.all(originals.map((file, index) => attach(`样本${index + 1}.txt`, file)));
       const expected = ['正文章节/第1章.md', '正文章节/第2章.md', '正文章节/第3章.md'];
       const paths = async () => (await json(bookPath + '/documents')).paths.filter((path: string) => path.startsWith('正文章节/'));
+      const importResult = () => JSON.parse(fixture.requests.at(-1).messages.findLast((message: any) => message.role === 'tool').content);
       async function run(attachmentIds: string[], decision: 'accept' | 'skip' | 'stop' | 'ambiguous', expectedCount = 0,
         expectedTitles = /第一章重回[\s\S]*第二章往日[\s\S]*第三章访客/) {
         const received = [];
@@ -522,17 +523,24 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       }
       await run([await attach('没有章号.txt', '需要先核对的正文。')], 'ambiguous');
       await run(ids, 'skip');
+      assert.equal(importResult().nextSteps, undefined);
       await run(ids, 'stop');
       assert.deepEqual(await paths(), []);
       const imported = await run(ids, 'accept');
       assert(imported?.type === 'tool_end');
       assert.equal(imported.manuscriptView?.path, expected[0]);
+      assert.match(importResult().nextSteps, /角色卡.*全书都适用.*下一章的大纲/);
+      // 推理模型的协议可能用 developer 角色传递同一份系统指令。
+      const instructions = JSON.stringify(fixture.requests.at(-1).messages.filter((message: any) => ['system', 'developer'].includes(message.role)));
+      assert.match(instructions, /讨论时先回答作者的问题.*在结尾简短建议一项/);
+      assert.match(instructions, /先简短说明导入结果.*最终回复.*问他想从哪一个开始.*不发起选择卡/);
       assert.deepEqual((await paths()).sort(), expected.slice().sort());
       for (const [index, path] of expected.entries()) {
         const original = originals[index].replace(/^\r\n/, '');
         assert.equal(await readFile(join(other, path), 'utf8'), '# ' + original.replace('\r\n', '\r\n\r\n'));
       }
       await run(ids, 'accept', 3);
+      assert.equal(importResult().nextSteps, undefined);
       const doc = await json(bookPath + '/document/read', 'POST', { path: expected[1] });
       await json(bookPath + '/document', 'PUT', { path: doc.path, baseVersion: doc.version, content: '作者手改。' });
       const conflict = await run(ids, 'accept', 3);
@@ -549,6 +557,66 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert(legacyConflict?.type === 'tool_end' && legacyConflict.outcome === 'failed');
       assert.deepEqual((await paths()).sort(), [...expected, legacy].sort());
       assert.equal(await readFile(join(other, legacy), 'utf8'), '# 第十一章 旧标题\n\n原文。');
+    });
+    await t.test('聊天写章先确认大纲留档，跳过仍可写，旧稿可查且审批期间的手改受保护', async () => {
+      const session = '/api/sessions/' + chat.id;
+      const path = '大纲/第83章.md';
+      const steps = [{ name: 'write_chapter_part', args: { part: 1, content: '章节草稿。' } }];
+      const first = '1. 林舟赴约。\r\n\r\n2. 发现密信。\n' + plan(steps);
+      const second = '1. 林舟赴约。\n2. 密信被调包。\n' + plan(steps);
+      const discuss = await collect(await server.request(session + '/messages', 'POST', { text: '讨论第83章大纲。\n' + plan([]) }));
+      assertFinal(discuss, 'completed');
+      assert(!discuss.some(event => event.type === 'tool_approval_required'));
+      assert(fixture.requests.at(-1).messages.some((message: any) => /结尾询问是否需要保存大纲并开始写正文/.test(JSON.stringify(message.content))));
+      assert.equal((await read(path)).version, null);
+      const run = async (content: string, decision: 'approve' | 'deny' | 'stop' | 'conflict', expectedVersion: string | null) => {
+        const seen = [];
+        const requestsBefore = fixture.requests.length;
+        for await (const event of events(await server.request(session + '/messages', 'POST', { text: '写第83章：\n' + content }))) {
+          seen.push(event);
+          if (event.type !== 'tool_approval_required') continue;
+          assert(seen.some(item => item.type === 'accepted'));
+          assert.equal(fixture.requests.length, requestsBefore, '确认前尚未向模型发起正文请求');
+          assert.equal(event.approval.path, path);
+          assert.equal((await read(path)).version, expectedVersion);
+          assert(event.approval.preview.endsWith(content));
+          if (decision === 'stop') await json(session + '/stop', 'POST');
+          else {
+            if (decision === 'conflict') await save(path, '等待确认时作者手改。', expectedVersion);
+            await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: decision === 'deny' ? 'deny' : 'approve' });
+          }
+        }
+        assert.equal(seen.filter(event => event.type === 'tool_approval_required').length, 1);
+        assertFinal(seen, decision === 'stop' ? 'aborted' : decision === 'conflict' ? 'failed' : 'completed');
+        if (decision === 'stop' || decision === 'conflict') assert.equal(fixture.requests.length, requestsBefore);
+        else assert(seen.some(event => event.type === 'tool_end' && event.name === 'write_chapter_part' && event.outcome === 'completed'));
+        return seen;
+      };
+      await json(session + '/config', 'PUT', { projectApprovalMode: 'full_access' });
+      await run(first, 'stop', null);
+      await run(first, 'deny', null);
+      assert.equal((await read(path)).version, null);
+      const skippedRetry = await collect(await server.request(session + '/retry', 'POST', { messageId: (await json(session)).retryMessageId }));
+      assertFinal(skippedRetry, 'completed');
+      assert(!skippedRetry.some(event => event.type === 'tool_approval_required'));
+      await run(first, 'approve', null);
+      const original = await read(path);
+      assert.equal(original.content, first);
+      await run(second, 'approve', original.version);
+      const updated = await read(path);
+      assert.equal(updated.content, second);
+      const history = await json(prefix + '/history', 'POST', { path });
+      assert.equal(history.revisions.length, 1);
+      assert.equal(history.revisions[0].version, original.version);
+      const archived = await json(prefix + '/export', 'POST', { files: [{ path, revisionId: history.revisions[0].id }] });
+      assert.equal(archived.files[0].content, first);
+      const approvedRetry = await collect(await server.request(session + '/retry', 'POST', { messageId: (await json(session)).retryMessageId }));
+      assertFinal(approvedRetry, 'completed');
+      assert(!approvedRetry.some(event => event.type === 'tool_approval_required'));
+      const conflict = await run('改用新线索。\n' + plan(steps), 'conflict', updated.version);
+      assert(conflict.some(event => event.type === 'failed' && event.error.code === 'REVISION_CONFLICT'));
+      assert.equal((await read(path)).content, '等待确认时作者手改。');
+      await json(session + '/config', 'PUT', { projectApprovalMode: 'required' });
     });
     await t.test('聊天大纲交付新章，重写候选保护作者正文及重试版本', async () => {
       const session = '/api/sessions/' + chat2.id;
@@ -569,7 +637,11 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       const resumePlan = plan([part(1, firstPart)], { waitBefore: 1,
         resumedSteps: [part(2, secondPart), review, deliver] });
       const stream = events(await server.request(session + '/messages', 'POST', { text: '写第四章：码头。\n' + resumePlan }));
-      for await (const event of stream) if (event.type === 'text_delta' && event.delta === '等待测试继续。') break;
+      for await (const event of stream) {
+        if (event.type === 'tool_approval_required')
+          await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'deny' });
+        if (event.type === 'text_delta' && event.delta === '等待测试继续。') break;
+      }
       await restart(true);
       const retryEvents = [];
       for await (const event of events(await server.request(session + '/retry', 'POST', { messageId: (await json(session)).retryMessageId }))) {
@@ -589,12 +661,16 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
           command + '，大纲如下本章大纲：\n\n1. 林舟从第三章接续。\n' + plan([part(1, '初稿。'), part(1, '第四章'), part(2, '交稿。'), review, deliver]) }))) {
           received.push(event);
           if (event.type !== 'tool_approval_required') continue;
+          if (event.approval.path.startsWith('大纲/')) {
+            await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'deny' });
+            continue;
+          }
           assert.equal(event.approval.path, file);
           assert.equal((await target(file)).content, expected);
           await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: answer === 1 ? 'approve' : 'deny' });
         }
         assertFinal(received, 'completed');
-        assert.equal(received.filter(event => event.type === 'tool_approval_required').length, 1);
+        assert.equal(received.filter(event => event.type === 'tool_approval_required').length, 2);
         return received.find(event => event.type === 'tool_end' && event.name === 'deliver_chapter');
       };
       const priorWrites = (await json(session + '/project-writes')).changes;
@@ -649,10 +725,15 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
           ]) }))) {
           received.push(event);
           if (event.type !== 'tool_approval_required') continue;
-          if (received.filter(item => item.type === 'tool_approval_required').length === 1) {
+          if (event.approval.path.startsWith('大纲/')) {
+            await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'deny' });
+            continue;
+          }
+          const approvals = received.filter(item => item.type === 'tool_approval_required' && !item.approval.path.startsWith('大纲/'));
+          if (approvals.length === 1) {
             await json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'approve' });
           } else {
-            if (received.filter(item => item.type === 'tool_approval_required').length === 2) {
+            if (approvals.length === 2) {
               if (edit === 'stop') { await json(session + '/stop', 'POST'); continue; }
               if (edit === 'other' || edit === 'evidence') {
                 const doc = await json(base + '/document/read', 'POST', { path: chapterPath });
@@ -670,7 +751,7 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
           }
         }
         assertFinal(received, edit === 'stop' ? 'aborted' : 'completed');
-        assert.equal(received.filter(item => item.type === 'tool_approval_required').length, edit === 'evidence' ? 3 : 2);
+        assert.equal(received.filter(item => item.type === 'tool_approval_required').length, edit === 'evidence' ? 4 : 3);
         return { received, chapterPath };
       };
       await runCharacterChange(5, 2);

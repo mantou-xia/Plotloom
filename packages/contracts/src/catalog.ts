@@ -442,7 +442,7 @@ export const API_CATALOG: EndpointDoc[] = [
   },
   {
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
-    description: '向指定会话提交一条消息，并实时接收文本、工具调用和最终状态。后端每轮按本机时区提供当前日期，内部日期上下文追加于历史末尾，不改写系统提示和旧消息，也不展示为用户正文。',
+    description: '向指定会话提交消息，实时接收文本、工具调用和最终状态。小说聊天用「写第四章：」加大纲发起写章，模型开始前通过 tool_approval_required 确认是否保存大纲。接受后写入大纲目录，旧稿保留在定稿记录中。拒绝留档仍会起草正文。审批时大纲被外部修改会发送 failed（REVISION_CONFLICT）。仅讨论大纲不弹保存审批。后端每轮按本机时区提供当前日期，内部日期上下文追加于历史末尾，不改写系统提示和旧消息，也不展示为用户正文。',
     note: '同一会话一次只处理一条请求。全局人设待设置时，Agent 可通过 user_answer_required 请求确认，确认前不写入人设。小说聊天支持审校与候选，可从 writing 查询创作记录。导入旧稿或交付新章时，新增正文使用正文章节/第4章.md 这样的阿拉伯数字章号路径，已存在的章节保留原路径。引用含 editComment 时，本轮仅开放精确选区写入。模型可调用 edit_quoted_selections 并通过 tool_approval_required 发起审批，批准且版本相符时仅替换所选字符。格式或选区错误返回 400，跨工作区或项目聊天尝试选区修改返回 403，版本不存在返回 404。审批时版本变化会在工具结果中报告冲突。成功的 tool_end 带有稿件刷新指令。技能从本次请求开始固定，skillIds 不改变启用设置，不可用技能返回 422。流以 completed、aborted 或 failed 结束。断开订阅不会停止生成，要终止模型请调用停止接口。',
     request: [id, field('text', 'string', false, '最多 100000 字符；文字、附件或文档引用至少有一项有效内容，纯附件/引用可省略。请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]'), ...SOURCE_REQUEST_FIELDS],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
@@ -455,6 +455,7 @@ export const API_CATALOG: EndpointDoc[] = [
       { name: '发送当前聊天附件', body: { text: '请根据附件整理线索。', attachmentIds: ['替换为附件ID'] } },
       { name: '小说聊天导入旧章节', body: { text: '请调用 import_chapters 导入本轮旧稿附件并让我确认。', attachmentIds: ['替换为TXT或Markdown附件ID'] } },
       { name: '小说聊天写新章', body: { text: '写第四章：林舟抵达码头，发现渡船提前离开。' } },
+      { name: '只讨论本章大纲', body: { text: '讨论第四章大纲：林舟抵达码头，发现渡船提前离开。帮我看看这个转折是否自然。' } },
       { name: '提醒为关键人物建卡', body: { text: '请核对本聊天已交付的章节，若有影响后续剧情且缺卡的人物，请引用原句提醒我建卡。先核对称呼，等我选择后再起草。' } },
       { name: '交稿后复核角色变化', body: { text: '请复核本聊天刚交付的第四章。逐一对照出场角色的适用卡片，引用证据段提出变化；如有变化请逐项让我确认。' } },
       { name: '新章交付后核对全书底层规则', body: { text: '写第二十三章：全城宵禁两天，林舟走水路进城，得知任何人施术复活死者都要折损自己的寿命。交稿后只为尚未收录、全书适用的底层规则提出建议，引用正式章稿原句并请我确认。' } },

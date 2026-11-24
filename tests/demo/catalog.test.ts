@@ -60,6 +60,8 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert(generation.examples.some(example => example.name === '修改小说文稿并在右侧采纳' && String(example.body.text).includes('manuscript_workspace')));
   assert(generation.examples.some(example => example.name === '审校润色并打开候选' && String(example.body.text).includes('propose_change')));
   assert(generation.examples.some(example => example.name === '小说聊天写新章' && String(example.body.text).startsWith('写第四章：')));
+  assert.match(generation.description, /tool_approval_required.*拒绝留档仍会起草正文.*REVISION_CONFLICT/);
+  assert(generation.examples.some(example => example.name === '只讨论本章大纲'));
   const worldRuleExample = generation.examples.find(example => example.name === '新章交付后核对全书底层规则');
   assert.match(String(worldRuleExample?.body.text), /宵禁两天.*复活死者.*全书适用/);
   for (const id of ['writing.context', 'writing.send']) {

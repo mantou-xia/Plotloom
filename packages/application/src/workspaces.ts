@@ -174,14 +174,21 @@ export class WorkspaceService {
     await this.store.observe(state, doc);
     return doc;
   }
-  save(id: string, input: SaveDocumentRequest, validate?: (documents: WorkspaceDocuments) => Promise<void>) {
+  save(id: string, input: SaveDocumentRequest, validate?: (documents: WorkspaceDocuments) => Promise<void>,
+    options?: { archivePrevious: boolean; signal?: AbortSignal }) {
     if (!input.content.isWellFormed()) invalid('Markdown 不能含有未配对的 UTF-16 代理字符。');
     return this.store.run(id, async (s) => {
       const current = await this.readObserved(s, input.path);
       checkVersion(current.version, input.baseVersion);
       if (validate) await validate({ listDocuments: async () => ({ paths: await this.store.files(s) }),
         readWithCreation: path => this.documentWithCreation(s, path) });
-      if (current.version !== hash(input.content)) await this.commit(s, current, input.content, 'manual');
+      if (current.version !== hash(input.content)) {
+        options?.signal?.throwIfAborted();
+        // 留档和覆盖共用工作区队列，历史先落盘，避免中断时丢失被替换的大纲。
+        if (options?.archivePrevious && current.version) await this.archiveRevision(s, current);
+        options?.signal?.throwIfAborted();
+        await this.commit(s, current, input.content, 'manual');
+      }
       return this.store.read(s, input.path);
     });
   }
@@ -189,20 +196,24 @@ export class WorkspaceService {
     documentPath(path);
     return this.store.run(id, async s => ({ revisions: s.finalized?.[path] ?? [] }));
   }
-  /** 定稿复用已保存正文的快照；重复确认同一内容不会增加记录。 */
+  /** 复用已观察到的快照；重复归档同一内容不会增加记录。 */
+  private async archiveRevision(state: WorkspaceState, current: DocumentView) {
+    const records = (state.finalized ??= {})[current.path] ??= [];
+    const existing = records.find(item => item.version === current.version);
+    if (existing) return existing;
+    const snapshot = state.history[current.path].at(-1)!;
+    const revision = { ...snapshot, createdAt: new Date().toISOString() };
+    records.push(revision);
+    await this.store.persist(state);
+    return revision;
+  }
+  /** 只留档经作者确认的当前版本，防止确认期间的手改一并被归档。 */
   finalize(id: string, input: { path: string; baseVersion: string | null }) {
     return this.store.run(id, async s => {
       const current = await this.readObserved(s, input.path);
       checkVersion(current.version, input.baseVersion);
       if (!current.version) missing();
-      const records = (s.finalized ??= {})[input.path] ??= [];
-      const existing = records.find(item => item.version === current.version);
-      if (existing) return existing;
-      const snapshot = s.history[input.path].at(-1)!;
-      const revision = { ...snapshot, createdAt: new Date().toISOString() };
-      records.push(revision);
-      await this.store.persist(s);
-      return revision;
+      return this.archiveRevision(s, current);
     });
   }
   restore(id: string, input: { path: string; revisionId: string; baseVersion: string | null }) {

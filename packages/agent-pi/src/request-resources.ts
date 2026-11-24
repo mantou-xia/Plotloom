@@ -17,6 +17,8 @@ export interface RequestResources {
   replayInput?: unknown;
   persistReplayInput?: boolean;
   key: string; systemPrompt: string; tools: BusinessTool[];
+  /** 用户消息已入历史后、首次模型请求前执行，可复用会话的文件审批。 */
+  beforeGenerate?(signal: AbortSignal | undefined, confirm: (preview: string, target: FileApprovalTarget) => Promise<boolean>): Promise<void>;
   start?(): Promise<void>; finish?(outcome: Outcome): Promise<void>;
 }
 export function adaptBusinessTool(tool: BusinessTool, ask: QuestionWaiter, approve: Approval) {

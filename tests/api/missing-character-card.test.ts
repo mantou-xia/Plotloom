@@ -39,6 +39,10 @@ test('交稿后提醒缺卡，跳过按情节记住，起草和写入分别确�
       for await (const event of events(await api.request(session + '/messages', 'POST', { text }))) {
         received.push(event);
         if (event.type !== 'user_answer_required' && event.type !== 'tool_approval_required') continue;
+        if (event.type === 'tool_approval_required' && event.approval.path.startsWith('大纲/')) {
+          await api.json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'deny' });
+          continue;
+        }
         const answer = answers[questions.length];
         questions.push(event.type === 'user_answer_required' ? event.question.question : event.approval.preview ?? '');
         assert(answer, '意外重复询问：' + questions.at(-1));
@@ -82,7 +86,9 @@ test('交稿后提醒缺卡，跳过按情节记住，起草和写入分别确�
       let proposalId = '';
       for await (const event of events(await api.request(session + '/messages', 'POST', { text: '重写第四章：令牌。\nWRITE:' + JSON.stringify({ steps }) }))) {
         received.push(event);
-        if (event.type === 'tool_approval_required') await api.json(session + '/tool-approvals/' + event.approval.id, 'POST', { decision: 'approve' });
+        if (event.type === 'tool_approval_required') await api.json(session + '/tool-approvals/' + event.approval.id, 'POST', {
+          decision: event.approval.path.startsWith('大纲/') ? 'deny' : 'approve',
+        });
         if (event.type === 'tool_end' && event.name === 'deliver_chapter') proposalId = event.manuscriptView!.proposalId!;
         if (event.type === 'tool_start' && event.name === 'suggest_character_card') {
           const proposal = await api.json(base + '/proposals/' + proposalId);
