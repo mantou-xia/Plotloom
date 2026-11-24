@@ -161,6 +161,7 @@ export const componentCatalog: ComponentExample[] = [
     width: 520, height: 320,
     states: [
       { id: 'default', name: '复制与重新生成', description: '复制 Markdown 原文；重新生成等待回调完成。' },
+      { id: 'feedback', name: '回答评价', description: '切换点赞和点踩，在弹窗里保存文字反馈；评价通过 feedback 和 onFeedbackChange 受控。' },
       { id: 'copy-only', name: '仅复制', description: '没有重新生成回调时只展示复制。' },
       { id: 'regenerating', name: '生成中', description: '生成期间禁止重新触发，仍可复制当前内容。' },
       { id: 'regenerate-disabled', name: '禁止重新生成', description: '单独禁用重新生成，复制仍可用。' },

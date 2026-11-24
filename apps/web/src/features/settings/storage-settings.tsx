@@ -3,6 +3,7 @@ import { Button } from '@plotloom/ui/button';
 import { SettingsRow } from '@plotloom/ui/settings-row';
 import { SettingsSection } from '@plotloom/ui/settings-section';
 import { exportPreferences, importPreferences } from './preference-transfer';
+import { request } from '../../utils/http';
 import './storage-settings.css';
 
 export interface DesktopStorage {
@@ -13,14 +14,15 @@ export interface DesktopStorage {
 }
 
 /** 使用桌面宿主提供的目录选择和重启能力，预览可为同一组件传入模拟宿主。 */
-export function StorageSettings({ storage, onExportPreferences = exportPreferences, onImportPreferences = importPreferences }: {
+export function StorageSettings({ storage, onExportPreferences = exportPreferences, onImportPreferences = importPreferences, onExportUsage = downloadUsage }: {
   storage?: DesktopStorage;
   onExportPreferences?: () => void;
   onImportPreferences?: (file: File) => Promise<void>;
+  onExportUsage?: () => Promise<void>;
 }) {
   const [directory, setDirectory] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState<'change' | 'import' | 'preferences' | null>(null);
+  const [busy, setBusy] = useState<'change' | 'import' | 'preferences' | 'usage' | null>(null);
   const preferenceFile = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -55,6 +57,15 @@ export function StorageSettings({ storage, onExportPreferences = exportPreferenc
     finally { setBusy(null); }
   }
 
+  /** 手动生成可交付文件，仅切换原有操作位的状态。 */
+  async function exportUsage() {
+    setBusy('usage');
+    setError('');
+    try { await onExportUsage(); }
+    catch (error) { setError(error instanceof Error ? error.message : '无法导出 Agent 使用记录。'); }
+    finally { setBusy(null); }
+  }
+
   return <SettingsSection title={storage ? '应用数据位置' : '产品偏好'}
     description={storage ? '应用数据包含聊天、附件、小说历史版本、已保存的模型供应商、默认模型和 Agent 人设。' : undefined}>
     {storage && <>
@@ -85,6 +96,22 @@ export function StorageSettings({ storage, onExportPreferences = exportPreferenc
         }} />
       </div>
     </SettingsRow>
+    <SettingsRow title="Agent 使用记录" description="聊天、回答评价和修改记录保存在本机。手动导出会包含原文和文稿版本，分享前请自行核对。">
+      <Button variant="secondary" disabled={busy !== null} loading={busy === 'usage'} onClick={() => void exportUsage()}>
+        导出压缩包
+      </Button>
+    </SettingsRow>
     <p className="plotloom-storage-feedback" role="status">{error}</p>
   </SettingsSection>;
+}
+
+/** 同源请求使用桌面现有的 HTTP 转发，压缩包由浏览器保存到用户选定位置。 */
+async function downloadUsage() {
+  const response = await request('/api/agent-usage/export', 'POST', {});
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'Plotloom-agent-usage.jsonl.gz';
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

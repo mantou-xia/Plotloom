@@ -56,6 +56,8 @@ export type SessionActivity = 'idle' | 'generating' | 'awaiting_approval' | 'awa
 export interface SessionSummary extends ModelSelection { id: string; status: SessionStatus; activity: SessionActivity; name: string; thinkingLevel: ThinkingLevel; projectPath?: string }
 export interface SessionOrganization { pinned: boolean; archived: boolean }
 export interface SessionListItem extends SessionSummary, SessionOrganization { updatedAt: string; archivedAt?: string }
+export interface ReplyFeedbackInput { rating: 'like' | 'dislike' | null; comment: string }
+export interface ReplyFeedback extends ReplyFeedbackInput { turnId: string; updatedAt: string }
 export interface SessionDetail extends SessionSummary {
   manuscriptRequest?: { id: string; createdAt: string; view: import('./workspaces.ts').ManuscriptView };
   messages: Message[];
@@ -65,6 +67,8 @@ export interface SessionDetail extends SessionSummary {
   pendingQuestion?: AgentQuestion;
   /** 成功写入的已结束轮次；没有记录时省略。 */
   fileChanges?: TurnFileChanges[];
+  /** 每轮最新的本地评价；空评价不在此列表显示。 */
+  feedback?: ReplyFeedback[];
   /** 可重放的最新用户消息。旧记录缺少请求快照时省略；忙时客户端应禁用操作。 */
   retryMessageId?: string;
 }

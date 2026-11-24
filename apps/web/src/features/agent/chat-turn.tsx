@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { CITATION_LINK_PREFIX } from '@plotloom/contracts';
+import { CITATION_LINK_PREFIX, type ReplyFeedbackInput } from '@plotloom/contracts';
 import { UserMessageBubble } from '@plotloom/ui/user-message-bubble';
 import { AgentActivityHeader } from '@plotloom/ui/agent-activity-header';
 import { ExecutionTimeline } from '@plotloom/ui/execution-timeline';
@@ -25,8 +25,9 @@ function hidePendingCitation(href: string) {
 }
 
 /** 单轮业务组合：来源、重试目标来自公开契约，通用组件不感知会话或后端。 */
-export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChanges, onOpenDeliverable }: {
+export function ChatTurn({ turn, onRetry, onFeedbackChange, busy, onOpenCitations, onOpenTurnChanges, onOpenDeliverable }: {
   turn: Turn; onRetry?: () => Promise<void>; busy: boolean; onOpenCitations: OpenCitations; onOpenTurnChanges: OpenTurnChanges;
+  onFeedbackChange?: (turnId: string, feedback: ReplyFeedbackInput) => Promise<void>;
   onOpenDeliverable: OpenDeliverable;
 }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -84,6 +85,9 @@ export function ChatTurn({ turn, onRetry, busy, onOpenCitations, onOpenTurnChang
       </div> : null}
       {/* 回复正文与变更摘要后才显示操作，状态行只在需要恢复操作的终态出现。 */}
       <MessageActions text={turn.answer} onRegenerate={turn.phase === 'completed' ? onRetry : undefined} regenerateDisabled={busy}
+        feedback={turn.feedback} feedbackDisabled={busy}
+        onFeedbackChange={onFeedbackChange && turn.user && turn.phase === 'completed' && turn.answer.trim()
+          ? feedback => onFeedbackChange(turn.id, feedback) : undefined}
         style={{ visibility: turn.phase === 'completed' ? undefined : 'hidden' }}
         onError={(_action, error) => notifyRequestError(error, 'chat-actions')} />
       {status ? <MessageStatus status={status} onRetry={onRetry} retryDisabled={busy}

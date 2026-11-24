@@ -64,6 +64,12 @@ async function prepareServer(server, compiled) {
   run(process.execPath, [pnpm, '--filter', '@plotloom/server', '--prod', 'deploy',
     '--config.inject-workspace-packages=true', '--config.node-linker=hoisted', relative(root, server)]);
   await cp(join(compiled, 'apps', 'server', 'src'), join(server, 'src'), { recursive: true });
+  // 从开发目录提取能力字段，安装包只携带模型能力，无需预置供应商。
+  const { providers } = JSON.parse(await readFile(join(root, 'models.json'), 'utf8'));
+  const capabilities = Object.fromEntries(Object.entries(providers).map(([id, { api, models }]) => [
+    id, { api, models: models.map(({ id, reasoning, thinkingLevelMap }) => ({ id, reasoning, thinkingLevelMap })) },
+  ]));
+  await writeFile(join(server, 'model-capabilities.json'), JSON.stringify({ providers: capabilities }));
   const packages = join(server, 'node_modules', '@plotloom');
   for (const name of await readdir(packages)) {
     const directory = join(packages, name);

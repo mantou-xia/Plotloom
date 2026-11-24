@@ -2,5 +2,7 @@
 .pl-message-actions > .plotloom-button { flex: 0 0 32px; }
 .pl-message-actions [data-feedback="done"] { color: var(--pl-success, #16803c); }
 .pl-message-actions [data-feedback="error"] { color: var(--pl-danger, #b91c1c); }
+.pl-message-actions [aria-pressed="true"], .pl-message-actions [data-has-comment="true"] { color: var(--pl-primary-text); }
+.pl-message-actions__feedback-error { min-height: 1.6em; margin: 0; color: var(--pl-danger); }
 /* 读屏反馈脱离文档流；图标替换与反馈消失均保留 32px 操作尺寸。 */
 .pl-message-actions__status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

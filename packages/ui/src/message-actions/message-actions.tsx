@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Check, CircleAlert, Copy, RotateCcw } from 'lucide-react';
+import { Check, CircleAlert, Copy, MessageSquare, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Button } from '../button/button.tsx';
+import { Dialog } from '../dialog/dialog.tsx';
+import { Textarea } from '../form/textarea.tsx';
 import { Tooltip } from '../tooltip/tooltip.tsx';
 import './message-actions.css';
+
+export interface MessageFeedback { rating: 'like' | 'dislike' | null; comment: string }
 
 export interface MessageActionsProps {
   /** 回答原文，复制时保留 Markdown、空格和换行。不同消息应使用不同 React key。 */
@@ -15,18 +19,25 @@ export interface MessageActionsProps {
   disabled?: boolean;
   regenerateDisabled?: boolean;
   onCopy?: () => void;
-  onError?: (action: 'copy' | 'regenerate', error: unknown) => void;
+  feedback?: MessageFeedback;
+  feedbackDisabled?: boolean;
+  onFeedbackChange?: (feedback: MessageFeedback) => void | Promise<void>;
+  onError?: (action: 'copy' | 'regenerate' | 'feedback', error: unknown) => void;
   className?: string;
   style?: CSSProperties;
 }
 
-/** 回答操作只承担复制和回调触发；所有反馈复用原按钮占位，避免挤动消息与邻近操作。 */
+/** 回答操作通过回调保存评价，等待状态保留原按钮空间，文字反馈在独立弹窗中编辑。 */
 export function MessageActions({ text, subject = '回答', onRegenerate, regenerating = false, disabled = false,
-  regenerateDisabled = false, onCopy, onError, className = '', style }: MessageActionsProps) {
+  regenerateDisabled = false, onCopy, feedback, feedbackDisabled, onFeedbackChange, onError, className = '', style }: MessageActionsProps) {
   const [copyResult, setCopyResult] = useState<{ text: string; status: 'done' | 'error' } | null>(null);
   const [copying, setCopying] = useState(false);
   const [pending, setPending] = useState(false);
   const [regenerateError, setRegenerateError] = useState(false);
+  const [feedbackDraft, setFeedbackDraft] = useState<string | null>(null);
+  const [savingFeedback, setSavingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+  const feedbackLock = useRef(false);
   const copyLock = useRef(false);
   const regenerateLock = useRef(false);
   const mounted = useRef(false);
@@ -40,6 +51,27 @@ export function MessageActions({ text, subject = '回答', onRegenerate, regener
   const busy = regenerating || pending;
   const copyLabel = copying ? '正在复制' : copyStatus === 'done' ? '已复制' + subject : copyStatus === 'error' ? '复制失败，点击重试' : '复制' + subject;
   const regenerateLabel = busy ? '正在重新生成' : regenerateError ? '重新生成失败，点击重试' : '重新生成';
+  const rating = feedback?.rating ?? null;
+  const comment = feedback?.comment ?? '';
+  const feedbackUnavailable = disabled || feedbackDisabled || savingFeedback;
+
+  /** 等待持久化结果再关闭弹窗，失败时保留用户填写的文字。 */
+  async function saveFeedback(next: MessageFeedback, close = false) {
+    if (!onFeedbackChange || feedbackUnavailable || feedbackLock.current) return;
+    feedbackLock.current = true;
+    setSavingFeedback(true);
+    setFeedbackError('');
+    try {
+      await onFeedbackChange(next);
+      if (close && mounted.current) setFeedbackDraft(null);
+    } catch (error) {
+      if (close && mounted.current) setFeedbackError('保存失败，请重试。');
+      else onError?.('feedback', error);
+    } finally {
+      feedbackLock.current = false;
+      if (mounted.current) setSavingFeedback(false);
+    }
+  }
 
   /** 剪贴板失败留在原按钮反馈；只报告当前原文的结果，不把旧文本的成功用于新回答。 */
   async function copy() {
@@ -89,6 +121,28 @@ export function MessageActions({ text, subject = '回答', onRegenerate, regener
         {regenerateError && !busy ? <CircleAlert /> : <RotateCcw />}
       </Button>
     </Tooltip> : null}
+    {onFeedbackChange ? <>
+      {([{ value: 'like', label: '点赞', Icon: ThumbsUp }, { value: 'dislike', label: '点踩', Icon: ThumbsDown }] as const).map(({ value, label, Icon }) =>
+        <Tooltip key={value} content={label} shake={false}>
+          <Button variant="ghost" size="sm" iconOnly aria-label={label} aria-pressed={rating === value}
+            disabled={feedbackUnavailable} onClick={() => void saveFeedback({ rating: rating === value ? null : value, comment })}><Icon /></Button>
+        </Tooltip>)}
+      <Tooltip content="反馈" shake={false}>
+        <Button variant="ghost" size="sm" iconOnly aria-label="反馈" data-has-comment={Boolean(comment)}
+          disabled={feedbackUnavailable} onClick={() => { setFeedbackError(''); setFeedbackDraft(comment); }}><MessageSquare /></Button>
+      </Tooltip>
+      {feedbackDraft !== null ? <Dialog open title="回答反馈" description="反馈保存在本机，可随 Agent 使用记录手动导出。"
+        dismissOnBackdrop={false} onOpenChange={open => { if (!open && !savingFeedback) setFeedbackDraft(null); }}
+        footer={<>
+          <Button variant="secondary" disabled={savingFeedback} onClick={() => setFeedbackDraft(null)}>取消</Button>
+          <Button disabled={feedbackUnavailable} loading={savingFeedback}
+            onClick={() => void saveFeedback({ rating, comment: feedbackDraft.trim() }, true)}>保存反馈</Button>
+        </>}>
+        <Textarea aria-label="反馈内容" placeholder="哪里做得好，或者哪里可以改进？" rows={4} maxLength={2000}
+          value={feedbackDraft} onValueChange={setFeedbackDraft} />
+        <p className="pl-message-actions__feedback-error" role="status">{feedbackError}</p>
+      </Dialog> : null}
+    </> : null}
     <span className="pl-message-actions__status" role="status" aria-live="polite" aria-atomic="true">
       {copyStatus === 'done' ? subject + '已复制' : copyStatus === 'error' ? '复制失败，请重试' : ''}
       {regenerateError && !busy ? '重新生成失败，请重试' : ''}

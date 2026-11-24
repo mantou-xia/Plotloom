@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { Input } from '@plotloom/ui/input';
-import type { AgentQuestionAnswer, SessionDetail, SubmitMessageRequest, RetryMessageRequest, ToolApprovalDecision } from '@plotloom/contracts';
+import type { AgentQuestionAnswer, ReplyFeedback, ReplyFeedbackInput, SessionDetail, SubmitMessageRequest, RetryMessageRequest, ToolApprovalDecision } from '@plotloom/contracts';
 import type { ComposerMessage } from '@plotloom/ui/task-composer';
 import type { ComposerConversationFile } from '@plotloom/ui/task-composer/types';
 import { Button } from '@plotloom/ui/button';
@@ -104,6 +104,17 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, snapsh
   const path = `/api/sessions/${encodeURIComponent(sessionId)}`;
   const busy = pending || session?.status === 'running';
   const turns = useMemo(() => session ? chatTurns(session) : [], [session]);
+  /** 保存成功后同步已挂载聊天与回访缓存，刷新仍以本机持久记录为准。 */
+  async function saveFeedback(turnId: string, input: ReplyFeedbackInput) {
+    const saved = await requestJson<ReplyFeedback>(path + '/feedback/' + encodeURIComponent(turnId), 'PUT', input);
+    if (!mounted.current) return;
+    const apply = (current: SessionDetail) => ({
+      ...current, feedback: [...(current.feedback ?? []).filter(item => item.turnId !== turnId), saved],
+    });
+    const cached = snapshots.get(sessionId);
+    if (cached) snapshots.set(sessionId, apply(cached));
+    setSession(current => current && apply(current));
+  }
   const conversationFiles = useMemo(() => {
     // 候选以服务端消息快照为准，按最近一轮优先展示，刷新后仍能引用同一份资料。
     const files = new Map<string, ComposerConversationFile>();
@@ -297,7 +308,8 @@ export function ChatPage({ title, novelRoot, acceptedRevision, sessionId, snapsh
             <Skeleton lineWidths={['82%', '68%', '54%']} />
           </div> : session && !turns.length ? <p className="plotloom-chat__empty">有什么想法，开始聊聊吧。</p> : null}
           {turns.map(turn => <ChatTurn key={turn.id} turn={turn} busy={busy} onOpenCitations={onOpenCitations} onOpenTurnChanges={onOpenTurnChanges}
-            onOpenDeliverable={onOpenDeliverable} onRetry={verified && turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
+            onOpenDeliverable={onOpenDeliverable} onFeedbackChange={verified ? saveFeedback : undefined}
+            onRetry={verified && turn.user?.id === session?.retryMessageId ? retry : undefined} />)}
           {loadFailed ? <Button variant="text" size="sm" onClick={() => setReload(value => value + 1)}>重新查询聊天记录</Button> : null}
         </div>
       </ScrollBox>

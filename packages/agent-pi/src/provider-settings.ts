@@ -1,10 +1,13 @@
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
-import type { Api } from '@earendil-works/pi-ai/compat';
+import type { Api, Model } from '@earendil-works/pi-ai/compat';
 import { PROVIDER_APIS, type ProviderSettings, type ProviderWrite } from '@plotloom/contracts';
 import { AgentError } from './errors.ts';
 import type { AgentOptions } from './index.ts';
+
+type ModelCapability = Pick<Model<Api>, 'id' | 'reasoning' | 'thinkingLevelMap'>;
+type CapabilityCatalog = { providers: Record<string, { api: string; models: ModelCapability[] }> };
 
 async function readOptional<T>(path: string, fallback: T): Promise<T> {
   try { return JSON.parse(await readFile(path, 'utf8')); }
@@ -16,6 +19,7 @@ export class ProviderStore {
   private writes = Promise.resolve();
   private saved: (ProviderWrite & { removed?: boolean })[] = [];
   private customIds: string[] = [];
+  private modelCapabilities = new Map<string, ModelCapability>();
   private readonly path: string;
   runtime!: ModelRuntime;
   private readonly options: AgentOptions;
@@ -28,6 +32,13 @@ export class ProviderStore {
     this.saved = await readOptional<ProviderWrite[]>(this.path, []);
     const source = this.options.modelsPath ? await readOptional<{ providers?: Record<string, unknown> }>(this.options.modelsPath, {}) : {};
     this.customIds = Object.keys(source.providers ?? {});
+    if (this.options.modelCapabilitiesPath) {
+      const catalog = JSON.parse(await readFile(this.options.modelCapabilitiesPath, 'utf8')) as CapabilityCatalog;
+      // 只拿同协议、同模型 ID 的思考能力。目录里的供应商地址和凭据不参与桌面配置。
+      for (const { api, models } of Object.values(catalog.providers)) {
+        for (const model of models) this.modelCapabilities.set(`${api}\0${model.id}`, model);
+      }
+    }
     this.runtime = await this.build(this.saved);
   }
 
@@ -44,7 +55,9 @@ export class ProviderStore {
         const original = runtime.getModel(entry.id, id);
         const protocol = entry.modelApis?.[id];
         const endpoint = entry.endpoints?.find(e => e.api === protocol) ?? entry;
-        return { ...(original ?? { id, name: id, reasoning: false, input: ['text'] as ['text'], contextWindow: 128000, maxTokens: 8192,
+        const capability = this.modelCapabilities.get(`${endpoint.api}\0${id}`);
+        return { ...(original ?? { id, name: id, reasoning: capability?.reasoning ?? false, thinkingLevelMap: capability?.thinkingLevelMap,
+          input: ['text'] as ['text'], contextWindow: 128000, maxTokens: 8192,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }), api: endpoint.api as Api, baseUrl: endpoint.baseUrl };
       });
       runtime.registerProvider(entry.id, { api: entry.api as Api, baseUrl: entry.baseUrl, models });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
@@ -7,6 +7,43 @@ import { createServer } from 'node:http';
 import { buildServer } from '../../apps/server/src/bootstrap.ts';
 import { createModelFixture } from './fixture.ts';
 import { assertFinal, collect } from './client.ts';
+
+test('桌面版旧供应商按模型 ID 和实际协议恢复思考档位', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'plotloom-model-capabilities-'));
+  const modelCapabilitiesPath = join(dataDir, 'model-capabilities.json');
+  const supplier = {
+    id: 'saved-provider', api: 'openai-completions', baseUrl: 'https://example.invalid/v1',
+    endpoints: [{ api: 'openai-responses', baseUrl: 'https://example.invalid/responses/v1' }],
+    models: ['reasoner', 'wrong-protocol', 'unknown'],
+    modelApis: { reasoner: 'openai-responses' },
+    apiKey: 'fixture-only-key',
+  };
+  const thinkingLevelMap = { off: null, minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: null };
+  await mkdir(join(dataDir, 'agent'));
+  await writeFile(join(dataDir, 'agent', 'providers.json'), JSON.stringify([supplier]));
+  await writeFile(modelCapabilitiesPath, JSON.stringify({ providers: { catalog: {
+    api: 'openai-responses', models: ['reasoner', 'wrong-protocol'].map(id => ({ id, reasoning: true, thinkingLevelMap })),
+  } } }));
+  const app = await buildServer({ dataDir, modelCapabilitiesPath });
+  try {
+    const providers = (await app.inject('/api/providers')).json().providers;
+    assert.deepEqual(providers.map((provider: { id: string }) => provider.id), [supplier.id]);
+    assert.equal(providers[0].baseUrl, supplier.baseUrl);
+    assert.equal(providers[0].configured, true);
+    const { models } = (await app.inject('/api/models')).json();
+    const levels = (id: string) => models.find((model: { id: string; provider: string }) => model.id === id && model.provider === supplier.id).thinkingLevels;
+    assert.deepEqual(levels('reasoner'), ['low', 'medium', 'high', 'xhigh']);
+    assert.deepEqual(levels('wrong-protocol'), ['off']);
+    assert.deepEqual(levels('unknown'), ['off']);
+    const response = await app.inject({ method: 'PUT', url: '/api/model-config',
+      payload: { provider: supplier.id, model: 'reasoner', thinkingLevel: 'xhigh' } });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.json().thinkingLevel, 'xhigh');
+  } finally {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
 
 test('单密钥多端点：检测、目录预览、停用与删除重启', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'plotloom-probe-'));

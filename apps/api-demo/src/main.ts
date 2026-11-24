@@ -23,7 +23,7 @@ interface Run {
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
 let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('sessions.create')!;
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
-const assetParameters: Record<string, string> = Object.fromEntries(['projectId', 'workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
+const assetParameters: Record<string, string> = Object.fromEntries(['projectId', 'workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId', 'turnId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
 function setAssetParameter(name: string, value: string) {
   assetParameters[name] = value; sessionStorage.setItem(`plotloom.demo.${name}`, value);
   const input = byId<HTMLInputElement>(`path-${name}`); if (input) input.value = value;
@@ -220,7 +220,7 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
   renderCatalog(); updateButtons(); renderResult();
   try {
     // 系统窗口等待用户选择，不能使用普通 HTTP 的 20 秒超时；仍可主动中止。
-    const signal = endpoint.stream || endpoint.id === 'context.compact' || endpoint.id === 'skills.import-folder' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
+    const signal = endpoint.stream || endpoint.binary || endpoint.id === 'context.compact' || endpoint.id === 'skills.import-folder' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
     const response = await fetch(url, { method: endpoint.method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
     run.status = response.status;
     run.headers = Object.fromEntries(response.headers.entries());
@@ -245,6 +245,17 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       run.phase = !run.checks.every((check) => check.passed) ? 'error' : final?.type === 'aborted' ? 'stopped' : 'success';
       if (final?.type === 'failed') run.error = final.error.message;
       if (!run.events.some((item) => ['completed', 'failed', 'aborted'].includes(item.event.type))) { run.phase = 'disconnected'; run.error = '连接已结束，但没有最终事件。生成可能仍在继续，请读取会话确认。'; }
+    } else if (endpoint.binary === 'gzip' && response.ok && contentType.includes('application/gzip')) {
+      const bytes = await response.blob();
+      const signature = new Uint8Array(await bytes.slice(0, 2).arrayBuffer());
+      const named = response.headers.get('content-disposition')?.includes('Plotloom-agent-usage.jsonl.gz') ?? false;
+      run.body = { bytes: bytes.size, filename: 'Plotloom-agent-usage.jsonl.gz' };
+      run.checks = [
+        { name: 'HTTP 状态', passed: response.status === endpoint.success, detail: String(response.status) },
+        { name: 'GZIP 压缩包', passed: signature[0] === 31 && signature[1] === 139, detail: contentType },
+        { name: '下载文件名', passed: named, detail: 'Plotloom-agent-usage.jsonl.gz' },
+      ];
+      run.phase = run.checks.every(check => check.passed) ? 'success' : 'error';
     } else {
       const raw = await response.text();
       try { run.body = JSON.parse(raw); } catch { run.body = raw; }
@@ -257,6 +268,9 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
         if (endpoint.id === 'sessions.get' && targetSession === sessionId) {
           const pending = run.body.pendingQuestion;
           setAssetParameter('questionId', isObject(pending) && typeof pending.id === 'string' ? pending.id : '');
+          const user = Array.isArray(run.body.messages) ? run.body.messages.findLast((item: unknown) => isObject(item) && item.role === 'user' && item.outcome === 'completed') : undefined;
+          const turnId = user?.turnId ?? user?.id;
+          setAssetParameter('turnId', typeof turnId === 'string' ? turnId : '');
         }
         if (['sessions.create', 'chats.create'].includes(endpoint.id) && typeof run.body.id === 'string') { setSession(run.body.id); notify('会话已创建，ID 已自动填入。'); }
         if (endpoint.id === 'sessions.project-writes' && targetSession === sessionId && Array.isArray(run.body.changes)) {
@@ -367,6 +381,7 @@ function setSession(value: string) {
     setAssetParameter('writeId', '');
     setAssetParameter('approvalId', '');
     setAssetParameter('questionId', '');
+    setAssetParameter('turnId', '');
   }
   sessionId = value;
   sessionStorage.setItem('plotloom.demo.session', value);

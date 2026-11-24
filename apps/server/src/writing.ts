@@ -1,5 +1,5 @@
 import { AgentError, type BusinessTool, type RequestResources } from '@plotloom/agent-pi';
-import { CHAPTER_PART_LIMIT, WritingService, WRITING_ENTRY, writingPrompt, type ChapterChatRequest } from '@plotloom/application/writing';
+import { CHAPTER_PART_LIMIT, WritingService, WRITING_ENTRY, chapterLengthLimit, writingPrompt, type ChapterChatRequest } from '@plotloom/application/writing';
 import type { WorkspaceService } from '@plotloom/application';
 import type { MessageSources } from '@plotloom/contracts/sources';
 import type { SubmitMessageRequest } from '@plotloom/contracts';
@@ -15,14 +15,41 @@ const text = { type: 'string', minLength: 1, maxLength: 2000, pattern: '\\S' };
 const version = { type: 'string', pattern: '^[a-f0-9]{64}$' };
 const selection = objectSchema({ start: { type: 'integer', minimum: 0 }, end: { type: 'integer', minimum: 0 }, text: { type: 'string' } });
 
-/** 显式写章请求才固定整章目标，普通讨论仍走原会话路径。 */
+const chapterCommand = /^(?:请\s*)?(?:帮我\s*)?(?:重写|写出|写完|写|生成|完成|创作|撰写)[ \t]*(第[0-9一二两三四五六七八九十百千零〇]+章)(?=[\s：:，,。]|$)/;
+const outlineHeading = /^(?:讨论|看看|核对)?[ \t]*(第[0-9一二两三四五六七八九十百千零〇]+章)[ \t]*(?:的)?大纲[ \t]*[：:]/;
+const outlineFollowup = /^(?:可以|好[的呀]?|那就|嗯)[，,。 \t]*|^请[ \t]*/;
+
+/** 只在作者明确开写时使用紧邻的一份作者大纲。讨论、否定或含糊指代不进入写章路径。 */
+function isOutlineFollowup(text: string) {
+  const request = text.replace(outlineFollowup, '');
+  return /^(?:就)?按(?:照)?(?:刚才|上面|上一条)(?:那个|那份|的)?大纲/.test(request)
+    && /(?:先存(?:下来|档)?|保存(?:大纲)?|留档)/.test(request)
+    && /(?:写|起草|生成|编写)正文|再开写/.test(request)
+    && !/(?:暂不|先别|不(?:用|要|想|必|需要))\s*(?:先\s*)?(?:存|留档|写正文|起草|开写)|只(?:想|是)?讨论|能不能|是否|要不要|[？?]/.test(request);
+}
+
+/** 复用明确写章的版本锁与审批。仅在自然承接时查上一轮，保留新消息作为本轮要求。 */
 export async function chapterChat(workspaces: WorkspaceService, cards: CharacterCardService, id: string, text: string,
-  sources?: MessageSources): Promise<ChapterChatRequest> {
+  sources?: MessageSources, previousAuthorMessage?: () => Promise<string | undefined>): Promise<ChapterChatRequest> {
   const references = sources?.references?.map(({ workspaceId: _workspaceId, ...reference }) => ({ ...reference, role: 'other' as const })) ?? [];
-  const command = /^(?:请\s*)?(?:帮我\s*)?(?:重写|写出|写完|写|生成|完成|创作|撰写)[ \t]*(第[0-9一二两三四五六七八九十百千零〇]+章)(?=[\s：:，,。]|$)/.exec(text);
-  if (!command) return { task: 'discuss', instructions: text, references };
-  const chapterNumber = chapterFromTitle(command[1]);
-  const outlineContent = text.slice(command[0].length).replace(/^[ \t]*(?:[：:，,。][ \t]*)?(?:\r?\n)?/, '');
+  const command = chapterCommand.exec(text);
+  let chapterTitle = command?.[1];
+  let outlineContent = command ? text.slice(command[0].length).replace(/^[ \t]*(?:[：:，,。][ \t]*)?(?:\r?\n)?/, '') : '';
+  if (!command) {
+    if (!isOutlineFollowup(text)) return { task: 'discuss', instructions: text, references };
+    const previous = (await previousAuthorMessage?.())?.trim() ?? '';
+    const heading = outlineHeading.exec(previous);
+    if (heading) {
+      chapterTitle = heading[1];
+      // 剥离明确的聊天审阅指令，保留作者实际写出的情节和段落。
+      outlineContent = previous.slice(heading[0].length).trim()
+        .replace(/(^|\n|(?<=[。！？]))[ \t]*(?:请(?:只)?(?:用[^。！？\r\n]{1,20})?(?:评价|讨论|核对|点评|帮我看看)|帮我看看)[\s\S]*$/u, '$1').trimEnd();
+    }
+    const requestedChapter = chapterFromTitle(text);
+    if (!chapterTitle || !outlineContent || (requestedChapter && requestedChapter !== chapterFromTitle(chapterTitle)))
+      invalid('没有找到可直接使用的上一轮章节大纲。请发送「写第几章：」并附上确认的大纲。');
+  }
+  const chapterNumber = chapterFromTitle(chapterTitle ?? '');
   if (!chapterNumber || chapterNumber > 999999 || !outlineContent.replace(/^[\s：:，,。]+/, '').trim())
     invalid('请提供有效章号和本章大纲，例如“写第四章：主角赴约”。');
   const { paths } = await workspaces.listDocuments(id);
@@ -38,7 +65,7 @@ export async function chapterChat(workspaces: WorkspaceService, cards: Character
   const previous = chapters.filter(item => item.number !== undefined && item.number < chapterNumber)
     .sort((a, b) => b.number! - a.number!).slice(0, 3);
   const applicable = (await cards.list(id, chapterNumber)).applicable;
-  const named = applicable.filter(card => text.includes(card.character));
+  const named = applicable.filter(card => outlineContent.includes(card.character) || text.includes(card.character));
   const referenced = references.filter(ref => ref.path !== path);
   const contextReferences: NonNullable<WritingRequest['references']> = [...referenced];
   for (const card of named.length ? named : applicable) {
@@ -51,7 +78,8 @@ export async function chapterChat(workspaces: WorkspaceService, cards: Character
     const doc = await workspaces.peek(id, item.path);
     if (doc.version) contextReferences.push({ path: item.path, version: doc.version, role: 'history' });
   }
-  return { task: 'chapter', chatChapter: true, chatOutline, chapterNumber, instructions: text, references: contextReferences, maxOutputChars: 20000,
+  return { task: 'chapter', chatChapter: true, chatOutline, ...(command ? {} : { previousOutline: true }),
+    chapterNumber, instructions: text, references: contextReferences, maxOutputChars: 20000,
     target: { path, baseVersion: (await workspaces.peek(id, path)).version } };
 }
 export const writingSchema = objectSchema({
@@ -94,7 +122,13 @@ export async function writingResources(service: WritingService, sessionId: strin
     ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。'
       + '作者若只要求导入，先简短说明导入结果。工具有 nextSteps 时，在最终回复中给出这三个可选方向并问他想从哪一个开始。用普通聊天文字提示，不发起选择卡或开始后续工作。写下一章可直接发「写第四章：」加大纲（章号按实际替换）。重复导入没有新增时只报告跳过。作者已明确安排后续工作时按原要求处理。'
     : '';
-  const chapterPrompt = input.chatChapter ? '\n作者的本轮消息就是大纲。依据前文和当章资料按自然段分批调用 write_chapter_part，每批建议 500–1000 字，章标题只写一次。收到暂存成功后再写下一批。全部暂存后调用 review_writing 审校，再用 deliver_chapter 提交总段数和理由，等待作者确认。交稿确认后先说明本章人物有无阶段变化；如确有变化，每次只用 propose_character_change 提交一个角色，必须引用本章交稿原句。'
+  const lengthLimit = chapterLengthLimit(input.instructions);
+  const chapterPrompt = input.chatChapter
+    ? (input.previousOutline ? '\n本轮沿用作者上一条消息中的大纲（JSON）：' + JSON.stringify(input.chatOutline?.content) + '。当前消息是追加的写作要求。'
+      : '\n作者的本轮消息就是大纲。')
+    + '\n依据前文和当章资料按自然段暂存正文，短章可一次写完。章标题只写一次。先按作者字数安排篇幅，压缩相似的环境细节，保留推动情节的动作与对白；对白或动作已经交代的判断不再解释。停止在作者指定的落点。不要自设会改变因果的往事。'
+    + (lengthLimit !== undefined ? '\n正文上限为 ' + lengthLimit + ' 字，按稿纸口径含标点和 Markdown 标记，不计空白。查看 write_chapter_part 返回的 manuscriptCharacters；若超长，替换已有段落缩短后再审校。' : '')
+    + '\n全部暂存后调用 review_writing 审校，再用 deliver_chapter 交稿。交稿后先告诉作者正文状态，再处理需要另行确认的角色资料。若有人物阶段变化，每次只用 propose_character_change 提交一个角色，并引用交稿原句。'
     + (run.restoredParts.length ? '\n重试已恢复的草稿如下（按段号从 1 排列）。从最后一段接着写；已写完则直接审校交稿。\n' + JSON.stringify(run.restoredParts) : '') : '';
   const archiveOutline = run.archiveOutline;
   return { key: run.record.id, fileScope: run.fileScope, replayInput: { ...input, worldviewVersion, chapterDraftId: run.draftId }, persistReplayInput: input.chatChapter,
@@ -106,7 +140,7 @@ export async function writingResources(service: WritingService, sessionId: strin
       }
     } : undefined,
     systemPrompt: writingPrompt(run.record.context, input.chatChapter) + importPrompt + chapterPrompt, start: run.start, finish: run.finish, tools: [
-    ...(input.chatChapter ? [{ ...tool('write_chapter_part', '暂存本章一段正文。段号从 1 连续递增，同号替换，段间自动插入空行。', objectSchema({
+    ...(input.chatChapter ? [{ ...tool('write_chapter_part', '暂存本章一段正文。段号从 1 连续递增，同号替换，段间自动插入空行。返回稿纸总字数 manuscriptCharacters 及明确上限（如有），超长先缩短。', objectSchema({
       part: { type: 'integer', minimum: 1 }, content: { ...text, maxLength: CHAPTER_PART_LIMIT },
     }), (value, signal) => run.writePart(value.part, value.content, signal)), sequential: true },
     { ...tool('deliver_chapter', '由服务拼接本轮已暂存的所有段落，审校后向作者展示全文并确认一次。', objectSchema({
@@ -114,14 +148,17 @@ export async function writingResources(service: WritingService, sessionId: strin
     }), (value, signal, confirm) => run.deliver(value.partCount, value.reason, signal, confirm)), confirmable: true }] : []),
     ...(files.length ? [{ ...tool('import_chapters', '将本轮 TXT/Markdown 附件按独立章标题分章。作者确认后才写入，保护已有正文。', objectSchema({}),
       (_input, signal, confirm) => run.importChapters(signal, confirm)), confirmable: true }] : []),
-    { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲。edit 直接提交候选，作者在右侧采纳才写正式稿；其他操作等待确认。list/refresh 列出或刷新目录；open/preview 打开文稿；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿；export_txt 下载单章最新保存稿为纯文本。', objectSchema({
+    { ...tool('manuscript_workspace', '按作者要求操作右侧正文或大纲。edit 提交候选并打开审阅，读取原稿用 read_document，无需先 open。局部修改必须给 original 与 content。仅查看时用 open/preview 等待确认。list/refresh 列出或刷新目录；finalize 留档；history 查定稿；read_final 读定稿；restore 回退；discard 丢弃本地草稿；export_txt 下载单章最新保存稿为纯文本。', objectSchema({
       action: { enum: ['list', 'refresh', 'open', 'preview', 'edit', 'finalize', 'history', 'read_final', 'restore', 'discard', 'export_txt'] },
-      path: pathSchema, content: { type: 'string', maxLength: 8000 }, revisionId: { type: 'string', maxLength: 80 },
+      path: pathSchema,
+      original: { ...text, maxLength: 8000, description: '局部编辑时逐字提供目标原文，必须在已读文稿中唯一匹配。' },
+      content: { type: 'string', maxLength: 8000, description: '提供 original 时为局部替换文本，否则为整篇文稿。' },
+      revisionId: { type: 'string', maxLength: 80 },
     }, ['action']), (input, signal, confirm) => run.manuscript(input, signal, confirm)), confirmable: true, confirmationOptions: ['确认操作', '取消操作'] },
-    { ...tool('propose_world_rule', '提交一条从开篇到结尾都必须遵守的世界底层规则，请作者确认。阶段性情节、局部见闻和人物变化留在对应文稿。作者直接讲的规则可省略 evidence，或只给 quote 引用本轮原话。章节取证须给出明确确立该规则的原句 evidence 和全书适用场景 impact。同主题沿用原名称。', objectSchema({
+    { ...tool('propose_world_rule', '提交一条从开篇到结尾都必须遵守的世界底层规则，请作者确认。作者口述规则用本轮原话作为 fact。章稿取证只用独立、写明普遍适用范围的完整规则句，fact 与 evidence.quote 相同，另填全书适用场景 impact。单次重生、角色对监护等制度的判断、阶段性情节不入库。', objectSchema({
       subject: { ...text, maxLength: 80 }, fact: { ...text, maxLength: 500 },
       effective: { type: 'integer', minimum: 1, maximum: 999999, description: '全书规则从开篇成立，填 1。' },
-      revealed: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 999999 }], description: '主角实际得知的章号，未揭示填 null。' },
+      revealed: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 999999 }], description: '主角实际得知的章号，未揭示填 null。来自章稿时仅可填证据所在章或 null。' },
       impact: { ...text, maxLength: 300, description: '章节建议须说明全书任一章节出现哪些情形时都必须遵守这条规则。' },
       evidence: objectSchema({ path: { ...pathSchema, description: '实际章节的 .md 相对路径；作者本轮口述请省略。' }, quote: { ...text, maxLength: 300 } }, ['quote']),
     }, ['subject', 'fact', 'effective', 'revealed']), (input, signal, confirm) => run.proposeRule(input, signal, confirm)), confirmable: true },
@@ -140,7 +177,7 @@ export async function writingResources(service: WritingService, sessionId: strin
     tool('list_documents', '列出当前小说正式 Markdown 相对路径。', objectSchema({}), () => run.list()),
     tool('read_document', '读取当前小说正式资料，固定本轮版本；返回原文与来源。', objectSchema({ path: pathSchema }), (v, signal) => run.read(v.path, signal)),
     tool('search_documents', '按字面查找用户指定历史情节，返回实际原文位置和版本。', objectSchema({ query: { ...text, maxLength: 200 }, paths: { type: 'array', minItems: 1, maxItems: 30, items: pathSchema } }, ['query']), (v, signal) => run.search(v.query, v.paths, signal)),
-    tool('review_writing', '审校已读取资料的设定/视角冲突；问题须引用原文，有问题结束本轮等待用户。', objectSchema({ status: { enum: ['clear', 'needs_input'] }, issues: { type: 'array', maxItems: 20, items: objectSchema({ kind: { enum: ['setting', 'viewpoint', 'missing_material'] }, message: text,
+    tool('review_writing', '交稿或提交候选前审校设定与视角；阻碍交付的冲突须引用原文。只读诊断与聊天示例直接回答即可。', objectSchema({ status: { enum: ['clear', 'needs_input'] }, issues: { type: 'array', maxItems: 20, items: objectSchema({ kind: { enum: ['setting', 'viewpoint', 'missing_material'] }, message: text,
       evidence: { type: 'array', maxItems: 10, items: objectSchema({ path: pathSchema, quote: text }) } }) } }), (v, signal) => run.review(v, signal)),
     ...(!input.chatChapter ? [tool('propose_change', '审校 clear 后提交一个候选；改写只给选区替换，续写只给尾部新增。返回 view 时可在右侧审阅，正式稿需作者采纳后才更新。', objectSchema({ path: pathSchema, content: { type: 'string', maxLength: 20000 }, reason: text }), async (v, signal) => {
       const proposal = await run.propose(v.path, v.content, v.reason, signal);

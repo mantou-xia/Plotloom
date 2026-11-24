@@ -54,6 +54,24 @@ export class WorkspaceService {
     this.onAcceptedWrite = onAcceptedWrite;
   }
   list() { return this.store.list(); }
+  /** 逐卷读取本机已记录的版本和采纳决定。只读取存储层快照，不扫描作者磁盘。 */
+  async *usageRecords() {
+    for (const workspace of await this.list()) {
+      const workspaceId = workspace.id;
+      const { revisions, proposals } = await this.store.run(workspaceId, async state => ({
+        revisions: Object.values(state.history).flat(),
+        proposals: state.proposals.map(({ id, path, origin, status, changes }) => ({
+          id, path, origin, status, changes: changes.map(({ id, status, revisionId }) => ({ id, status, revisionId })),
+        })),
+      }));
+      yield { type: 'workspace', workspaceId, title: workspace.title };
+      for (const proposal of proposals) yield { type: 'proposal', workspaceId, ...proposal };
+      for (const revision of revisions) {
+        const content = await this.store.run(workspaceId, state => this.store.snapshot(state, revision));
+        yield { type: 'document-revision', workspaceId, ...revision, content };
+      }
+    }
+  }
   create(input: { title: string; root: string }) { return this.store.create(input.title, input.root); }
   get(id: string) { return this.store.run(id, async (s) => s.workspace); }
   /** 串行合并此次提交的登记属性。侧栏隐藏只影响分组展示，仍可经书架访问原工作区。 */

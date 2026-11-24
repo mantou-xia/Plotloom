@@ -7,7 +7,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentEvent, ModelConfig, ModelInfo, ModelSelection, SessionDetail, SessionOrganization, SessionListItem, SessionSummary, Outcome,
-  ThinkingLevel, ModelSettings, ModelCapabilities, SessionActivity, SessionConfig, SessionConfigRequest,
+  ThinkingLevel, ModelSettings, ModelCapabilities, SessionActivity, SessionConfig, SessionConfigRequest, ReplyFeedback, ReplyFeedbackInput,
   AgentQuestionAnswer, AgentPersona, AgentProfile, AgentProfileUpdate,
   CreateSessionRequest, CreateProjectSessionRequest, ProjectFileChange, TurnFileChanges, SessionContext, SessionStats, SessionTools, CompactionResult, SubmitMessageRequest, ToolApprovalDecision, ProjectApprovalMode, PublicError,
 } from '@plotloom/contracts';
@@ -37,9 +37,12 @@ export { PROJECT_TOOLS } from './project-tools.ts';
 export type { RequestResources, BusinessTool } from './request-resources.ts';
 export { AgentError, publicError } from './errors.ts';
 
+const REPLY_FEEDBACK = 'plotloom.reply-feedback';
+
 export interface AgentOptions {
   dataDir: string;
   modelsPath?: string | null;
+  modelCapabilitiesPath?: string;
   defaultModel?: ModelSelection;
   apiKey?: string;
   systemPrompt?: string;
@@ -285,7 +288,7 @@ export class AgentService {
       if (entry.type !== 'custom' || entry.customType !== PROJECT_FILE_WRITE) return [];
       const { id, path, operation, before, after } = entry.data as ProjectWriteSnapshot;
       const change: ProjectFileChange = { id, path, operation, createdAt: entry.timestamp };
-      return [{ change, before, after }];
+      return [{ change, before, after, turnId: (entry.data as ProjectWriteSnapshot & { turnId?: string | null }).turnId ?? null }];
     });
   }
 
@@ -446,9 +449,63 @@ export class AgentService {
     const pendingQuestion = record.questions?.current;
     const manuscriptRequest = latestManuscriptRequest(record.manager, this.skillProfile(record.manager).workspaceId);
     const fileChanges = this.finishedFileChanges(record, messages);
-    return { ...this.summary(record), messages, ...(fileChanges.length ? { fileChanges } : {}), ...(pendingApprovals?.length ? { pendingApprovals } : {}),
+    const feedback = [...this.replyFeedback(record).values()].filter(item => item.rating || item.comment);
+    return { ...this.summary(record), messages, ...(fileChanges.length ? { fileChanges } : {}), ...(feedback.length ? { feedback } : {}), ...(pendingApprovals?.length ? { pendingApprovals } : {}),
       ...(pendingQuestion ? { pendingQuestion } : {}), ...(manuscriptRequest ? { manuscriptRequest } : {}),
       ...(request && user && user.turnId === latest?.id ? { retryMessageId: user.id } : {}) };
+  }
+
+  private replyFeedback(record: RecordState) {
+    const latest = new Map<string, ReplyFeedback>();
+    for (const entry of record.manager.getEntries()) {
+      if (entry.type === 'custom' && entry.customType === REPLY_FEEDBACK) {
+        const feedback = entry.data as ReplyFeedback;
+        latest.set(feedback.turnId, feedback);
+      }
+    }
+    return latest;
+  }
+
+  /** 评价归属到实际回答的轮次；空值用于撤回，不重复记相同操作。 */
+  async saveReplyFeedback(id: string, turnId: string, input: ReplyFeedbackInput): Promise<ReplyFeedback> {
+    const record = await this.getRecord(id);
+    const release = this.reserve(record, 'configuring');
+    try {
+      const messages = readMessages(record.manager);
+      const start = messages.findIndex(message => message.role === 'user' && (message.turnId ?? message.id) === turnId);
+      const end = messages.findIndex((message, index) => index > start && message.role === 'user');
+      if (start < 0 || !messages.slice(start + 1, end === -1 ? undefined : end).some(message => message.role === 'assistant'
+        && message.phase === 'answer' && message.outcome === 'completed' && message.content.some(block => block.type === 'text' && block.text.trim()))) {
+        throw new AgentError(404, 'REPLY_NOT_FOUND', '没有找到可评价的回答。');
+      }
+      const comment = input.comment.trim();
+      if (!comment.isWellFormed()) throw new AgentError(400, 'INVALID_REQUEST', '反馈包含无效字符。');
+      const previous = this.replyFeedback(record).get(turnId);
+      if (previous?.rating === input.rating && previous.comment === comment) return previous;
+      const feedback = { turnId, rating: input.rating, comment, updatedAt: new Date().toISOString() };
+      record.manager.appendCustomEntry(REPLY_FEEDBACK, feedback);
+      return feedback;
+    } finally { release(); }
+  }
+
+  /** 导出已有的公开会话投影和变更快照，不读取凭据文件及浏览器目录。 */
+  async *usageRecords() {
+    for (const session of await this.listSessions()) {
+      const id = session.id;
+      const record = await this.getRecord(id).catch(error => {
+        if (!(error instanceof AgentError) || error.code !== 'SESSION_NOT_FOUND') throw error;
+      });
+      if (!record) continue;
+      const { workspaceId } = this.skillProfile(record.manager);
+      const feedback = [...this.replyFeedback(record).values()].filter(item => item.rating || item.comment);
+      yield { type: 'session', id, name: session.name, workspaceId, updatedAt: session.updatedAt, archived: session.archived,
+        provider: session.provider, model: session.model, thinkingLevel: session.thinkingLevel,
+        messages: readMessages(record.manager, record.activeTurn), feedback };
+      if (this.projectPath(record.manager) || workspaceId) {
+        for (const write of await this.projectWrites(id))
+          yield { type: 'agent-write', sessionId: id, workspaceId, ...write };
+      }
+    }
   }
 
   /** 只接受当前会话仍待决定的调用；重启和重试没有可沿用的批准。 */

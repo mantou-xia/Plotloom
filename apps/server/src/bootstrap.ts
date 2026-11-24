@@ -22,6 +22,7 @@ import { registerSourceRoutes } from './routes/sources.ts';
 import { FileProjectStore } from '@plotloom/storage/projects';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { openRegisteredFolder } from './platform/open-folder.ts';
+import { registerAgentUsageRoutes } from './routes/agent-usage.ts';
 import { createFolderPicker, type FolderPicker } from './platform/folder-picker.ts';
 import { FileAgentProfile } from '@plotloom/storage/agent-profile';
 import { registerAgentProfileRoutes } from './routes/agent-profile.ts';
@@ -54,7 +55,10 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
       if (!workspaceId) return;
       if (input?.references?.some(reference => reference.editComment !== undefined))
         return quotedEditResources(workspaces, writing, id, workspaceId, input.references);
-      const request = await chapterChat(workspaces, characterCards, workspaceId, text, input);
+      const request = await chapterChat(workspaces, characterCards, workspaceId, text, input, async () => {
+        const previous = (await agent.getSession(id)).messages.findLast(message => message.role === 'user');
+        return previous?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n');
+      });
       return writingResources(writing, id, request, characterCards, { sources, ids: input?.attachmentIds ?? [] });
     } });
   sources = new MessageSourceService(attachments, workspaces, {
@@ -97,6 +101,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
     }
   });
   registerRoutes(app, agent);
+  registerAgentUsageRoutes(app, agent, workspaces);
   registerDeliverableRoutes(app, (id, path) => agent.resolveDeliverable(id, path),
     dependencies.openDeliverable ?? openDeliverableExternally);
   registerAgentProfileRoutes(app, profiles);

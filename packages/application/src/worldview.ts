@@ -1,3 +1,4 @@
+import { chapterFromTitle } from '@plotloom/contracts/writing';
 import { invalid } from '@plotloom/domain';
 
 export interface WorldRule {
@@ -7,6 +8,20 @@ export interface WorldRule {
   revealed: number | null;
   impact?: string;
   evidence?: { path?: string; quote: string };
+}
+
+/** 章稿只接受可直接摘录的通则句，避免把人物经历或判断扩写成规则。含蓄设定由作者补明。 */
+export function checkChapterRule(rule: WorldRule, path: string, quote: string, content: string | undefined) {
+  const chapter = chapterFromTitle(path.split('/').at(-1) ?? '');
+  if (!path.startsWith('正文章节/') || !chapter) invalid('请引用带章号的正式正文章节。');
+  if (rule.revealed !== null && rule.revealed !== chapter) invalid('从章稿提议时，揭示章只能填证据所在章；无法确定时填未揭示。');
+  if (rule.fact.trim() !== quote.trim()) invalid('章稿规则须原样使用一条完整规则句，不拼接、改写或推导。');
+  const statement = quote.trim();
+  // 只接受正文里边界完整、以适用条件或普遍对象开头的句子。对白内的短句不能截出来当通则。
+  if (!/^(?:凡|任何|无论|不论|每当|只要|所有|一切)[^。！？\r\n“”「」]+。$/u.test(statement)
+    || !content?.split(/\r?\n/u).some(line => line.trim().startsWith(statement))) {
+    invalid('正文须直接写出独立的全书通则句。单次经历、人物对白或判断请留在剧情资料中。');
+  }
 }
 
 /** 同主题保留历次设定。正文用普通 Markdown，章节标记区分规则生效和主角得知的时间。 */

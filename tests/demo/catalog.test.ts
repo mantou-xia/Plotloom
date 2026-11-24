@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import test from 'node:test';
 import { API_CATALOG, SSE_EVENTS } from '../../packages/contracts/src/catalog.ts';
 import { buildServer } from '../../apps/server/src/bootstrap.ts';
@@ -16,7 +17,7 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 93);
+  assert.equal(routes.length, 95);
   for (const id of ['documents.entries', 'documents.reveal', 'documents.recycle-chapter']) {
     const doc = API_CATALOG.find(item => item.id === id)!;
     assert(doc.request.some(field => field.name === 'workspaceId' && field.required));
@@ -32,6 +33,8 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert.equal(routes.filter(route => route.endsWith('/retry')).length, 1);
   assert.equal(routes.filter(route => route.endsWith('/tool-approvals/:approvalId')).length, 1);
   assert.equal(routes.filter(route => route.endsWith('/questions/:questionId/answer')).length, 1);
+  assert(API_CATALOG.find(item => item.id === 'sessions.reply-feedback')?.examples.some(example => example.body.rating === 'dislike'));
+  assert.equal(API_CATALOG.find(item => item.id === 'sessions.export-usage')?.binary, 'gzip');
   assert.equal(routes.filter(route => route.includes('/api/projects')).length, 5);
   assert.equal(routes.filter(route => route.includes('/project-directories')).length, 0);
   assert.equal(routes.filter(route => route.includes('/project-files')).length, 1);
@@ -62,8 +65,12 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   assert(generation.examples.some(example => example.name === '小说聊天写新章' && String(example.body.text).startsWith('写第四章：')));
   assert.match(generation.description, /tool_approval_required.*拒绝留档仍会起草正文.*REVISION_CONFLICT/);
   assert(generation.examples.some(example => example.name === '只讨论本章大纲'));
+  assert(generation.examples.some(example => example.name === '保存上一轮大纲并起草正文'));
   const worldRuleExample = generation.examples.find(example => example.name === '新章交付后核对全书底层规则');
   assert.match(String(worldRuleExample?.body.text), /宵禁两天.*复活死者.*全书适用/);
+  assert.match(String(worldRuleExample?.body.text), /逐字引用这条完整规则句/);
+  const extractWorldRuleExample = generation.examples.find(example => example.name === '旧稿提取时过滤世界观误收');
+  assert.match(String(extractWorldRuleExample?.body.text), /一次重生.*监护财产.*全书/);
   for (const id of ['writing.context', 'writing.send']) {
     const endpoint = API_CATALOG.find(item => item.id === id)!;
     assert(endpoint.request.some(field => field.name === 'chapterNumber'));
@@ -88,7 +95,15 @@ test('测试台注册目录覆盖全部业务接口', async () => {
       assert(app.hasRoute({ method: endpoint.method, url: endpoint.path }), endpoint.id);
       assert(endpoint.description && endpoint.note && endpoint.response.length);
       assert(endpoint.request.every((field) => field.description && field.example && field.type));
-      if (!endpoint.stream) assert(checkFields(endpoint.responseExample, endpoint.response).every((check) => check.passed), endpoint.id);
+      if (endpoint.binary === 'gzip') {
+        const response = await app.inject({ method: endpoint.method, url: endpoint.path, payload: endpoint.examples[0].body });
+        assert.equal(response.statusCode, endpoint.success);
+        assert.match(String(response.headers['content-disposition']), /Plotloom-agent-usage\.jsonl\.gz/);
+        const manifest = JSON.parse(gunzipSync(response.rawPayload).toString('utf8').split('\n')[0]);
+        assert(checkFields({ manifest, 'Content-Type': response.headers['content-type'], 'Content-Disposition': response.headers['content-disposition'] },
+          endpoint.response).every(check => check.passed), endpoint.id);
+        assert.equal(manifest.version, 1);
+      } else if (!endpoint.stream) assert(checkFields(endpoint.responseExample, endpoint.response).every((check) => check.passed), endpoint.id);
     }
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });

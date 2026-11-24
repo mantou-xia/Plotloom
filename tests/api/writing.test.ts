@@ -324,19 +324,30 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       const before = await read(world);
       const rule = '任何人施术复活死者，都要折损自己的寿命。';
       const impact = '全书任何一章出现复活，施术者均须承担折寿的代价。';
-      for (const scenario of ['temporary', 'missingImpact', 'edited', 'accepted'] as const) {
-        const number = { temporary: 21, missingImpact: 24, edited: 22, accepted: 23 }[scenario];
+      const quotes: Record<string, string> = {
+        temporary: '城门从今日起关闭两天，林舟只能走水路。',
+        singleRebirth: '从二十五岁回到十五岁，重新站在这人生的分叉口，不去想这样诡异的事情到底是怎么发生的，总之，他赚了。',
+        characterJudgment: '虽然监护人可以监管未成年人的财产，但那么光明正大的用，也太说不过去了。',
+      };
+      for (const scenario of ['temporary', 'missingImpact', 'singleRebirth', 'characterJudgment', 'dialogue', 'wrongReveal', 'edited', 'accepted'] as const) {
+        const number = { temporary: 21, missingImpact: 24, singleRebirth: 25, characterJudgment: 26, dialogue: 27,
+          wrongReveal: 28, edited: 22, accepted: 23 }[scenario];
         const temporary = scenario === 'temporary';
-        const quote = temporary ? '城门从今日起关闭两天，林舟只能走水路。' : rule;
+        const quote = quotes[scenario] ?? rule;
+        const chapter = scenario === 'dialogue' ? '林舟猜道：“' + quote + '”' : quote;
         const seen = [];
-        const text = `写第${number}章：${quote}\n` + plan([
-          { name: 'write_chapter_part', args: { part: 1, content: quote } }, review,
+        const text = `写第${number}章：${chapter}\n` + plan([
+          { name: 'write_chapter_part', args: { part: 1, content: chapter } }, review,
           { name: 'deliver_chapter', args: { partCount: 1, reason: '交稿' } },
           { name: 'list_documents', args: {} },
           { name: 'propose_world_rule', args: {
-            subject: temporary ? '城门关闭' : '复活代价', fact: quote, effective: temporary ? number : 1, revealed: number,
+            subject: temporary ? '城门关闭' : '待核对设定',
+            fact: scenario === 'characterJudgment' ? '未成年人的财产由监护人监管，年满十八岁后本人可以自行支配。' : quote,
+            effective: temporary ? number : 1, revealed: scenario === 'wrongReveal' ? 1 : number,
             evidence: { path: `正文章节/第${number}章.md`, quote },
-            ...(scenario === 'missingImpact' ? {} : { impact: temporary ? '接下来两章，进城必须走水路。' : impact }),
+            ...(scenario === 'missingImpact' ? {} : { impact: scenario === 'singleRebirth'
+              ? '全书任一章回顾过去时，都必须遵循鹿晗保留前世记忆的设定。'
+              : scenario === 'characterJudgment' ? '全书涉及遗产时，都要遵守监护和成年财产处置边界。' : impact }),
           } },
         ]);
         for await (const event of events(await server.request(session + '/messages', 'POST', { text }))) {
@@ -617,6 +628,84 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert(conflict.some(event => event.type === 'failed' && event.error.code === 'REVISION_CONFLICT'));
       assert.equal((await read(path)).content, '等待确认时作者手改。');
       await json(session + '/config', 'PUT', { projectApprovalMode: 'required' });
+    });
+    await t.test('接续上一轮作者大纲，超长正文先缩短再交付，含糊和否定不落盘', async () => {
+      const conversation = await json(prefix + '/sessions', 'POST', {}, 201);
+      const session = '/api/sessions/' + conversation.id;
+      const outlinePath = '大纲/第86章.md';
+      const chapterPath = '正文章节/第86章.md';
+      const outline = '林舟推开门，开始找母亲的通讯录。';
+      const followup = '可以，就按刚才那个大纲。先存下来，然后帮我写正文，不超过 12 字。';
+      const send = (text: string) => server.request(session + '/messages', 'POST', { text });
+      await json(session + '/messages', 'POST', { text: followup }, 400);
+      const discuss = '第86章大纲：' + outline + '请只用两句评价这个大纲是否承接上章，暂不写文件。';
+      assertFinal(await collect(await send(discuss + '\n' + plan([]))), 'completed');
+      const negative = await collect(await send('按刚才的大纲先别保存，也不要写正文。\n' + plan([])));
+      assertFinal(negative, 'completed');
+      assert(!negative.some(event => event.type === 'tool_approval_required'));
+      assert.equal((await read(outlinePath)).version, null);
+      assertFinal(await collect(await send(discuss + '\n' + plan([]))), 'completed');
+      const draft = (content: string) => ({ name: 'write_chapter_part', args: { part: 1, content } });
+      const delivery = { name: 'deliver_chapter', args: { partCount: 1, reason: '交稿' } };
+      const seen = [];
+      for await (const event of events(await send(followup + '\n' + plan([
+        draft('林舟推开门，开始找母亲的通讯录。'), review, delivery, draft('林舟翻找通讯录。'), review, delivery,
+      ])))) {
+        seen.push(event);
+        if (event.type !== 'tool_approval_required') continue;
+        const { path, preview, id } = event.approval;
+        if (path === outlinePath) assert(preview.endsWith(outline));
+        else {
+          assert.equal(path, chapterPath);
+          assert(preview.endsWith('林舟翻找通讯录。'));
+          assert(seen.some(item => item.type === 'tool_end' && item.name === 'deliver_chapter' && item.outcome === 'failed'));
+        }
+        await json(session + '/tool-approvals/' + id, 'POST', { decision: 'approve' });
+      }
+      assertFinal(seen, 'completed');
+      assert.deepEqual(seen.flatMap(event => event.type === 'tool_approval_required' ? [event.approval.path] : []), [outlinePath, chapterPath]);
+      assert.equal((await read(outlinePath)).content, outline);
+      assert.equal((await read(chapterPath)).content, '林舟翻找通讯录。');
+    });
+    await t.test('同一轮的工作区编辑和普通提案只给同一文稿留一份候选', async () => {
+      const path = '正文章节/候选去重.md';
+      await save(path, '原稿。');
+      const session = '/api/sessions/' + chat.id;
+      const events = await collect(await server.request(session + '/messages', 'POST', { text: plan([
+        { name: 'read_document', args: { path } }, review,
+        { name: 'manuscript_workspace', args: { action: 'edit', path, content: '第一版候选。' } },
+        proposal(path, '重复提交的第二版。'),
+        { name: 'manuscript_workspace', args: { action: 'edit', path, content: '重复提交的第三版。' } },
+      ]) }));
+      assertFinal(events, 'completed');
+      const submissions = events.filter(event => event.type === 'tool_end' && ['manuscript_workspace', 'propose_change'].includes(event.name));
+      assert.deepEqual(submissions.map(event => event.type === 'tool_end' && event.outcome), ['completed', 'failed', 'failed']);
+      const current = (await results())[0].proposals;
+      assert.equal(current.length, 1);
+      assert.equal(current[0].content, '第一版候选。');
+      assert.equal((await read(path)).content, '原稿。');
+    });
+    await t.test('只改一个自然段时，局部替换保留标题和其余正文', async () => {
+      const path = '正文章节/局部保真.md';
+      const original = '# 标题\r\n\r\n他关门。😀\r\n\r\n第二段逐字保留。\r\n';
+      await save(path, original);
+      const session = '/api/sessions/' + chat.id;
+      const edit = (quote?: string) => ({ name: 'manuscript_workspace', args: {
+        action: 'edit', path, content: '他反手关上门。😀', ...(quote === undefined ? {} : { original: quote }),
+      } });
+      const events = await collect(await server.request(session + '/messages', 'POST', { text:
+        '仅润色开头第一个自然段，保持其余内容逐字不变。\n' + plan([
+          { name: 'read_document', args: { path } }, review, edit(), edit('原文中不存在。'),
+          proposal(path, '只有改好的开头。'), edit('他关门。😀'),
+        ]) }));
+      assertFinal(events, 'completed');
+      const submissions = events.filter(event => event.type === 'tool_end' && ['manuscript_workspace', 'propose_change'].includes(event.name));
+      assert.deepEqual(submissions.map(event => event.type === 'tool_end' && event.outcome), ['failed', 'failed', 'failed', 'completed']);
+      const [candidate] = (await results())[0].proposals;
+      assert.equal(candidate.content, original.replace('他关门。😀', '他反手关上门。😀'));
+      assert.equal((await read(path)).content, original);
+      await decide(candidate);
+      assert.equal((await read(path)).content, candidate.content);
     });
     await t.test('聊天大纲交付新章，重写候选保护作者正文及重试版本', async () => {
       const session = '/api/sessions/' + chat2.id;

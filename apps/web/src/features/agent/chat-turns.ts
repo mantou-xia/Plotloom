@@ -1,10 +1,11 @@
-import type { Message, SessionDetail, TurnFileChanges } from '@plotloom/contracts';
+import type { Message, ReplyFeedback, SessionDetail, TurnFileChanges } from '@plotloom/contracts';
 import type { ExecutionEntry } from '@plotloom/ui/execution-timeline';
 import type { AgentActivity, AgentPhase } from '@plotloom/ui/agent-activity-header';
 import type { FileSource, WebSource } from '@plotloom/ui/source-reference';
 
 export interface ChatTurn {
   id: string; user?: Message; process: ExecutionEntry[]; answer: string;
+  feedback?: ReplyFeedback;
   fileChanges?: TurnFileChanges['files']; fileReferences: FileSource[]; citations: Map<string, WebSource>; phase: AgentPhase; activity: AgentActivity;
 }
 const activities: Record<string, AgentActivity> = { browser: 'browsing', read: 'reading', read_skill: 'reading', write: 'writing', edit: 'editing',
@@ -52,6 +53,7 @@ export function chatTurns(session: SessionDetail): ChatTurn[] {
     }
   }
   const fileChanges = new Map(session.fileChanges?.map(summary => [summary.turnId, summary.files]));
+  const feedback = new Map(session.feedback?.map(item => [item.turnId, item]));
   const { activity, pendingQuestion } = session;
   for (const [index, item] of turns.entries()) {
     const running = index === turns.length - 1 && session.status === 'running'
@@ -59,6 +61,7 @@ export function chatTurns(session: SessionDetail): ChatTurn[] {
     const outcome = item.user?.outcome;
     item.phase = running ? 'working' : outcome === 'failed' ? 'failed' : outcome === 'aborted' ? 'stopped' : 'completed';
     if (!running) item.fileChanges = fileChanges.get(item.id);
+    item.feedback = feedback.get(item.id);
     if (running && activity === 'awaiting_approval') {
       item.activity = 'awaiting_approval';
       // 仅标记本轮待批调用；同批其他仍执行中的工具保留实际状态。

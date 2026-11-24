@@ -25,6 +25,7 @@ export interface EndpointDoc {
   examples: Array<{ name: string; body: Record<string, unknown> }>;
   responseExample: unknown;
   stream?: boolean;
+  binary?: 'gzip';
 }
 const field = (name: string, type: string, required: boolean, description: string, example: string): FieldDoc => ({ name, type, required, description, example });
 const provider = field('provider', 'string', true, '供应商标识，必须与模型列表中的 provider 一致。', 'krill-ai-codex');
@@ -339,6 +340,7 @@ export const API_CATALOG: EndpointDoc[] = [
       ...questionFields('pendingQuestion.').map(item => ({ ...item, required: false })),
       field('manuscriptRequest', 'object', false, '最近一次右侧文稿定位或候选审阅请求，含请求 id、createdAt 和 view，用于刷新或断流后去重恢复。候选定位包含 proposalId。', '{}'),
       field('fileChanges', 'array', false, '包含成功写入的已结束轮次；生成中及无记录时省略对应轮次。', '[]'),
+      field('feedback', 'array', false, '本机保存的最新回答评价，元素包含 turnId、rating、comment、updatedAt。', '[]'),
       field('fileChanges[].turnId', 'string', false, '与同轮消息一致的轮次 ID。', 'turn-1'),
       field('fileChanges[].files', 'array', false, '按首次写入顺序排列，一个文件仅出现一次。', '[]'),
       field('fileChanges[].files[].path', 'string', false, '项目相对路径。', 'README.md'),
@@ -442,7 +444,7 @@ export const API_CATALOG: EndpointDoc[] = [
   },
   {
     id: 'generation.send', module: 'generation', name: '发送消息', method: 'POST', path: '/api/sessions/:id/messages', success: 200, stream: true,
-    description: '向指定会话提交消息，实时接收文本、工具调用和最终状态。小说聊天用「写第四章：」加大纲发起写章，模型开始前通过 tool_approval_required 确认是否保存大纲。接受后写入大纲目录，旧稿保留在定稿记录中。拒绝留档仍会起草正文。审批时大纲被外部修改会发送 failed（REVISION_CONFLICT）。仅讨论大纲不弹保存审批。后端每轮按本机时区提供当前日期，内部日期上下文追加于历史末尾，不改写系统提示和旧消息，也不展示为用户正文。',
+    description: '向指定会话提交消息，实时接收文本、工具调用和最终状态。小说聊天用「写第四章：」加大纲发起写章，模型开始前通过 tool_approval_required 确认是否保存大纲。接受后写入大纲目录，旧稿保留在定稿记录中。拒绝留档仍会起草正文。审批时大纲被外部修改会发送 failed（REVISION_CONFLICT）。仅讨论大纲不弹保存审批。世界观提议须引用作者本轮规则原话，或带章号正文中独立、明确适用范围的规则原句。单次经历或从人物判断推导出的设定不进入审批，工具结果为 failed，轮次可继续。后端每轮按本机时区提供当前日期，内部日期上下文追加于历史末尾，不改写系统提示和旧消息，也不展示为用户正文。',
     note: '同一会话一次只处理一条请求。全局人设待设置时，Agent 可通过 user_answer_required 请求确认，确认前不写入人设。小说聊天支持审校与候选，可从 writing 查询创作记录。导入旧稿或交付新章时，新增正文使用正文章节/第4章.md 这样的阿拉伯数字章号路径，已存在的章节保留原路径。引用含 editComment 时，本轮仅开放精确选区写入。模型可调用 edit_quoted_selections 并通过 tool_approval_required 发起审批，批准且版本相符时仅替换所选字符。格式或选区错误返回 400，跨工作区或项目聊天尝试选区修改返回 403，版本不存在返回 404。审批时版本变化会在工具结果中报告冲突。成功的 tool_end 带有稿件刷新指令。技能从本次请求开始固定，skillIds 不改变启用设置，不可用技能返回 422。流以 completed、aborted 或 failed 结束。断开订阅不会停止生成，要终止模型请调用停止接口。',
     request: [id, field('text', 'string', false, '最多 100000 字符；文字、附件或文档引用至少有一项有效内容，纯附件/引用可省略。请求体上限 1 MiB。', '读取 scene 并给出 A、B 两个候选。'), field('skillIds', 'array', false, '本次显式加载说明的技能 ID，必须已启用且工具依赖可用；不传则按摘要自动选择。', '["skill-id"]'), ...SOURCE_REQUEST_FIELDS],
     response: [field('sessionId', 'string', true, '每一个 SSE 事件都有会话 ID。', '019…')],
@@ -456,11 +458,13 @@ export const API_CATALOG: EndpointDoc[] = [
       { name: '小说聊天导入旧章节', body: { text: '请调用 import_chapters 导入本轮旧稿附件并让我确认。', attachmentIds: ['替换为TXT或Markdown附件ID'] } },
       { name: '小说聊天写新章', body: { text: '写第四章：林舟抵达码头，发现渡船提前离开。' } },
       { name: '只讨论本章大纲', body: { text: '讨论第四章大纲：林舟抵达码头，发现渡船提前离开。帮我看看这个转折是否自然。' } },
+      { name: '保存上一轮大纲并起草正文', body: { text: '可以，就按刚才那个大纲。先存下来，然后帮我写正文，控制在 600 到 900 字。' } },
       { name: '提醒为关键人物建卡', body: { text: '请核对本聊天已交付的章节，若有影响后续剧情且缺卡的人物，请引用原句提醒我建卡。先核对称呼，等我选择后再起草。' } },
       { name: '交稿后复核角色变化', body: { text: '请复核本聊天刚交付的第四章。逐一对照出场角色的适用卡片，引用证据段提出变化；如有变化请逐项让我确认。' } },
-      { name: '新章交付后核对全书底层规则', body: { text: '写第二十三章：全城宵禁两天，林舟走水路进城，得知任何人施术复活死者都要折损自己的寿命。交稿后只为尚未收录、全书适用的底层规则提出建议，引用正式章稿原句并请我确认。' } },
+      { name: '新章交付后核对全书底层规则', body: { text: '写第二十三章：全城宵禁两天，林舟走水路进城。另起一段写出规则原句：任何人施术复活死者都要折损自己的寿命。交稿后只为全书适用、章稿直接确立的规则提出建议，逐字引用这条完整规则句并请我确认。' } },
+      { name: '旧稿提取时过滤世界观误收', body: { text: '请读取前三章并整理世界观。一次重生及角色对监护财产的看法留在剧情资料里。只有原文独立写出适用于全书的规则才提议。没有合格条目时直接说明。' } },
       { name: '聊天导出第四章 TXT', body: { text: '请将本书第四章最新保存的正文导出为 TXT。' } },
-      { name: '修改小说文稿并在右侧采纳', body: { text: '请读取本书第一章，将「林舟走到码头。」改成「林舟跑到码头。」。调用 manuscript_workspace 的 edit 提交候选。' } },
+      { name: '修改小说文稿并在右侧采纳', body: { text: '请读取本书第一章，只将「林舟走到码头。」改成「林舟跑到码头。」，其余内容逐字不变。调用 manuscript_workspace 的 edit，提供 original 和 content 提交候选。' } },
       { name: '审校润色并打开候选', body: { text: '请读取本书第一章，润色环境描写。审校通过后调用 propose_change 提交候选，在右侧审阅。' } },
       { name: '分段起草第四章并确认整章', body: { text: '完成第四章，大纲如下：林舟抵达码头，从前一章的约定展开。分段暂存，整章写完后交给我确认。' } },
       { name: '访问浏览器并引用网页', body: { text: '使用 browser 打开 https://example.com，读取页面标题与正文，简要总结并在结论旁引用网页来源。' } },
@@ -513,6 +517,30 @@ export const API_CATALOG: EndpointDoc[] = [
     responseExample: { id: '018cc233-92bc-7e51-abe9-63a0e8b3a30b', decision: 'approve' },
   },
   {
+    id: 'sessions.reply-feedback', module: 'sessions', name: '保存回答评价', method: 'PUT', path: '/api/sessions/:id/feedback/:turnId', success: 200,
+    description: '为已完成的一轮回答保存、修改或撤回本机评价。相同内容重复提交沿用已保存的记录。',
+    note: '400 INVALID_REQUEST 表示字段无效；404 SESSION_NOT_FOUND 或 REPLY_NOT_FOUND 表示会话或已完成回答不存在；409 SESSION_BUSY 表示会话正在运行。rating 为空且 comment 为空时撤回评价。',
+    request: [id, field('turnId', 'string', true, '会话详情中对应用户消息的轮次 ID。旧会话使用用户消息 ID。', 'turn-1'),
+      field('rating', 'like | dislike | null', true, '点赞、点踩或取消评分。', 'dislike'),
+      field('comment', 'string', true, '选填说明用空字符串表示，最多 2000 字符。', '希望先问清楚修改范围。')],
+    response: [field('turnId', 'string', true, '已评价的轮次。', 'turn-1'),
+      field('rating', 'like | dislike | null', true, '当前评分。', 'dislike'),
+      field('comment', 'string', true, '当前文字反馈。', '希望先问清楚修改范围。'),
+      field('updatedAt', 'string', true, '最近一次变更的时间。', '2026-11-24T00:00:00Z')],
+    examples: [{ name: '点踩并给出反馈', body: { rating: 'dislike', comment: '希望先问清楚修改范围。' } },
+      { name: '点赞', body: { rating: 'like', comment: '' } }, { name: '撤回评价', body: { rating: null, comment: '' } }],
+    responseExample: { turnId: 'turn-1', rating: 'dislike', comment: '希望先问清楚修改范围。', updatedAt: '2026-11-24T00:00:00Z' },
+  },
+  {
+    id: 'sessions.export-usage', module: 'sessions', name: '导出本机 Agent 使用记录', method: 'POST', path: '/api/agent-usage/export', success: 200, binary: 'gzip',
+    description: '手动导出本机使用数据，返回 GZIP 压缩的 JSON Lines。含会话、回答评价、Agent 写入快照、小说版本与候选决定。',
+    note: '原文和修改内容可能包含私人资料。400 INVALID_REQUEST 表示请求体无效，403 ORIGIN_FORBIDDEN 表示请求来源不允许。首行 manifest 含格式版本及导出时间。连接中断时应丢弃不完整的压缩包。',
+    request: [], response: [field('Content-Type', 'string', true, '二进制压缩流。', 'application/gzip'),
+      field('Content-Disposition', 'string', true, '建议保存为 Plotloom-agent-usage.jsonl.gz。', 'attachment'),
+      field('manifest.version', 'number', true, '解压后首行的记录格式版本。', '1')],
+    examples: [{ name: '导出本机记录', body: {} }], responseExample: { type: 'manifest', version: 1, exportedAt: '2026-11-24T00:00:00Z' },
+  },
+  {
     id: 'generation.stop', module: 'generation', name: '停止生成', method: 'POST', path: '/api/sessions/:id/stop', success: 200,
     description: '主动停止指定会话的当前生成，等待结果保存后返回空闲状态。',
     note: '空闲会话重复停止仍返回 idle。取消待回答问题、待审批请求或手动压缩；消息流收到 aborted，压缩请求返回 outcome: aborted。',
@@ -550,7 +578,7 @@ export const API_ERRORS = [
   { status: '500', code: 'ATTACHMENT_INVALID', description: '附件记录损坏或归属元数据不一致，请检查本机备份。' },
   { status: '422', code: 'NOVEL_SESSION_REQUIRED / WRITING_SOURCE_MISSING / WRITING_CONTEXT_TOO_LARGE', description: '创作需要小说聊天、存在的正式资料和预算内上下文。' },
   { status: '404', code: 'CHARACTER_CARD_NOT_FOUND', description: '指定角色卡阶段不存在或文件缺少阶段元数据。' },
-  { status: '工具失败', code: 'WRITING_REVIEW_REQUIRED / WRITING_NEEDS_INPUT / WRITING_TARGET_MISMATCH / WRITING_OUTPUT_TOO_LARGE', description: '审校未完成、待确认冲突、目标不符或超预算时不生成候选；结果通过工具消息与创作查询查看。' },
+  { status: '工具失败', code: 'WRITING_REVIEW_REQUIRED / WRITING_NEEDS_INPUT / WRITING_TARGET_MISMATCH / WRITING_OUTPUT_TOO_LARGE / WRITING_PROPOSAL_ALREADY_SUBMITTED', description: '审校未完成、待确认冲突、目标不符、超过篇幅上限或同轮重复提交时拒绝新增候选；超长章稿可在同轮缩短后重新审校交付。' },
   { status: '404', code: 'SKILL_NOT_FOUND / SKILL_FILE_NOT_FOUND', description: '技能或资源不存在；重新查询技能列表和资源路径。' },
   { status: '409', code: 'SKILL_NAME_EXISTS / SKILL_READ_ONLY / SKILL_VERSION_CONFLICT', description: '名称已存在、内置只读或版本已变化；换名、复制或重新读取。' },
   { status: '422', code: 'SKILL_IMPORT_FAILED / SKILL_UNAVAILABLE / SKILL_BINARY_RESOURCE', description: '导入目录不可读、显式技能未启用/依赖缺失，或资源不是 UTF-8 文本；检查来源、启用诊断或文件编码。' },
