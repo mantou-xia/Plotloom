@@ -6,6 +6,7 @@ import { SOURCE_LIMITS, type Attachment, type AttachmentContent, type UploadAtta
 import type { Message } from '@plotloom/contracts';
 import type { SessionSkillProfile } from '@plotloom/contracts/skills';
 import type { WorkspaceService } from './workspaces.ts';
+import { planChapterImport } from './chapter-import.ts';
 
 export interface AttachmentStore {
   save(file: AttachmentContent): Promise<void>;
@@ -26,6 +27,20 @@ export interface ResolvedMessageInput extends MessageSourceSnapshot {
 const fail = (code: string, message: string, status = 422): never => { throw new WorkspaceError(code, message, status); };
 const metadata = ({ data: _data, ...file }: AttachmentContent): Attachment => file;
 const extensions: Record<string, string[]> = { 'image/png': ['png'], 'image/jpeg': ['jpg', 'jpeg'], 'image/webp': ['webp'], 'text/plain': ['txt'], 'text/markdown': ['md', 'markdown'] };
+const isTextAttachment = (file: Attachment) => file.mimeType === 'text/plain' || file.mimeType === 'text/markdown';
+
+/** 仅把明确的历史重导入指令绑定到附件，普通讨论和否定句不会被当成导入。 */
+function historicalImportRequest(text: string) {
+  const command = text.trim().replace(/^(?:请\s*)?(?:帮我\s*)?/, '').replace(/[。！!\s]+$/u, '');
+  const explicit = /^(?:重新|再次|再)?导入\s*(刚才|上次|上一轮|之前|先前|此前)\s*(?:(?:给你)?发(?:过)?的|上传(?:过)?的|导入(?:过)?的|的)?\s*(?:那|这)?\s*(?:(\d+|[一二两三四五六七八九十])\s*(?:个|份|篇|章))?\s*(?:附件|文件|旧稿)$/u.exec(command);
+  if (explicit) return { recent: ['刚才', '上次', '上一轮'].includes(explicit[1]), fileCount: importCount(explicit[2]) };
+  const chapters = /^(?:重新|再次|继续|接着|再)?导入\s*前\s*(\d+|[一二两三四五六七八九十])\s*章$/u.exec(command);
+  if (chapters) return { recent: false, firstChapters: importCount(chapters[1]) };
+  if (/^(?:(?:重新|再次|再)\s*(?:继续|接着)?|继续|接着)\s*导入$/u.test(command)) return { recent: true };
+}
+
+const importCount = (count?: string) => count === undefined ? undefined
+  : /^\d+$/.test(count) ? Number(count) : '一二三四五六七八九十'.indexOf(count.replace('两', '二')) + 1;
 
 /** 文本必须严格 UTF-8；拒绝常见二进制内容，保留 BOM 和换行作为原始资料。 */
 function decodeText(bytes: Uint8Array): string {
@@ -76,10 +91,49 @@ export class MessageSourceService {
   }
   async list(sessionId: string) { await this.sessions.profile(sessionId); return { attachments: await this.store.list(sessionId) }; }
   async read(sessionId: string, id: string) { await this.sessions.profile(sessionId); return this.store.read(sessionId, id); }
-  /** 只提取当前消息选中的文本附件，二进制附件继续用于普通聊天。 */
+  /** 用同会话的导入调用记录定位原附件。重复选同一批时仍只算一个候选。 */
+  async historicalImportSources(sessionId: string, text: string, sources?: MessageSources): Promise<MessageSources | undefined> {
+    if (sources?.attachmentIds?.length || sources?.references?.length) return sources;
+    const request = historicalImportRequest(text);
+    if (!request || !(await this.sessions.profile(sessionId)).workspaceId) return sources;
+    const messages = await this.sessions.messages(sessionId);
+    const importedTurns = new Set(messages.filter(message => message.turnId && message.content.some(
+      block => block.type === 'tool' && block.name === 'import_chapters',
+    )).map(message => message.turnId));
+    const batches = new Map<string, Attachment[]>();
+    for (const message of messages) {
+      if (message.role !== 'user' || !importedTurns.has(message.turnId)) continue;
+      const files = message.attachments?.filter(isTextAttachment) ?? [];
+      if (!files.length) continue;
+      const key = JSON.stringify(files.map(file => file.id).sort());
+      batches.delete(key);
+      batches.set(key, files);
+    }
+    const candidates = [...batches.values()];
+    const matchingCount = (request.recent ? candidates.slice(-1) : candidates)
+      .filter(files => request.fileCount === undefined || files.length === request.fileCount);
+    const matches: Attachment[][] = [];
+    for (const files of matchingCount) {
+      if (request.firstChapters === undefined) { matches.push(files); continue; }
+      // “前三章”指定的是章号，不是附件数量。一份附件也可以包含多章。
+      try {
+        const chapters = planChapterImport(await this.chapterImportFiles(sessionId, files.map(file => file.id)));
+        if (chapters.length === request.firstChapters && chapters.every((chapter, index) => chapter.number === index + 1)) matches.push(files);
+      } catch (error) {
+        if (!(error instanceof WorkspaceError) || !['CHAPTER_IMPORT_AMBIGUOUS', 'INVALID_REQUEST'].includes(error.code)) throw error;
+      }
+    }
+    if (matches.length === 0) fail('CHAPTER_IMPORT_HISTORY_NOT_FOUND', '当前小说聊天没有找到符合描述的导入附件。请核对附件数量，或随本轮消息选择原文件。');
+    if (matches.length > 1) {
+      const names = matches.slice(-3).map(files => files.map(file => file.name).join('、')).join('；');
+      fail('CHAPTER_IMPORT_HISTORY_AMBIGUOUS', `找到多批符合描述的导入附件：${names}。如需最近一批，请发送“重新导入上次的附件”，也可以随消息选择要导入的文件。`);
+    }
+    return { ...sources, attachmentIds: matches[0].map(file => file.id) };
+  }
+  /** 通过同一会话的附件存储读取本轮已绑定的文本原件。 */
   async chapterImportFiles(sessionId: string, ids: readonly string[]) {
     const files = await Promise.all(ids.map(id => this.store.read(sessionId, id)));
-    return files.filter(file => file.mimeType === 'text/plain' || file.mimeType === 'text/markdown')
+    return files.filter(isTextAttachment)
       .map(file => ({ name: file.name, content: decodeText(Buffer.from(file.data, 'base64')) }));
   }
   /** 删除与消息准备共用互斥边界；已进入历史的文件保留，避免历史预览失效。 */

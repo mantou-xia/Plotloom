@@ -88,10 +88,11 @@ export async function createModelFixture() {
       }
       if (prompt === 'THINK') writeChunk(response, { reasoning_content: '这是模型返回的可见思考文本。' });
       const writing = /^WRITE:(.+)$/m.exec(prompt);
-      if (writing) {
+      const historicalImport = /^(?:重新导入(?:之前给你发的三个附件|上次的附件)|重新继续导入|继续导入|导入前三章)\s*(?:$|\n)/.test(prompt);
+      if (writing || historicalImport) {
         // 按公开工具协议逐步执行测试计划；只替换模型决策，工具/存储/权限走生产实现。
         // 附件消息的测试控制文本在首行，后面的原始资料由生产装配器拼入。
-        const plan = JSON.parse(writing[1]);
+        const plan = writing ? JSON.parse(writing[1]) : { steps: [{ name: 'import_chapters', args: {} }] };
         const start = body.messages.findLastIndex((m: any) => m.role === 'user');
         const toolResults = body.messages.slice(start + 1).filter((m: any) => m.role === 'tool');
         const step = toolResults.length;

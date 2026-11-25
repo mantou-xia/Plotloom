@@ -55,6 +55,7 @@ export interface AgentOptions {
   resolveNovelRoot?: (workspaceId: string) => Promise<string>;
   resolveResources?: (sessionId: string, text: string, sources?: MessageSources, businessInput?: unknown) => Promise<RequestResources | undefined>;
   recoverBusinessInput?: (request: SubmitMessageRequest, entries: ReadonlyMap<string, unknown>) => unknown;
+  resolveHistoricalSources?: (sessionId: string, text: string, sources?: MessageSources) => Promise<MessageSources | undefined>;
   resolveSources?: (sessionId: string, text: string, sources: MessageSources) => Promise<MessageSourceSnapshot & { prompt: string; images: Array<{ mimeType: string; data: string }> }>;
 }
 interface TurnRequest {
@@ -801,6 +802,10 @@ export class AgentService {
       const model = await this.requireModel(execution?.model ?? record.selection);
       if (execution?.model.thinkingLevel && clampThinkingLevel(model, execution.model.thinkingLevel) !== execution.model.thinkingLevel) {
         throw new AgentError(409, 'RETRY_UNAVAILABLE', '原模型已不支持本轮的思考档位，请重新发起创作。');
+      }
+      // 只在新聊天消息中解析历史指代；重试始终重放已绑定的来源。
+      if (!retryMessageId && businessInput === undefined && this.options.resolveHistoricalSources) {
+        sources = await this.options.resolveHistoricalSources(id, text, sources);
       }
       if (sources?.attachmentIds?.length || sources?.references?.length) {
         if (!this.options.resolveSources) throw new AgentError(422, 'MESSAGE_SOURCES_UNAVAILABLE', '当前服务未配置附件与引用能力。');

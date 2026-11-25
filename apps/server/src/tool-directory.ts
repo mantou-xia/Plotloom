@@ -5,7 +5,7 @@ import type { ToolInfo, ToolScope } from '@plotloom/contracts/skills';
 const descriptions: Record<string, [string, string]> = {
   write_chapter_part: ['按段号暂存本轮章节草稿，同号重写。', 'part、content；单段最多 1500 个 UTF-16 字符'],
   deliver_chapter: ['拼接已暂存的草稿，审校后交给作者确认。新章保存，重写生成候选。', 'partCount、reason'],
-  import_chapters: ['从本轮 UTF-8 TXT/Markdown 附件导入旧章节，作者确认后写入。', '空对象；附件从本轮消息读取'],
+  import_chapters: ['从本轮绑定的 UTF-8 TXT/Markdown 附件导入旧章节，作者确认后写入。', '空对象；附件来自本轮提交或明确选中的同会话历史导入'],
   manuscript_workspace: ['操作小说正文和大纲。edit 直接提交候选，作者在右侧采纳后写入；其他操作等待确认。', 'action；按操作填写 path、content 或 revisionId，局部编辑还需填写 original'],
   propose_world_rule: ['提交全书适用的世界底层规则，作者确认后保存。', 'subject、fact、effective（填 1）、revealed；章节建议另需 evidence、impact'],
   suggest_character_card: ['交稿后询问是否为关键人物建卡或补早期阶段，作者同意后起草并单独确认保存。首次调用会忽略 content。', 'character、chapter、reason、evidence；可选 possibleIdentity；作者同意后传 content'],
@@ -63,7 +63,7 @@ export function toolDirectory(options: AgentOptions) {
         : name === 'web_fetch' ? '不执行脚本、不使用登录态；20 秒超时、2 MiB 响应上限、正文最多 30000 字符。'
         : name === 'write' || name === 'edit' ? '仅当前项目或小说目录内文本；按会话审批模式决定是否逐次请求批准。'
         : PROJECT_TOOLS.includes(name) ? '仅可访问会话绑定目录内受支持的文件。'
-        : name === 'import_chapters' ? '仅小说聊天且本轮带文本附件时可用。'
+        : name === 'import_chapters' ? '仅小说聊天，本轮提交文本附件或明确选中同会话历史导入附件时可用。'
         : ['write_chapter_part', 'deliver_chapter'].includes(name) ? '仅小说聊天明确发起整章写作时可用，最终交稿须作者确认。'
         : WRITING_TOOLS.includes(name) ? '仅小说聊天装配对应业务资源后可用。' : '由当前聊天工具配置决定。' };
   });

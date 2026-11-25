@@ -210,7 +210,8 @@ export class WritingService {
       importChapters: async (signal?: AbortSignal, confirm?: ConfirmOperation) => {
         const chapters = planChapterImport(importFiles);
         const list = chapters.map(chapter => chapter.title).join('\n');
-        if (!await confirm?.(`将以下 ${chapters.length} 章导入本书「正文章节」？\n${list}\n正文保留原文，已有不同正文的章节不会被覆盖。`, { path: '正文章节/', operation: 'create', label: '导入章节' })) return { status: 'declined' };
+        const filenames = importFiles.map(file => file.name).join('\n');
+        if (!await confirm?.(`将以下 ${chapters.length} 章导入本书「正文章节」？\n${list}\n\n附件原文件：\n${filenames}\n正文保留原文，已有不同正文的章节不会被覆盖。`, { path: '正文章节/', operation: 'create', label: '导入章节' })) return { status: 'declined' };
         signal?.throwIfAborted();
         const result = await this.workspaces.importChapters(context.workspaceId, chapters, signal);
         // 只有新增旧稿后才提示可选的后续工作，重复导入时只报告结果。

@@ -59,6 +59,12 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const importExample = API_CATALOG.find(item => item.id === 'generation.send')?.examples.find(example => example.name === '小说聊天导入旧章节');
   assert(importExample?.body.attachmentIds && String(importExample.body.text).includes('import_chapters'));
   const generation = API_CATALOG.find(item => item.id === 'generation.send')!;
+  const historicalImport = generation.examples.find(example => example.name === '小说聊天重导入上次附件');
+  assert.deepEqual(historicalImport?.body, { text: '重新导入上次的附件' });
+  assert.deepEqual(generation.examples.find(example => example.name === '小说聊天继续导入')?.body, { text: '重新继续导入' });
+  assert.deepEqual(generation.examples.find(example => example.name === '小说聊天按章号重导入')?.body, { text: '导入前三章' });
+  assert.match(generation.request.find(field => field.name === 'text')!.description,
+    /CHAPTER_IMPORT_HISTORY_NOT_FOUND.*CHAPTER_IMPORT_HISTORY_AMBIGUOUS.*批准后才写入/);
   assert.match(generation.note, /正文章节\/第4章\.md/);
   assert(generation.examples.some(example => example.name === '修改小说文稿并在右侧采纳' && String(example.body.text).includes('manuscript_workspace')));
   assert(generation.examples.some(example => example.name === '审校润色并打开候选' && String(example.body.text).includes('propose_change')));

@@ -119,7 +119,7 @@ export async function writingResources(service: WritingService, sessionId: strin
   const tool = (name: string, description: string, parameters: Record<string, unknown>, execute: BusinessTool['execute']): BusinessTool => ({ name, description, parameters,
     execute: (value, signal, confirm) => service.trackWrites(sessionId, () => execute(value, signal, confirm)) });
   const importPrompt = files.length
-    ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。'
+    ? '\n作者明确要导入本轮 TXT 或 Markdown 旧章节时，调用 import_chapters。工具直接处理原附件，不要重新生成或改写正文；标题不明确时向作者说明如何修正，拒绝或停止后不得换工具绕过。若作者想重新发起审批，可在同一聊天发送「继续导入」复用这一批附件。'
       + '作者若只要求导入，先简短说明导入结果。工具有 nextSteps 时，在最终回复中给出这三个可选方向并问他想从哪一个开始。用普通聊天文字提示，不发起选择卡或开始后续工作。写下一章可直接发「写第四章：」加大纲（章号按实际替换）。重复导入没有新增时只报告跳过。作者已明确安排后续工作时按原要求处理。'
     : '';
   const lengthLimit = chapterLengthLimit(input.instructions);

@@ -515,15 +515,16 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       const paths = async () => (await json(bookPath + '/documents')).paths.filter((path: string) => path.startsWith('正文章节/'));
       const importResult = () => JSON.parse(fixture.requests.at(-1).messages.findLast((message: any) => message.role === 'tool').content);
       async function run(attachmentIds: string[], decision: 'accept' | 'skip' | 'stop' | 'ambiguous', expectedCount = 0,
-        expectedTitles = /第一章重回[\s\S]*第二章往日[\s\S]*第三章访客/) {
+        expectedTitles = /第一章重回[\s\S]*第二章往日[\s\S]*第三章访客/, text = plan([{ name: 'import_chapters', args: {} }])) {
         const received = [];
         for await (const event of events(await server.request(session + '/messages', 'POST', {
-          text: plan([{ name: 'import_chapters', args: {} }]), attachmentIds,
+          text, attachmentIds,
         }))) {
           received.push(event);
           if (event.type !== 'tool_approval_required') continue;
           assert.equal((await paths()).length, expectedCount);
           assert.match(event.approval.preview, expectedTitles);
+          if (text.startsWith('重新导入之前')) assert.match(event.approval.preview, /附件原文件：\s*样本1\.txt\s*样本2\.txt\s*样本3\.txt/);
           if (decision === 'stop') await json(session + '/stop', 'POST');
           else await json(session + '/tool-approvals/' + event.approval.id, 'POST',
             { decision: decision === 'accept' ? 'approve' : 'deny' });
@@ -537,7 +538,9 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert.equal(importResult().nextSteps, undefined);
       await run(ids, 'stop');
       assert.deepEqual(await paths(), []);
-      const imported = await run(ids, 'accept');
+      const repeat = '重新导入之前给你发的三个附件';
+      await run([], 'skip', 0, undefined, '重新继续导入');
+      const imported = await run([], 'accept', 0, undefined, '导入前三章');
       assert(imported?.type === 'tool_end');
       assert.equal(imported.manuscriptView?.path, expected[0]);
       assert.match(importResult().nextSteps, /角色卡.*全书都适用.*下一章的大纲/);
@@ -550,7 +553,8 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
         const original = originals[index].replace(/^\r\n/, '');
         assert.equal(await readFile(join(other, path), 'utf8'), '# ' + original.replace('\r\n', '\r\n\r\n'));
       }
-      await run(ids, 'accept', 3);
+      assert.deepEqual((await json(session)).messages.findLast((message: any) => message.role === 'user').attachments.map((file: any) => file.id), ids);
+      await run([], 'accept', 3, undefined, repeat);
       assert.equal(importResult().nextSteps, undefined);
       const doc = await json(bookPath + '/document/read', 'POST', { path: expected[1] });
       await json(bookPath + '/document', 'PUT', { path: doc.path, baseVersion: doc.version, content: '作者手改。' });
@@ -568,6 +572,20 @@ test('P3 大纲留档、内容创作和候选闭环', { timeout: 120000 }, async
       assert(legacyConflict?.type === 'tool_end' && legacyConflict.outcome === 'failed');
       assert.deepEqual((await paths()).sort(), [...expected, legacy].sort());
       assert.equal(await readFile(join(other, legacy), 'utf8'), '# 第十一章 旧标题\n\n原文。');
+      const otherIds = await Promise.all([12, 13, 14].map(n => attach(`备选${n}.txt`, `第${n}章\n备选正文。`)));
+      await run(otherIds, 'skip', 4, /第12章[\s\S]*第13章[\s\S]*第14章/);
+      await run([], 'skip', 4, /第12章[\s\S]*第13章[\s\S]*第14章/, '继续导入');
+      const ambiguous = await json(session + '/messages', 'POST', { text: repeat }, 422);
+      assert.equal(ambiguous.error.code, 'CHAPTER_IMPORT_HISTORY_AMBIGUOUS');
+      assert.match(ambiguous.error.message, /样本1\.txt.*备选12\.txt/);
+      const missing = await json(session + '/messages', 'POST', { text: '重新导入之前发的十个附件' }, 422);
+      assert.equal(missing.error.code, 'CHAPTER_IMPORT_HISTORY_NOT_FOUND');
+      await run([], 'stop', 4, /第12章[\s\S]*第13章[\s\S]*第14章/, '重新导入上次的附件');
+      await run([], 'skip', 4, undefined, '导入前三章');
+      assert.equal((await paths()).length, 4);
+      const ordinary = await collect(await server.request(session + '/messages', 'POST', { text: '先不要重新导入之前发的三个附件' }));
+      assertFinal(ordinary, 'completed');
+      assert(!fixture.requests.at(-1).tools.some((tool: any) => tool.function.name === 'import_chapters'));
     });
     await t.test('聊天写章先确认大纲留档，跳过仍可写，旧稿可查且审批期间的手改受保护', async () => {
       const session = '/api/sessions/' + chat.id;

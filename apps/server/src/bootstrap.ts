@@ -48,6 +48,7 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
     resolveAgentProfile: () => profiles.read(),
     completeAgentBootstrap: async (input, signal) => (await profiles.update(input, { signal })) !== null,
     resolveSources: (id, text, input) => sources.resolve(id, text, input),
+    resolveHistoricalSources: (id, text, input) => sources.historicalImportSources(id, text, input),
     recoverBusinessInput: recoverWritingInput,
     resolveResources: async (id, text, input, businessInput) => {
       if (businessInput !== undefined) return writingResources(writing, id, businessInput as WritingRequest, characterCards);
