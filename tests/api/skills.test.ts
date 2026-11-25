@@ -7,7 +7,8 @@ import { startServer, collect, events, assertFinal } from './client.ts';
 import { createModelFixture, TEST_KEY } from './fixture.ts';
 
 const source = (name: string, text = '技能正文唯一标记甲', extra = '') => `---\nname: ${name}\ndescription: 测试对白技能\n${extra}---\n${text}\n`;
-const writingReferences = ['references/drafting.md', 'references/prose-review.md', 'references/rewrite-fidelity.md'];
+const writingReferences = ['references/drafting.md', 'references/character-card.md', 'assets/character-card.md'];
+const pausedReferences = ['references/prose-review.md', 'references/rewrite-fidelity.md'];
 /** 独立 HTTP 服务 + 模型协议替身：只替换模型，资源管理、SDK 工具与持久化都走生产路径。 */
 test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'plotloom-skills-')); const fixture = await createModelFixture();
@@ -41,7 +42,11 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       await json(`/api/skills/${builtin.id}/file`, 'PUT', { path: 'SKILL.md', content: source('novel-writing'), baseVersion: builtin.version }, 409);
       const copy = await json(`/api/skills/${builtin.id}/copy`, 'POST', { name: 'my-writing' }, 201);
       assert.equal(copy.source, 'custom'); assert(copy.files.includes('references/character-card.md'));
-      // 自定义副本也必须带齐审稿资源和来源许可，不能只复制入口。
+      // 副本带齐现行写作资料及来源许可，暂缓阶段的参考不随包分发。
+      for (const path of pausedReferences) {
+        assert(!builtin.files.includes(path));
+        assert(!copy.files.includes(path));
+      }
       for (const path of [...writingReferences, 'NOTICE.md']) {
         assert.equal((await json(`/api/skills/${copy.id}/file`, 'POST', { path })).content,
           await readFile(new URL('../../packages/storage/builtin/novel-writing/' + path, import.meta.url), 'utf8'));
@@ -122,7 +127,7 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
       assert.match(JSON.stringify(fixture.requests.at(-1).messages.filter((m: any) => m.role === 'system')), /技能正文唯一标记甲/);
       await json(msg(normal.id), 'POST', { text: '显式越权', skillIds: [skill.id] }, 422);
       assertFinal(await send(chat2.id, '加载小说技能', ['builtin-novel-writing']), 'completed');
-      // 入口不预装专项参考；逐个经过真实工具读取，验证新增资源可用且仍按需加载。
+      // 入口不预装参考内容；逐个通过真实工具验证资源仍按需加载。
       const initialSystem = fixture.requests.at(-1).messages.filter((m: any) => m.role === 'system');
       for (const path of writingReferences) {
         const content = await readFile(new URL('../../packages/storage/builtin/novel-writing/' + path, import.meta.url), 'utf8');
@@ -131,6 +136,10 @@ test('P2.1 技能管理、受控加载和小说聊天', { timeout: 120000 }, asy
         assertFinal(resource, 'completed');
         assert(resource.some(e => e.type === 'tool_end' && e.name === 'read_skill' && e.outcome === 'completed'));
         assert(text(resource).includes(content));
+      }
+      for (const path of pausedReferences) {
+        const resource = await send(chat2.id, command('builtin-novel-writing', path));
+        assert(resource.some(e => e.type === 'tool_end' && e.name === 'read_skill' && e.outcome === 'failed'));
       }
       await json(setting(normal.id), 'PUT', { skillIds: ['builtin-novel-writing'] });
       assert.equal((await json(setting(normal.id))).unavailable.length, 1);
