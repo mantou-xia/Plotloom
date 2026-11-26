@@ -259,11 +259,12 @@ export const API_CATALOG: EndpointDoc[] = [
     examples: [{ name: '选择模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }], responseExample: configExample,
   },
   {
-    id: 'sessions.create', module: 'sessions', name: '创建项目会话', method: 'POST', path: '/api/sessions', success: 201,
-    description: '创建绑定本机目录的项目会话。小说会话使用 /api/workspaces/:workspaceId/sessions。',
-    note: '空会话立即保存。未指定名称时显示“新聊天”，首轮按原始提示词前 16 个字符命名。provider/model 必须同时提供。缺少 projectPath 返回 400 INVALID_REQUEST；目录必须是已存在且可访问的绝对目录，否则返回 422 PROJECT_PATH_INVALID。可用项目工具和条件见 GET /api/tools。目录固定，切换需新建聊天。',
-    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, { ...projectPath, required: true }], response: summary.map(value => value.name === 'projectPath' ? { ...value, required: true } : value),
-    examples: [{ name: '使用默认模型', body: { projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { projectPath: 'D:/projects/example', provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
+    id: 'sessions.create', module: 'sessions', name: '创建普通或项目会话', method: 'POST', path: '/api/sessions', success: 201,
+    description: '创建无工作区的普通会话，或绑定本机目录的项目会话。小说会话使用 /api/workspaces/:workspaceId/sessions。',
+    note: '空会话立即保存，未命名时首轮按原始提示词前 16 个字符命名。provider/model 必须同时提供。mode 与 projectPath 恰好提交一个，否则返回 400 INVALID_REQUEST。项目目录不可访问或无效返回 422 PROJECT_PATH_INVALID。普通会话沿用平台人设，省略 projectPath，且没有项目文件工具。',
+    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, projectPath,
+      field('mode', 'general', false, '普通聊天时提交 general，与 projectPath 二选一。', 'general')], response: summary,
+    examples: [{ name: '创建普通聊天', body: { mode: 'general' } }, { name: '使用默认模型创建项目会话', body: { projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { projectPath: 'D:/projects/example', provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
     responseExample: { ...sessionExample, projectPath: 'D:/projects/example' },
   },
   {

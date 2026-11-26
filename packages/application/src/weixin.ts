@@ -1,14 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WorkspaceError, invalid } from '@plotloom/domain';
-import type { PublicError, SessionActivity, AgentQuestion, ToolApproval } from '@plotloom/contracts';
-import type { ImMessage, ImSendRequest, WeixinAccount, WeixinAccountUpdate, WeixinLogin } from '@plotloom/contracts/im';
+import type { PublicError, SessionActivity, AgentQuestion } from '@plotloom/contracts';
+import type { ImMessage, ImSendRequest, WeixinAccount, WeixinAccountUpdate, WeixinLogin, WeixinLoginRequest, WeixinTarget } from '@plotloom/contracts/im';
+import { maySelectWeixinTarget, selectWeixinTarget } from './weixin-target.ts';
+
+interface TargetConversation { sessionId: string; lastConversationAt?: string }
+interface GlobalConnection { target?: WeixinTarget; conversations: Record<string, TargetConversation> }
+const targetKey = (target?: WeixinTarget) => target ? target.kind + ':' + target.id : 'general';
 
 /** 私有通道状态只在后端流转；公开投影必须显式挑选字段。 */
 export interface StoredWeixinAccount {
-  id: string; botId: string; peerId: string; sessionId: string; enabled: boolean;
+  id: string; botId: string; peerId: string; sessionId: string | null; enabled: boolean;
   token: string; baseUrl: string; cursor: string; contextToken?: string;
   createdAt: string; lastReceivedAt?: string; error?: PublicError; loginRequired?: boolean;
+  idleSessionHours?: number | null; lastConversationAt?: string;
+  global?: GlobalConnection;
 }
 export interface StoredImMessage extends ImMessage { upstreamId?: string }
 export interface WeixinState { accounts: StoredWeixinAccount[]; messages: StoredImMessage[] }
@@ -30,12 +37,17 @@ export interface WeixinGateway {
   send(account: StoredWeixinAccount, message: ImMessage, signal: AbortSignal): Promise<void>;
 }
 export interface ImAgent {
-  inspect(sessionId: string): Promise<{ activity: SessionActivity; question?: AgentQuestion; approvals?: ToolApproval[] }>;
-  run(sessionId: string, text: string, notice: (text: string) => void, signal: AbortSignal): Promise<{ text: string; error?: PublicError }>;
+  inspect(sessionId: string): Promise<{ activity: SessionActivity; question?: AgentQuestion }>;
+  createFreshSession(sessionId: string): Promise<string>;
+  listTargets(): Promise<WeixinTarget[]>;
+  createTargetSession(target: WeixinTarget): Promise<string>;
+  createGeneralSession(): Promise<string>;
+  personaName(): Promise<string>;
+  run(sessionId: string, text: string, notice: (text: string) => void, signal: AbortSignal): Promise<{ text: string; error?: PublicError; write?: ImWriteApproval }>;
   answer(sessionId: string, questionId: string, text: string): Promise<void>;
-  approve(sessionId: string, approvalId: string, approve: boolean): Promise<void>;
   stop(sessionId: string): Promise<void>;
 }
+interface ImWriteApproval { preview: string; decide: (approve: boolean) => Promise<string> }
 export class ImError extends WorkspaceError {
   readonly disposition: 'rejected' | 'unknown';
   constructor(code: string, message: string, statusCode = 502, disposition: 'rejected' | 'unknown' = 'rejected') {
@@ -48,7 +60,11 @@ const errorInfo = (error: unknown): PublicError => error instanceof WorkspaceErr
   : { code: 'IM_OPERATION_FAILED', message: '微信通道操作失败，请在平台查看状态后重试。' };
 const viewMessage = ({ upstreamId: _, ...message }: StoredImMessage): ImMessage => message;
 interface LoginState { view: WeixinLogin; code: string; baseUrl: string; polling: boolean }
-interface Connection { controller: AbortController; loop?: Promise<void>; tasks: Set<Promise<unknown>> }
+interface Connection {
+  controller: AbortController; loop?: Promise<void>; tasks: Set<Promise<unknown>>;
+  pendingWrite?: ImWriteApproval & { sessionId: string; ready: Promise<boolean> };
+  writeRevision?: number;
+}
 
 /** 同一通道只接收扫码者本人；收发与 Agent 通过端口组合，不依赖页面或 Pi SDK。 */
 export class WeixinService {
@@ -86,7 +102,8 @@ export class WeixinService {
 
   private view(account: StoredWeixinAccount): WeixinAccount {
     return { id: account.id, channel: 'weixin', botId: account.botId, peerId: account.peerId,
-      sessionId: account.sessionId, enabled: account.enabled, createdAt: account.createdAt,
+      sessionId: account.sessionId, mode: account.global ? 'global' : 'fixed', target: account.global?.target,
+      enabled: account.enabled, createdAt: account.createdAt, idleSessionHours: account.idleSessionHours ?? null,
       hasContext: !!account.contextToken, lastReceivedAt: account.lastReceivedAt, error: account.error,
       status: !account.enabled ? 'disabled' : account.loginRequired ? 'login_required' : account.error ? 'error'
         : this.connections.has(account.id) ? 'online' : 'connecting' };
@@ -98,12 +115,14 @@ export class WeixinService {
     return account;
   }
 
-  async createLogin(sessionId: string): Promise<WeixinLogin> {
-    this.assertOpen(); await this.agent.inspect(sessionId);
+  async createLogin(input: WeixinLoginRequest): Promise<WeixinLogin> {
+    this.assertOpen();
+    const sessionId = input.sessionId ?? null;
+    if (sessionId) await this.agent.inspect(sessionId);
     for (const [id, login] of this.logins) if (Date.parse(login.view.expiresAt) < Date.now()) this.logins.delete(id);
     const accounts = (await this.store.read()).accounts;
     const qr = await this.gateway.getQr(accounts.slice(-10).map(item => item.token), this.lifetime.signal);
-    const view: WeixinLogin = { id: randomUUID(), sessionId, status: 'waiting', qrContent: qr.content,
+    const view: WeixinLogin = { id: randomUUID(), sessionId, mode: input.mode ?? 'fixed', status: 'waiting', qrContent: qr.content,
       expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() };
     this.logins.set(view.id, { view, code: qr.code, baseUrl: qr.baseUrl, polling: false });
     return { ...view };
@@ -123,20 +142,26 @@ export class WeixinService {
       if (result.status === 'confirmed') {
         if (!result.botId || !result.peerId || !result.token || !result.baseUrl)
           throw new ImError('IM_PROTOCOL_ERROR', '微信登录返回缺少必要账号信息，请重新扫码。');
-        await this.agent.inspect(login.view.sessionId);
+        const requestedSession = login.view.sessionId;
+        if (requestedSession) await this.agent.inspect(requestedSession);
         const accountId = await this.serial(async () => {
           this.assertOpen();
           const existing = (await this.store.read()).accounts.find(item => item.botId === result.botId);
           const accountId = existing?.id ?? randomUUID();
           // 先检查冲突再停止旧连接；失败的重绑不能中断仍有效的原绑定。
-          this.checkSession(await this.store.read(), login.view.sessionId, accountId);
+          if (requestedSession) this.checkSession(await this.store.read(), requestedSession, accountId);
           await this.disconnect(accountId);
           await this.store.update(state => {
-            this.checkSession(state, login.view.sessionId, accountId);
+            if (requestedSession) this.checkSession(state, requestedSession, accountId);
             const previous = state.accounts.find(item => item.id === accountId);
+            const sameOwner = previous && previous.peerId === result.peerId ? previous : undefined;
+            const global = login.view.mode === 'global' ? sameOwner?.global ?? { conversations: {} } : undefined;
+            const sessionId = global ? global.conversations[targetKey(global.target)]?.sessionId ?? null : requestedSession;
             const account: StoredWeixinAccount = { id: accountId, botId: result.botId!, peerId: result.peerId!,
-              token: result.token!, baseUrl: result.baseUrl!, sessionId: login.view.sessionId, enabled: true,
-              cursor: previous && previous.peerId === result.peerId ? previous.cursor : '',
+              token: result.token!, baseUrl: result.baseUrl!, sessionId, enabled: true, global,
+              cursor: sameOwner?.cursor ?? '',
+              idleSessionHours: sameOwner?.idleSessionHours,
+              lastConversationAt: sameOwner?.sessionId === sessionId ? sameOwner?.lastConversationAt : undefined,
               createdAt: previous?.createdAt ?? now() };
             state.accounts = state.accounts.filter(item => item.id !== accountId); state.accounts.push(account);
           });
@@ -163,12 +188,20 @@ export class WeixinService {
         await this.agent.inspect(input.sessionId);
         this.checkSession(await this.store.read(), input.sessionId, id);
       }
-      await this.disconnect(id);
+      // 单独保存会话策略时保留正在进行的对话和轮询。
+      const bindingChanged = input.enabled !== undefined || input.sessionId !== undefined || (input.mode === 'global' && !previous.global);
+      if (bindingChanged) await this.disconnect(id);
       await this.store.update(state => {
         const account = state.accounts.find(item => item.id === id)!;
-        account.sessionId = input.sessionId ?? account.sessionId;
+        if (input.mode === 'global' && !account.global) {
+          account.global = { conversations: {} }; account.sessionId = null; account.lastConversationAt = undefined;
+        } else if (input.sessionId) {
+          if (input.sessionId !== account.sessionId) account.lastConversationAt = undefined;
+          account.sessionId = input.sessionId; account.global = undefined;
+        }
+        if (input.idleSessionHours !== undefined) account.idleSessionHours = input.idleSessionHours;
         account.enabled = input.enabled ?? account.enabled;
-        if (account.enabled && !account.loginRequired) account.error = undefined;
+        if (bindingChanged && account.enabled && !account.loginRequired) account.error = undefined;
       });
       const account = await this.account(previous.id);
       if (account.enabled && !account.loginRequired) this.connect(id);
@@ -235,7 +268,8 @@ export class WeixinService {
   }
 
   private checkSession(state: WeixinState, sessionId: string, accountId: string) {
-    if (state.accounts.some(item => item.id !== accountId && item.sessionId === sessionId))
+    if (state.accounts.some(item => item.id !== accountId && (item.sessionId === sessionId ||
+      Object.values(item.global?.conversations ?? {}).some(conversation => conversation.sessionId === sessionId))))
       throw new ImError('IM_SESSION_BOUND', '该会话已绑定另一个微信连接，请选择独立会话。', 409);
   }
   private assertOpen() { if (this.closed) throw new ImError('IM_CLOSING', '微信服务正在关闭。', 503); }
@@ -314,42 +348,114 @@ export class WeixinService {
   private async dispatch(message: ImMessage, supported: boolean, connection: Connection) {
     const id = message.accountId;
     const signal = connection.controller.signal;
-    const reply = (text: string, suffix = 'reply', kind: ImMessage['kind'] = 'reply') =>
-      this.sendText(id, text, `${message.id}:${suffix}`, kind);
+    const persona = this.agent.personaName().catch(() => '');
+    // 固定提示保留准确的状态和错误原因，只用平台人设名称标识说话者。
+    const signature = async (text: string) => {
+      const name = await persona;
+      return name ? `${name}：${text}` : text;
+    };
+    const reply = async (text: string, suffix = 'reply', kind: ImMessage['kind'] = 'reply') =>
+      this.sendText(id, kind === 'control' || suffix === 'error' ? await signature(text) : text, `${message.id}:${suffix}`, kind);
     try {
       await this.mark(message.id, 'processing');
       if (!supported) {
-        await reply('当前微信接入支持文字消息，请用文字发送内容。');
+        await reply('当前微信接入支持文字消息，请用文字发送内容。', 'unsupported', 'control');
         await this.mark(message.id, 'failed', { code: 'IM_UNSUPPORTED_MESSAGE', message: '当前仅支持文字消息。' }); return;
       }
-      const text = message.text.trim();
-      const session = await this.agent.inspect(message.sessionId);
+      // 同一批消息可跨过自动新建点，分发时读取最新绑定。
+      const account = await this.account(id);
+      if (message.sessionId !== account.sessionId) {
+        message.sessionId = account.sessionId;
+        await this.store.update(state => { state.messages.find(item => item.id === message.id)!.sessionId = account.sessionId; });
+      }
+      let text = message.text.trim();
+      let sessionId = message.sessionId;
+      let session = sessionId ? await this.agent.inspect(sessionId).catch(error => {
+        if (account.global && error instanceof ImError && error.code === 'SESSION_NOT_FOUND') return undefined;
+        throw error;
+      }) : undefined;
       if (text === '/stop' || text === '停止') {
-        await this.agent.stop(message.sessionId); await reply('已停止当前会话生成。', 'stop', 'control');
-      } else if (/^(批准|拒绝)\s+/.test(text)) {
-        const [, command, approvalId] = /^(批准|拒绝)\s+(\S+)$/.exec(text) ?? [];
-        if (!approvalId || !session.approvals?.some(item => item.id === approvalId))
-          throw new ImError('IM_APPROVAL_UNAVAILABLE', '该审批已结束或编号不正确，请使用最新提示中的完整指令。', 409);
-        await this.agent.approve(message.sessionId, approvalId, command === '批准');
-      } else if (session.question) {
-        await this.agent.answer(message.sessionId, session.question.id, text);
-      } else if (session.activity !== 'idle' || this.active.has(id)) {
-        await reply('当前会话仍在处理，请稍后再发；发送“停止”可以终止。', 'busy', 'control');
-        await this.mark(message.id, 'failed', { code: 'SESSION_BUSY', message: '会话正在处理，该消息未提交给 Agent。' }); return;
+        connection.writeRevision = (connection.writeRevision ?? 0) + 1;
+        if (sessionId && session) await this.agent.stop(sessionId);
+        const pending = connection.pendingWrite;
+        connection.pendingWrite = undefined;
+        await reply(pending ? '已取消待确认文件变更。' : session ? '已停止当前会话生成。' : '当前没有运行中的会话。', 'stop', 'control');
+      } else if (/^(批准|拒绝)[。！!]?$/u.test(text)) {
+        // 决定属于当前连接和会话，不提交给模型，也不可能批准网页发起的实时请求。
+        const pending = connection.pendingWrite;
+        if (!pending || !session || pending.sessionId !== sessionId || !await pending.ready || connection.pendingWrite !== pending)
+          throw new ImError('IM_APPROVAL_UNAVAILABLE', '当前没有可确认的微信文件变更。请等预览送出，或重新提出修改。', 409);
+        signal.throwIfAborted();
+        try {
+          const result = await pending.decide(text.startsWith('批准'));
+          connection.pendingWrite = undefined;
+          await reply(result, 'decision', 'control');
+        } catch (error) {
+          if (!(error instanceof ImError && error.code === 'SESSION_BUSY')) connection.pendingWrite = undefined;
+          throw error;
+        }
       } else {
+        if (connection.pendingWrite)
+          throw new ImError('IM_APPROVAL_PENDING', '还有一项文件变更待确认，请回复「批准」或「拒绝」。', 409);
+        const selection = account.global && !session?.question && maySelectWeixinTarget(text)
+          ? selectWeixinTarget(text, await this.agent.listTargets()) : undefined;
+        if (selection && 'reply' in selection) {
+          await reply(selection.reply, 'targets', 'control');
+          await this.mark(message.id, 'completed'); return;
+        }
+        if (!selection && sessionId && session?.question) {
+          await this.agent.answer(sessionId, session.question.id, text);
+          await this.mark(message.id, 'completed'); return;
+        }
+        if ((session && session.activity !== 'idle') || this.active.has(id))
+          throw new ImError('SESSION_BUSY', '当前会话仍在处理，请稍后再发；发送“停止”可以终止。', 409);
+        const target = selection ? selection.target : account.global?.target;
+        const changed = !!selection && targetKey(target) !== targetKey(account.global?.target);
+        if (selection) {
+          text = selection.text;
+          sessionId = account.global!.conversations[targetKey(selection.target)]?.sessionId ?? null;
+          session = sessionId ? await this.agent.inspect(sessionId).catch(error => {
+            if (error instanceof ImError && error.code === 'SESSION_NOT_FOUND') return undefined;
+            throw error;
+          }) : undefined;
+          if (session && session.activity !== 'idle') throw new ImError('SESSION_BUSY', '目标会话仍在处理，请稍后再试。', 409);
+        }
+        if (!session) {
+          if (!account.global) throw new ImError('IM_TARGET_REQUIRED', '请检查绑定会话。', 409);
+          sessionId = target ? await this.agent.createTargetSession(target) : await this.agent.createGeneralSession();
+        }
+        if (!sessionId) throw new ImError('IM_TARGET_REQUIRED', '请先指定要聊的小说或项目。', 409);
+        const current = await this.prepareConversation(account, message, signal, sessionId, target, !!text);
+        const label = target ? `《${target.name}》` : '普通聊天';
+        const prefix = changed ? `已切换到${label}。` : '';
+        if (!text) {
+          await reply(prefix || `当前会话：${label}。`, 'target', 'control');
+          await this.mark(message.id, 'completed'); return;
+        }
         this.active.add(id);
+        const writeRevision = connection.writeRevision;
         let noticeIndex = 0;
         let notices = Promise.resolve();
         const run = (async () => {
           try {
-            const result = await this.agent.run(message.sessionId, text, notice => {
+            const result = await this.agent.run(current, text, notice => {
               const index = ++noticeIndex;
               notices = notices.then(async () => { if (!signal.aborted) await reply(notice, `notice-${index}`, 'control'); });
               // 工具回调不能抛出未处理拒绝；本轮结束时仍等待并记录发送失败。
               void notices.catch(() => {});
             }, signal);
             await notices;
-            if (!signal.aborted && !this.closed) await reply(result.text || result.error?.message || '本轮没有可发送的文字回复。');
+            if (!signal.aborted && !this.closed && result.write && writeRevision === connection.writeRevision) {
+              const write = result.write;
+              const preview = (prefix ? prefix + '\n' : '') + write.preview + '\n\n文件尚未写入。回复「批准」执行，或回复「拒绝」取消。';
+              const pending = { ...write, sessionId: current, ready: reply(preview, 'approval', 'control').catch(() => false) };
+              connection.pendingWrite = pending;
+              if (!await pending.ready && connection.pendingWrite === pending) connection.pendingWrite = undefined;
+            } else if (!signal.aborted && !this.closed && !result.write) {
+              const answer = result.error || !result.text
+                ? await signature(result.error?.message || '本轮没有可发送的文字回复。') : result.text;
+              await reply(prefix ? await signature(prefix) + '\n' + answer : answer);
+            }
             await this.mark(message.id, signal.aborted ? 'interrupted' : result.error ? 'failed' : 'completed', result.error);
           } catch (error) {
             await this.mark(message.id, signal.aborted ? 'interrupted' : 'failed', errorInfo(error));
@@ -365,6 +471,31 @@ export class WeixinService {
     }
   }
 
+  /** 只在空闲后收到普通文字时开新会话。旧会话和微信凭据都保留。 */
+  private async prepareConversation(account: StoredWeixinAccount, message: ImMessage, signal: AbortSignal,
+    current: string, target: WeixinTarget | undefined, dialogue: boolean) {
+    const hours = account.idleSessionHours;
+    const key = targetKey(target);
+    const previous = account.global?.conversations[key];
+    const last = account.global ? (previous?.sessionId === current ? previous.lastConversationAt : undefined) : account.lastConversationAt;
+    const elapsed = last ? Date.parse(message.createdAt) - Date.parse(last) : 0;
+    const sessionId = dialogue && hours && elapsed >= hours * 3_600_000
+      ? await this.agent.createFreshSession(current) : current;
+    signal.throwIfAborted();
+    await this.store.update(state => {
+      const saved = state.accounts.find(item => item.id === account.id)!;
+      this.checkSession(state, sessionId, account.id);
+      saved.sessionId = sessionId;
+      if (saved.global) {
+        saved.global.target = target;
+        saved.global.conversations[key] = { sessionId, lastConversationAt: dialogue ? message.createdAt : last };
+      } else if (dialogue) saved.lastConversationAt = message.createdAt;
+      state.messages.find(item => item.id === message.id)!.sessionId = sessionId;
+    });
+    message.sessionId = sessionId;
+    return sessionId;
+  }
+
   /** 微信文字按 UTF-8 字节分块，不切开中文或 emoji；每块有独立且稳定的幂等键。 */
   private async sendText(id: string, text: string, requestId: string, kind: ImMessage['kind']) {
     const chunks: string[] = []; let current = ''; let bytes = 0;
@@ -376,8 +507,9 @@ export class WeixinService {
     if (current.trim()) chunks.push(current);
     for (const [index, chunk] of chunks.entries()) {
       const sent = await this.send(id, { requestId: `${requestId}:${index}`, text: chunk }, kind);
-      if (sent.status !== 'accepted') break;
+      if (sent.status !== 'accepted') return false;
     }
+    return true;
   }
 
   private async disconnect(id: string) {

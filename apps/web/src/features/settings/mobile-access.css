@@ -1,0 +1,13 @@
+.plotloom-mobile-access { display: grid; gap: 32px; }
+/* 由页面的网格统一分组间距，避免再叠加共享设置分组的外边距。 */
+.plotloom-mobile-access > .pl-settings-section + .pl-settings-section { margin-top: 0; }
+.plotloom-mobile-actions,
+.plotloom-mobile-duration { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.plotloom-mobile-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px 12px; }
+.plotloom-mobile-duration { max-width: 100%; color: var(--pl-text-muted); font-size: 13px; }
+.plotloom-mobile-feedback { height: 4em; margin: 0; padding: 8px 0; overflow: auto; color: var(--pl-text-muted); font-size: 13px; overflow-wrap: anywhere; }
+.plotloom-mobile-hours { width: 110px; }
+.plotloom-mobile-link { display: grid; gap: 12px; }
+.plotloom-mobile-qr { display: grid; place-items: center; min-height: 224px; }
+.plotloom-mobile-qr img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.plotloom-mobile-pin { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }

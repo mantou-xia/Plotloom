@@ -40,7 +40,23 @@ test('微信试验台登记示例实际触发全部接口，主动触达核对�
     wire.sendMode('drop'); const unknown = await run('im.weixin.send', { requestId: 'demo-unknown', text: '检查结果不明' });
     assert.equal(unknown.status, 'unknown'); assert(weixinSendChecks(unknown).some(check => !check.passed));
     const messages = await run('im.weixin.messages'); assert.equal(messages.messages.length, 3);
+    const settings = API_CATALOG.find(item => item.id === 'im.weixin.update')!;
+    for (const hours of [6, null]) {
+      const example = settings.examples.find(item => item.body.idleSessionHours === hours);
+      assert(example);
+      assert.equal((await run(settings.id, example.body)).idleSessionHours, hours);
+    }
     assert.equal((await run('im.weixin.update')).status, 'disabled');
+    const global = settings.examples.find(item => item.body.mode === 'global');
+    assert(global);
+    assert.equal((await run(settings.id, global.body)).sessionId, null);
+    await run('im.weixin.remove');
+    const globalLogin = await run('im.weixin.login');
+    assert.equal(globalLogin.mode, 'global'); assert.equal(globalLogin.sessionId, null);
+    parameters.loginId = globalLogin.id;
+    const globalConfirmed = await run('im.weixin.poll');
+    parameters.accountId = globalConfirmed.accountId;
+    assert.equal(globalConfirmed.mode, 'global');
     await run('im.weixin.remove');
     assert.deepEqual([...seen].sort(), API_CATALOG.filter(item => item.module === 'im').map(item => item.id).sort());
     assert.deepEqual(wire.errors, []);

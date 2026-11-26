@@ -214,8 +214,7 @@ export function App() {
         projects={projects} projectState={projectState} currentProjectPath={projectPath}
         onPageChange={navigate} onRefresh={async () => { await Promise.all([refreshChats(), refreshProjects()]); }} onChooseProject={() => setProjectDialog('create')}
         onOpenChat={chat => updateRoute({ page: 'chat', sessionId: chat.id })}
-        onNewChat={path => path === undefined && (activeChat?.workspaceId ?? workspaceId)
-          ? startChat('', activeChat?.workspaceId ?? workspaceId) : startChat(path)} workspaces={workspaces} workspaceState={workspaceState}
+        onNewChat={path => startChat(path ?? '')} workspaces={workspaces} workspaceState={workspaceState}
         onCreateNovel={() => setCreatingNovel(true)} onRefreshWorkspaces={refreshWorkspaces} onNewNovelChat={id => startChat('', id)} />
         </div>
         {settingsSection ? <SettingsSidebar onBack={closeSettings} section={settingsSection}
@@ -232,6 +231,7 @@ export function App() {
               renderProjectControl={disabled => <ProjectSwitcher projects={projects} currentPath={projectPath} projectName={projectName || '选择项目'}
                 state={projectState} disabled={disabled} open={projectDialog === 'switch'}
                 onOpenChange={open => setProjectDialog(open ? 'switch' : null)} onRetry={() => void refreshProjects()}
+                onClear={() => { startChat(''); setProjectDialog(null); }}
                 onCreate={() => setProjectDialog('create-from-switch')} onSelect={project => {
                   // 选择当前项目只收起浮窗；换项目仅重置草稿，复用页面和模型配置。
                   if (project.path !== projectPath) startChat(project.path);

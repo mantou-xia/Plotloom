@@ -36,6 +36,19 @@ test('项目 Agent 文件、权限、历史与停止闭环', { timeout: 120000 }
       assert.equal(session.projectPath.toLowerCase(), project.toLowerCase());
       const second = await server.json('/api/sessions', 'POST', { projectPath: other }, 201);
       assert.equal((await server.json('/api/sessions', 'POST', {}, 400)).error.code, 'INVALID_REQUEST');
+      await server.json('/api/sessions', 'POST', { mode: 'general', projectPath: project }, 400);
+      const ordinary = await server.json('/api/sessions', 'POST', { mode: 'general' }, 201);
+      const ordinaryPath = '/api/sessions/' + ordinary.id;
+      assert.equal(ordinary.projectPath, undefined);
+      await server.json(ordinaryPath + '/project-files', 'POST', { query: '' }, 409);
+      await server.json(ordinaryPath + '/config', 'PUT', { projectApprovalMode: 'required' }, 409);
+      await server.json('/api/agent-profile', 'PUT', { action: 'save', name: '小舟', style: '温和', preferences: '' });
+      assertFinal(await collect(await server.request(ordinaryPath + '/messages', 'POST', { text: '平台普通聊天' })), 'completed');
+      const ordinaryPrompt = JSON.stringify(fixture.requests.at(-1).messages.filter((message: { role: string }) => ['system', 'developer'].includes(message.role)));
+      assert.match(ordinaryPrompt, /没有绑定项目或小说.*小舟/s);
+      assert.doesNotMatch(ordinaryPrompt, /当前通过微信对话/);
+      const ordinaryTools = (await server.json(ordinaryPath + '/tools')).tools.filter((tool: { active: boolean }) => tool.active);
+      assert(!ordinaryTools.some((tool: { name: string }) => ['read', 'write', 'edit'].includes(tool.name)));
       const workspace = await server.json('/api/workspaces', 'POST', { title: '小说验收', root: book }, 201);
       const novelPath = `/api/workspaces/${workspace.id}/sessions`;
       await server.json(novelPath, 'POST', { projectPath: book }, 400);
@@ -94,7 +107,8 @@ test('项目 Agent 文件、权限、历史与停止闭环', { timeout: 120000 }
       }
       assert.equal(await readFile(retained, 'utf8'), '小说附件保留');
       const sessions = (await server.json('/api/sessions')).sessions;
-      for (const expected of [id, second.id, novel.id]) assert(sessions.some((v: any) => v.id === expected));
+      for (const expected of [id, second.id, novel.id, ordinary.id]) assert(sessions.some((v: any) => v.id === expected));
+      assert(JSON.stringify((await server.json(ordinaryPath)).messages).includes('平台普通聊天'));
       assert.equal((await server.json(path())).projectPath.toLowerCase(), project.toLowerCase());
       assert((await server.json('/api/chats')).sessions.some((v: any) => v.id === id && v.projectPath));
     });

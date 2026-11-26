@@ -113,13 +113,18 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
   // 项目与技能共享原生选择器，防止并发打开多个系统窗口。
   const folderPicker = dependencies.folderPicker ?? createFolderPicker();
   const openFolder = dependencies.openFolder ?? openRegisteredFolder;
-  registerProjectRoutes(app, new FileProjectStore(options.dataDir), folderPicker, openFolder);
+  const projects = new FileProjectStore(options.dataDir);
+  registerProjectRoutes(app, projects, folderPicker, openFolder);
   registerSourceRoutes(app, sources);
   registerWorkspaceRoutes(app, workspaces, openFolder);
   registerCharacterCardRoutes(app, characterCards);
   registerSkillRoutes(app, skills, folderPicker, directory.tools);
   registerWritingRoutes(app, agent, writing, workspaces);
-  const weixin = new WeixinService(new FileWeixinStore(options.dataDir), dependencies.weixinGateway ?? new WeixinHttpClient(), imAgent(agent));
+  const weixin = new WeixinService(new FileWeixinStore(options.dataDir), dependencies.weixinGateway ?? new WeixinHttpClient(), imAgent(agent, {
+    novels: () => workspaces.list(), projects: () => projects.list(),
+    createNovel: (id, request) => skills.createChat(id, request), project: id => projects.get(id),
+    personaName: async () => (await profiles.read()).name,
+  }));
   registerWeixinRoutes(app, weixin);
   app.addHook('onReady', () => weixin.start());
   // 先停止外部 IM 的轮询和生成，再关闭 SDK/SSE，避免退出时产生新一轮请求。

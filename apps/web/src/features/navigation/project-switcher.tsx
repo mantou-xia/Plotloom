@@ -3,14 +3,14 @@ import type { Project } from '@plotloom/contracts';
 import { MorphingPopover } from '@plotloom/ui/morphing-popover';
 import { Button } from '@plotloom/ui/button';
 import { Input } from '@plotloom/ui/input';
-import { Check, Folder, Plus, Search } from 'lucide-react';
+import { Check, Folder, Plus, Search, X } from 'lucide-react';
 import './project-switcher.css';
 
-/** 胶囊仅选择已登记项目；新增交回应用，复用侧栏的创建弹窗。 */
-export function ProjectSwitcher({ projects, currentPath, projectName, state, open, disabled, onOpenChange, onRetry, onSelect, onCreate }: {
+/** 应用负责切换草稿归属，菜单只提交选中项目或取消选择的意图。 */
+export function ProjectSwitcher({ projects, currentPath, projectName, state, open, disabled, onOpenChange, onRetry, onSelect, onClear, onCreate }: {
   projects: Project[]; currentPath: string; state: 'loading' | 'ready' | 'error';
   projectName: string; open: boolean; disabled: boolean; onOpenChange: (open: boolean) => void;
-  onRetry: () => void; onSelect: (project: Project) => void; onCreate: () => void;
+  onRetry: () => void; onSelect: (project: Project) => void; onClear: () => void; onCreate: () => void;
 }) {
   const [query, setQuery] = useState('');
   const search = query.trim().toLocaleLowerCase();
@@ -34,6 +34,7 @@ export function ProjectSwitcher({ projects, currentPath, projectName, state, ope
       </Button>) : <p role="status">{search ? '未找到匹配项目' : '暂无项目，可以先新增一个。'}</p>}
     </div>
     <div className="plotloom-project-switcher__footer">
+      {currentPath ? <Button variant="ghost" startIcon={<X />} onClick={onClear}>取消项目选择</Button> : null}
       <Button variant="ghost" startIcon={<Plus />} onClick={onCreate}>新建项目</Button>
     </div>
   </MorphingPopover>;

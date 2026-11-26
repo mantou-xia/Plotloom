@@ -1,13 +1,19 @@
 import type { PublicError } from './index.ts';
 
-/** IM 只绑定现有 Agent 会话；公开响应不包含微信登录或会话令牌。 */
+export interface WeixinTarget { kind: 'novel' | 'project'; id: string; name: string }
+export type WeixinLoginRequest = { sessionId: string; mode?: 'fixed' } | { mode: 'global'; sessionId?: never };
+
+/** 全局连接的当前会话可以为空，公开响应不包含微信凭据。 */
 export interface WeixinAccount {
   id: string;
   channel: 'weixin';
   botId: string;
   peerId: string;
-  sessionId: string;
+  sessionId: string | null;
+  mode: 'fixed' | 'global';
+  target?: WeixinTarget;
   enabled: boolean;
+  idleSessionHours: number | null;
   status: 'connecting' | 'online' | 'disabled' | 'error' | 'login_required';
   hasContext: boolean;
   createdAt: string;
@@ -17,7 +23,8 @@ export interface WeixinAccount {
 
 export interface WeixinLogin {
   id: string;
-  sessionId: string;
+  sessionId: string | null;
+  mode: 'fixed' | 'global';
   status: 'waiting' | 'scanned' | 'pin_required' | 'confirmed' | 'expired' | 'already_bound';
   /** 编码为二维码的原文；由微信提供，仅用于本次扫码授权。 */
   qrContent: string;
@@ -28,7 +35,7 @@ export interface WeixinLogin {
 export interface ImMessage {
   id: string;
   accountId: string;
-  sessionId: string;
+  sessionId: string | null;
   direction: 'inbound' | 'outbound';
   kind: 'user' | 'reply' | 'notification' | 'control';
   text: string;
@@ -41,4 +48,5 @@ export interface ImMessage {
 }
 
 export interface ImSendRequest { requestId: string; text: string }
-export interface WeixinAccountUpdate { enabled?: boolean; sessionId?: string }
+export const WEIXIN_IDLE_SESSION = { min: 1, max: 168, defaultHours: 6 } as const;
+export interface WeixinAccountUpdate { enabled?: boolean; sessionId?: string; mode?: 'global'; idleSessionHours?: number | null }

@@ -26,7 +26,7 @@ import type { MessageSources, MessageSourceSnapshot } from '@plotloom/contracts/
 import { createSkillTool, skillPrompt, type SkillSnapshot } from './skills.ts';
 import { adaptBusinessTool, type RequestResources } from './request-resources.ts';
 import { findProjectFiles, resolveDeliverable, validateProjectPath } from './project.ts';
-import { createProjectTools, type Approval, type WrittenProjectFile } from './project-tools.ts';
+import { createProjectTools, type Approval, type DeferredProjectWrite, type WrittenProjectFile } from './project-tools.ts';
 import { compareProjectFile, PROJECT_FILE_WRITE, summarizeProjectWrites, type ProjectWriteSnapshot } from './project-diff.ts';
 import { ToolApprovals } from './tool-approvals.ts';
 import { AgentQuestions, createAskUserTool, type QuestionWaiter } from './agent-question.ts';
@@ -64,10 +64,12 @@ interface TurnRequest {
   restoreModel?: ModelSettings;
   persona?: AgentPersona | null;
   bootstrap?: boolean;
+  channel?: 'weixin';
 }
 
 const skillVersions = (skills: SkillSnapshot[]): Array<[string, string, boolean]> =>
   skills.map(skill => [skill.id, skill.version, skill.autoLoad]);
+const GENERAL_SESSION = 'plotloom-general-session';
 
 /** 旧版创作工具只保存候选结果。按记录顺序恢复定位，避免旧候选覆盖后续面板操作。 */
 function latestManuscriptRequest(manager: SessionManager, workspaceId: string | null): SessionDetail['manuscriptRequest'] {
@@ -113,6 +115,8 @@ interface RecordState {
   skills?: SkillSnapshot[];
   persona?: AgentPersona;
   bootstrap?: boolean;
+  channel?: 'weixin';
+  deferredWrite?: WeixinWriteTurn;
   resourceKey?: string;
   runtime?: ModelRuntime;
   resources?: RequestResources;
@@ -120,6 +124,11 @@ interface RecordState {
   questions?: AgentQuestions;
   emit?: (event: AgentEvent) => void;
   replayBaseModel?: ModelSettings;
+}
+
+export interface WeixinWriteTurn {
+  write?: Pick<DeferredProjectWrite, 'path' | 'operation' | 'preview'> & { decide: (approve: boolean) => Promise<string> };
+  requiresWeb?: boolean;
 }
 
 /** 管理单进程中的会话实例；持久化权威记录始终是 SDK JSONL。 */
@@ -223,6 +232,15 @@ export class AgentService {
     if (Boolean(projectPath) === Boolean(profile?.workspaceId)) {
       throw new AgentError(400, 'INVALID_REQUEST', '会话必须绑定一个项目目录或小说工作区。');
     }
+    return this.persistSession(request, projectPath, profile);
+  }
+
+  /** 平台和微信共享普通会话的落盘规则，项目和小说仍各自校验归属。 */
+  createGeneralSession(request: CreateSessionRequest): Promise<SessionSummary> {
+    return this.persistSession(request, undefined, undefined, true);
+  }
+
+  private async persistSession(request: CreateSessionRequest, projectPath?: string, profile?: SessionSkillProfile, general = false): Promise<SessionSummary> {
     const selection = request.provider && request.model ? { provider: request.provider, model: request.model } : this.selection;
     const model = await this.requireModel(selection);
     const thinkingLevel = this.thinking(model, request.thinkingLevel, this.selection?.thinkingLevel);
@@ -232,6 +250,7 @@ export class AgentService {
     if (request.name?.trim()) manager.appendSessionInfo(request.name.trim());
     if (profile) manager.appendCustomEntry('plotloom-session-skills', profile);
     if (projectPath) manager.appendCustomEntry('plotloom-project', { path: projectPath });
+    if (general) manager.appendCustomEntry(GENERAL_SESSION, {});
     const path = manager.getSessionFile()!;
     await writeFile(path, [manager.getHeader(), ...manager.getEntries()].map((entry) => JSON.stringify(entry)).join('\n') + '\n', { encoding: 'utf8', flag: 'wx' });
     const record: RecordState = { manager: SessionManager.open(path, this.sessionDir), selection: selection!, stopRequested: false };
@@ -383,11 +402,12 @@ export class AgentService {
     } finally { release(); }
   }
 
-  /** 启动时按持久化归属清理旧普通会话，包括已归档记录。只要有明确的项目或小说归属就保留。 */
+  /** 清理未标记的旧会话。合法无工作区聊天通过持久标记与历史残留区分。 */
   private async removeUnboundSessions(): Promise<void> {
     for (const file of await SessionManager.listAll(this.sessionDir)) {
       const manager = SessionManager.open(file.path, this.sessionDir);
-      if (!this.projectPath(manager) && !this.skillProfile(manager).workspaceId) await this.removeSessionFiles(manager);
+      const general = manager.getEntries().some(entry => entry.type === 'custom' && entry.customType === GENERAL_SESSION);
+      if (!general && !this.projectPath(manager) && !this.skillProfile(manager).workspaceId) await this.removeSessionFiles(manager);
     }
   }
 
@@ -691,6 +711,11 @@ export class AgentService {
   /** 轮次前置确认和模型工具共用审批记录、权限模式及停止语义。 */
   private async approve(record: RecordState, ...[callId, request, signal, requireDecision = false]: Parameters<Approval>): ReturnType<Approval> {
     if (!record.activeTurn || !record.emit || record.stopRequested) return 'cancelled';
+    // 专项业务确认没有可独立提交的文件快照，微信轮次不进入实时等待。
+    if (record.channel === 'weixin') {
+      if (record.deferredWrite) record.deferredWrite.requiresWeb = true;
+      return 'cancelled';
+    }
     const turnId = record.activeTurn;
     const emit = record.emit;
     // 模式受会话锁保护；调用方仍负责复核目标及取消信号。
@@ -704,6 +729,36 @@ export class AgentService {
       emit({ type: 'tool_approval_required', sessionId: record.manager.getSessionId(), approval }));
     record.manager.appendCustomEntry('plotloom.tool-decision', { turnId, callId, operation: request.operation, path: request.path, decision });
     return decision;
+  }
+
+  /** 暂存不可变写入计划。下一条微信消息确认时重新占用原会话，校验后才写盘。 */
+  private deferProjectWrite(record: RecordState, callId: string, { commit, ...preview }: DeferredProjectWrite): boolean {
+    const pending = record.deferredWrite;
+    const turnId = record.activeTurn;
+    if (!pending || pending.write || !turnId || record.stopRequested) return false;
+    const id = record.manager.getSessionId();
+    let used = false;
+    pending.write = { ...preview, decide: approve => this.withIdleSession(id, async () => {
+      if (used) throw new AgentError(409, 'TOOL_APPROVAL_UNAVAILABLE', '这项文件变更已经处理。');
+      used = true;
+      const audit = (decision: string) => record.manager.appendCustomEntry('plotloom.tool-decision', {
+        turnId, callId, operation: preview.operation, path: preview.path, decision,
+      });
+      if (!approve) { audit('deny'); return `已拒绝，未写入 ${preview.path}。`; }
+      let change: WrittenProjectFile;
+      try { change = commit(); }
+      catch {
+        audit('failed');
+        throw new AgentError(409, 'WEIXIN_WRITE_STALE', '原文件或目录已变化，或当前无法写入。未提交这份变更，请重新提出修改以获取新预览。');
+      }
+      try {
+        audit('approve');
+        record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { ...change, id: crypto.randomUUID(), turnId });
+        record.fileChanges?.delete(turnId);
+      } catch { return `已写入 ${preview.path}，但保存审计记录失败。`; }
+      return `已写入 ${preview.path}。`;
+    }) };
+    return true;
   }
 
   private async open(record: RecordState, execution?: TurnRequest['execution']): Promise<AgentSession> {
@@ -721,11 +776,12 @@ export class AgentService {
       const novel = Boolean(this.skillProfile(record.manager).workspaceId);
       const tools = projectPath
         ? createProjectTools(projectPath, await validateProjectPath(this.options.dataDir), approve,
-          change => record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { id: crypto.randomUUID(), ...change }), record.resources?.fileScope)
-        : this.options.tools ?? [];
+          change => record.manager.appendCustomEntry(PROJECT_FILE_WRITE, { id: crypto.randomUUID(), ...change }), record.resources?.fileScope,
+          record.channel === 'weixin' ? (callId, write) => this.deferProjectWrite(record, callId, write) : undefined)
+        : novel ? this.options.tools ?? [] : [];
       const ask: QuestionWaiter = async (question, signal) => {
         const emit = record.emit;
-        if (!record.activeTurn || !emit || record.stopRequested) return { kind: 'cancelled' };
+        if (!record.activeTurn || !emit || record.stopRequested || record.deferredWrite?.write) return { kind: 'cancelled' };
         const questions = record.questions ??= new AgentQuestions();
         return questions.wait(question, signal, pending => emit({ type: 'user_answer_required', sessionId: id, question: pending }));
       };
@@ -734,8 +790,9 @@ export class AgentService {
       const customTools = [...tools, ...extraTools, this.browsers.tool(id), createWebFetchTool(), createAskUserTool(ask),
         ...(record.bootstrap && this.options.completeAgentBootstrap ? [createAgentProfileTool(ask, this.options.completeAgentBootstrap)] : []),
         ...(record.skills?.length ? [createSkillTool(record.skills)] : []), ...(record.resources?.tools.map(tool => adaptBusinessTool(tool, ask, approve)) ?? [])];
-      const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, mode: novel ? 'novel' : 'project', writingPrompt: record.resources?.systemPrompt,
-        skillPrompt: skillPrompt(record.skills ?? []), persona: record.persona, bootstrap: record.bootstrap });
+      const prompt = buildSystemPrompt({ externalPrompt: this.options.systemPrompt, mode: novel ? 'novel' : projectPath ? 'project' : 'general',
+        writingPrompt: record.resources?.systemPrompt, skillPrompt: skillPrompt(record.skills ?? []), persona: record.persona,
+        bootstrap: record.bootstrap, channel: record.channel });
       const { session } = await createAgentSession({
         cwd: projectPath ?? this.cwd, agentDir: resolve(this.options.dataDir, 'agent'), modelRuntime: runtime, model,
         thinkingLevel: execution?.model.thinkingLevel ?? this.summary(record).thinkingLevel, sessionManager: record.manager,
@@ -750,7 +807,8 @@ export class AgentService {
   }
 
   /** 先验证、再原子占用会话，忙时不排队；返回执行入口供 HTTP 在写 SSE 头后启动。 */
-  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], businessInput?: unknown, sources?: MessageSources, retryMessageId?: string): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
+  async prepareMessage(id: string, text: string, explicitSkills: string[] = [], businessInput?: unknown, sources?: MessageSources, retryMessageId?: string,
+    channel?: 'weixin', deferredWrite?: WeixinWriteTurn): Promise<(emit: (event: AgentEvent) => void) => Promise<void>> {
     if (this.closing) throw new AgentError(503, 'SERVER_CLOSING', '服务正在关闭。');
     const record = await this.getRecord(id);
     const release = this.reserve(record, 'generating');
@@ -785,6 +843,7 @@ export class AgentService {
         execution = saved?.execution;
         // 即使原轮没有人设，之后设置的人设也不应改变本次重试的输入。
         persona = saved?.persona ?? null;
+        channel = saved?.channel;
         replayBootstrap = saved?.bootstrap === true;
         if (businessInput === undefined && this.options.recoverBusinessInput) {
           // 旧轮次在开始标记前保存初始上下文。到上一轮边界即停止，避免误用陈旧资料。
@@ -829,12 +888,13 @@ export class AgentService {
       const autoCompaction = this.autoCompaction(record);
       temporarySession = !!execution && (execution.model.provider !== currentModel.provider || execution.model.model !== currentModel.model ||
         execution.model.thinkingLevel !== currentModel.thinkingLevel || execution.autoCompaction !== autoCompaction);
-      const key = JSON.stringify([resources?.key, versions, persona, bootstrap]);
+      const key = JSON.stringify([resources?.key, versions, persona, bootstrap, channel]);
       if (temporarySession || record.resourceKey !== key) {
         // 用同一权威 SessionManager 重建 SDK 资源，保留历史和压缩状态；不改 SDK 内部 prompt。
         await record.opening;
         record.session?.dispose(); record.session = undefined;
         record.skills = skills; record.resources = resources; record.persona = persona ?? undefined; record.bootstrap = bootstrap; record.resourceKey = key;
+        record.channel = channel;
       }
       session = await this.open(record, execution);
       await resources?.start?.();
@@ -847,6 +907,7 @@ export class AgentService {
         request: { text, skillIds: explicitSkills, ...sources },
         ...(resources ? { resourceKey: resources.key } : {}),
         persona,
+        ...(channel ? { channel } : {}),
         ...(bootstrap ? { bootstrap } : {}),
         ...(businessInput !== undefined || resources?.persistReplayInput ? { businessInput: resources?.replayInput ?? businessInput, execution: execution ?? { model: currentModel, autoCompaction, skills: versions } } : {}),
         ...(temporarySession ? { restoreModel: currentModel } : {}),
@@ -857,6 +918,7 @@ export class AgentService {
     const startIndex = record.manager.getEntryCount();
     return async (emit) => {
       record.emit = emit;
+      record.deferredWrite = deferredWrite;
       let accepted = false;
       let aborted = false;
       let outcome: Outcome = 'failed';
@@ -935,6 +997,7 @@ export class AgentService {
         record.approvals?.cancel();
         record.questions?.cancel();
         record.emit = undefined;
+        record.deferredWrite = undefined;
         try {
           if (record.replayBaseModel) restoreReplayModel(record.manager, record.replayBaseModel);
           await resources?.finish?.(outcome);

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '@plotloom/agent-pi';
-import { PROJECT_APPROVAL_MODES, THINKING_LEVELS, type CreateProjectSessionRequest, type ModelSettings, type SubmitMessageRequest, type SessionConfigRequest, type SessionOrganization, type RetryMessageRequest } from '@plotloom/contracts';
+import { PROJECT_APPROVAL_MODES, THINKING_LEVELS, type CreateChatSessionRequest, type ModelSettings, type SubmitMessageRequest, type SessionConfigRequest, type SessionOrganization, type RetryMessageRequest } from '@plotloom/contracts';
 import { streamMessage } from '../streaming/sse.ts';
 import { sourceProperties } from './sources.ts';
 import type { AgentQuestionAnswer, ProviderWrite, ToolApprovalDecision } from '@plotloom/contracts';
@@ -41,11 +41,14 @@ export function registerRoutes(app: FastifyInstance, agent: AgentService): void 
   app.get('/api/models', async () => ({ models: await agent.models() }));
   app.get('/api/model-config', () => agent.modelConfig());
   app.put<{ Body: ModelSettings }>('/api/model-config', { schema: { body: selectionSchema } }, (request) => agent.setModelConfig(request.body));
-  app.post<{ Body: CreateProjectSessionRequest }>('/api/sessions', {
-    schema: { body: { type: 'object', additionalProperties: false, required: ['projectPath'], properties: { ...modelProperties, name: nameProperty, projectPath: { type: 'string', minLength: 1, maxLength: 2000 } },
+  app.post<{ Body: CreateChatSessionRequest }>('/api/sessions', {
+    schema: { body: { type: 'object', additionalProperties: false, properties: {
+      ...modelProperties, name: nameProperty, mode: { const: 'general' }, projectPath: { type: 'string', minLength: 1, maxLength: 2000 },
+    }, oneOf: [{ required: ['projectPath'] }, { required: ['mode'] }],
       dependencies: { provider: ['model'], model: ['provider'] } } },
   }, async (request, reply) => {
-    return reply.code(201).send(await agent.createSession(request.body));
+    const input = request.body;
+    return reply.code(201).send(await ('projectPath' in input ? agent.createSession(input) : agent.createGeneralSession(input)));
   });
   app.put<{ Params: { id: string }; Body: Partial<SessionOrganization> }>('/api/sessions/:id/organization', {
     schema: { params: idSchema, body: { type: 'object', additionalProperties: false, minProperties: 1,
