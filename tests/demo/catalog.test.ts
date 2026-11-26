@@ -17,7 +17,8 @@ test('测试台注册目录覆盖全部业务接口', async () => {
   const routes = sources.flatMap((source) => [...source.matchAll(/app\.(get|post|put|patch|delete|head|options)(?:<[^]*?>)?\(\s*'([^']+)'/g)]
     .map((match) => `${match[1].toUpperCase()} ${match[2]}`)).sort();
   const registered = API_CATALOG.map((item) => `${item.method} ${item.path}`).sort();
-  assert.equal(routes.length, 95);
+  assert.equal(routes.length, 102);
+  assert.equal(routes.filter(route => route.includes('/api/im/weixin/')).length, 7);
   for (const id of ['documents.entries', 'documents.reveal', 'documents.recycle-chapter']) {
     const doc = API_CATALOG.find(item => item.id === id)!;
     assert(doc.request.some(field => field.name === 'workspaceId' && field.required));

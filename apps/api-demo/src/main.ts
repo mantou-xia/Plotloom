@@ -3,6 +3,8 @@ import type { AgentEvent, ModelConfig, ModelInfo, SessionListItem } from '@plotl
 import { iconMarkup } from '@plotloom/ui/icons/dom';
 import { checkFields, checkJson, checkStream, consumeSse, isObject, type CheckResult, type StreamItem } from './client.ts';
 import { uploadDraft, attachmentPreview, appendSourceDraft } from './sources.ts';
+import { weixinSendChecks } from './weixin.ts';
+import QRCode from 'qrcode';
 import { normalizeThemeMode, readThemeMode, THEME_MODES, writeThemeMode } from '@plotloom/ui/theme';
 import '@plotloom/ui/theme.css';
 import './style.css';
@@ -18,12 +20,12 @@ type Phase = 'running' | 'success' | 'error' | 'stopped' | 'disconnected';
 interface Run {
   phase: Phase; url: string; sessionId: string; started: number; elapsed: number; status?: number;
   body?: unknown; headers: Record<string, string>; events: StreamItem[]; text: string; thinking: string;
-  checks: CheckResult[]; error?: string; controller: AbortController;
+  checks: CheckResult[]; error?: string; controller: AbortController; qrDataUrl?: string;
 }
 const endpointById = new Map(API_CATALOG.map((item) => [item.id, item]));
 let selected = endpointById.get(location.hash.slice(1)) ?? endpointById.get('sessions.create')!;
 let sessionId = sessionStorage.getItem('plotloom.demo.session') ?? '';
-const assetParameters: Record<string, string> = Object.fromEntries(['projectId', 'workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId', 'turnId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
+const assetParameters: Record<string, string> = Object.fromEntries(['projectId', 'workspaceId', 'proposalId', 'changeId', 'skillId', 'attachmentId', 'approvalId', 'questionId', 'writeId', 'turnId', 'loginId', 'accountId'].map((name) => [name, sessionStorage.getItem(`plotloom.demo.${name}`) ?? '']));
 function setAssetParameter(name: string, value: string) {
   assetParameters[name] = value; sessionStorage.setItem(`plotloom.demo.${name}`, value);
   const input = byId<HTMLInputElement>(`path-${name}`); if (input) input.value = value;
@@ -156,6 +158,7 @@ function setExample(index: number) {
   exampleSelections.set(selected.id, index);
   // 模型示例优先沿用服务返回的当前选择，避免硬编码示例与本机配置不一致。
   const example = 'provider' in body && config?.provider && config.model ? { ...body, provider: config.provider, model: config.model }
+    : selected.module === 'im' && 'sessionId' in body && sessionId ? { ...body, sessionId }
     : 'attachmentIds' in body && assetParameters.attachmentId ? { ...body, attachmentIds: [assetParameters.attachmentId] } : body;
   drafts.set(selected.id, pretty(example));
   byId<HTMLTextAreaElement>('request-body').value = pretty(example);
@@ -219,8 +222,8 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
   runs.set(endpoint.id, run);
   renderCatalog(); updateButtons(); renderResult();
   try {
-    // 系统窗口等待用户选择，不能使用普通 HTTP 的 20 秒超时；仍可主动中止。
-    const signal = endpoint.stream || endpoint.binary || endpoint.id === 'context.compact' || endpoint.id === 'skills.import-folder' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
+    // 系统选择器和微信扫码长轮询可能超过 20 秒；上游有界等待，用户仍可主动中止。
+    const signal = endpoint.stream || endpoint.binary || endpoint.id === 'context.compact' || endpoint.id === 'skills.import-folder' || endpoint.id === 'im.weixin.poll' ? run.controller.signal : AbortSignal.any([run.controller.signal, AbortSignal.timeout(20000)]);
     const response = await fetch(url, { method: endpoint.method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, signal });
     run.status = response.status;
     run.headers = Object.fromEntries(response.headers.entries());
@@ -260,10 +263,15 @@ async function execute(endpoint: EndpointDoc, explicitSession?: string) {
       const raw = await response.text();
       try { run.body = JSON.parse(raw); } catch { run.body = raw; }
       run.checks = checkJson(endpoint, response.status, contentType, run.body);
+      if (endpoint.id === 'im.weixin.send' && response.ok) run.checks.push(...weixinSendChecks(run.body));
       if (endpoint.stream && response.ok) run.checks.push({ name: 'SSE 格式', passed: false, detail: '预期 text/event-stream，实际未返回流。' });
       run.phase = run.checks.every((check) => check.passed) ? 'success' : 'error';
       if (isObject(run.body) && isObject(run.body.error)) run.error = String(run.body.error.message ?? '接口返回错误。');
       if (response.ok && isObject(run.body)) {
+        if (endpoint.id === 'im.weixin.login' && typeof run.body.id === 'string') setAssetParameter('loginId', run.body.id);
+        if (endpoint.id === 'im.weixin.poll' && typeof run.body.accountId === 'string') setAssetParameter('accountId', run.body.accountId);
+        if (['im.weixin.login', 'im.weixin.poll'].includes(endpoint.id) && typeof run.body.qrContent === 'string')
+          run.qrDataUrl = await QRCode.toDataURL(run.body.qrContent, { width: 224, margin: 2, errorCorrectionLevel: 'M' });
         if (endpoint.id === 'context.compact' && run.body.outcome === 'aborted' && run.phase === 'success') run.phase = 'stopped';
         if (endpoint.id === 'sessions.get' && targetSession === sessionId) {
           const pending = run.body.pendingQuestion;
@@ -341,7 +349,8 @@ function renderResult() {
       ${selected.id === 'documents.read' && isObject(run.body) && typeof run.body.version === 'string' ? '<button class="button secondary" data-use-reference>加入消息引用</button>' : ''}
       ${run.body !== undefined ? `<pre class="result-code">${escape(pretty(selected.id === 'attachments.get' && isObject(run.body) && typeof run.body.data === 'string' ? { ...run.body, data: `[${run.body.data.length} 个 base64 字符，完整内容见原始数据]` } : run.body))}</pre>` : ''}
       ${run.checks.length ? `<details class="checks" open><summary>响应检查 <span>${run.checks.filter((check) => check.passed).length} / ${run.checks.length}</span></summary>${run.checks.map((check) => `<div class="check-row"><span class="check-icon ${check.passed ? 'pass' : 'fail'}" role="img" aria-label="${check.passed ? '通过' : '未通过'}">${iconMarkup(check.passed ? 'Check' : 'CircleAlert', 12)}</span><div><strong>${escape(check.name)}</strong><span>${escape(check.detail)}</span></div></div>`).join('')}</details>` : ''}
-      ${run.phase === 'running' ? `<div class="stream-controls"><button class="button secondary" data-disconnect>断开订阅</button>${selected.stream ? '<button class="button secondary" data-stop-run>停止本次生成</button>' : ''}${selected.id === 'context.compact' ? '<button class="button secondary" data-stop-compact>取消本次压缩</button>' : ''}</div>` : ''}`;
+      ${run.phase === 'running' ? `<div class="stream-controls"><button class="button secondary" data-disconnect>断开订阅</button>${selected.stream ? '<button class="button secondary" data-stop-run>停止本次生成</button>' : ''}${selected.id === 'context.compact' ? '<button class="button secondary" data-stop-compact>取消本次压缩</button>' : ''}</div>` : ''}
+      ${run.qrDataUrl ? `<section class="generated"><h3>本人微信扫码绑定</h3><img src="${run.qrDataUrl}" width="224" height="224" alt="本次微信绑定二维码" /><p class="section-note">扫码后打开“查询扫码状态或提交 PIN”；需要手机数字时在请求体填写 pin。二维码过期后重新获取。</p><a href="#im.weixin.poll">查询扫码状态</a></section>` : ''}`;
   }
   byId<HTMLButtonElement>('copy-result').disabled = !run;
 }

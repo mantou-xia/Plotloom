@@ -7,6 +7,13 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
-  "dependencies": { "@plotloom/contracts": "workspace:*", "@plotloom/ui": "workspace:*" },
-  "devDependencies": { "vite": "8.3.8" }
+  "dependencies": {
+    "@plotloom/contracts": "workspace:*",
+    "@plotloom/ui": "workspace:*",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "1.5.6",
+    "vite": "8.3.8"
+  }
 }
