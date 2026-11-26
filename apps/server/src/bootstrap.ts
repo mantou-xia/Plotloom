@@ -28,11 +28,16 @@ import { FileAgentProfile } from '@plotloom/storage/agent-profile';
 import { registerAgentProfileRoutes } from './routes/agent-profile.ts';
 import { CharacterCardService } from '@plotloom/application/character-cards';
 import { registerCharacterCardRoutes } from './routes/character-cards.ts';
+import { WeixinService, type WeixinGateway } from '@plotloom/application/weixin';
+import { FileWeixinStore } from '@plotloom/storage/weixin';
+import { WeixinHttpClient } from './im/weixin-http.ts';
+import { imAgent } from './im/agent.ts';
+import { registerWeixinRoutes } from './routes/weixin.ts';
 
 /** 独立装配本机后端，测试和启动入口使用同一套路由与 SDK 服务。 */
 export async function buildServer(options: AgentOptions & { logger?: boolean }, dependencies: {
   folderPicker?: FolderPicker; openFolder?: typeof openRegisteredFolder; openDeliverable?: typeof openDeliverableExternally;
-  desktopToken?: string;
+  desktopToken?: string; weixinGateway?: WeixinGateway;
 } = {}) {
   const workspaces: WorkspaceService = new WorkspaceService(new FileWorkspaceStore(options.dataDir),
     (origin, change) => agent.recordFileWrite(origin.sessionId, change, origin.requestId));
@@ -109,13 +114,21 @@ export async function buildServer(options: AgentOptions & { logger?: boolean }, 
   // 项目与技能共享原生选择器，防止并发打开多个系统窗口。
   const folderPicker = dependencies.folderPicker ?? createFolderPicker();
   const openFolder = dependencies.openFolder ?? openRegisteredFolder;
-  registerProjectRoutes(app, new FileProjectStore(options.dataDir), folderPicker, openFolder);
+  const projects = new FileProjectStore(options.dataDir);
+  registerProjectRoutes(app, projects, folderPicker, openFolder);
   registerSourceRoutes(app, sources);
   registerWorkspaceRoutes(app, workspaces, openFolder);
   registerCharacterCardRoutes(app, characterCards);
   registerSkillRoutes(app, skills, folderPicker, directory.tools);
   registerWritingRoutes(app, agent, writing, workspaces);
-  // preClose 先停止 SSE 对应生成，避免 close 等待长连接而无法进入清理阶段。
-  app.addHook('preClose', () => agent.close());
+  const weixin = new WeixinService(new FileWeixinStore(options.dataDir), dependencies.weixinGateway ?? new WeixinHttpClient(), imAgent(agent, {
+    novels: () => workspaces.list(), projects: () => projects.list(),
+    createNovel: (id, request) => skills.createChat(id, request), project: id => projects.get(id),
+    personaName: async () => (await profiles.read()).name,
+  }));
+  registerWeixinRoutes(app, weixin);
+  app.addHook('onReady', () => weixin.start());
+  // 先停止外部 IM 的轮询和生成，再关闭 SDK/SSE，避免退出时产生新一轮请求。
+  app.addHook('preClose', async () => { await weixin.close(); await agent.close(); });
   return app;
 }

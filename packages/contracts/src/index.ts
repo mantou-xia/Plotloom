@@ -99,6 +99,7 @@ export interface RetryMessageRequest { messageId: string }
 export interface CreateSessionRequest { provider?: string; model?: string; thinkingLevel?: ThinkingLevel; name?: string }
 /** 项目目录随会话创建固定；小说通过工作区入口创建。 */
 export interface CreateProjectSessionRequest extends CreateSessionRequest { projectPath: string }
+export type CreateChatSessionRequest = CreateProjectSessionRequest | (CreateSessionRequest & { mode: 'general' });
 
 /** 文件路径相对于当前会话的项目或小说目录。 */
 export interface DeliverableRequest { path: string; action: 'preview' | 'open' }

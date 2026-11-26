@@ -3,6 +3,7 @@ import { SKILL_CATALOG } from './skill-catalog.ts';
 import { WRITING_CATALOG } from './writing-catalog.ts';
 import { SOURCE_CATALOG, SOURCE_REQUEST_FIELDS, ATTACHMENT_FIELDS, REFERENCE_FIELDS } from './source-catalog.ts';
 import { CHARACTER_CARD_CATALOG } from './character-card-catalog.ts';
+import { WEIXIN_CATALOG } from './weixin-catalog.ts';
 /** 公开接口目录：供测试台和契约覆盖检查共用，只登记 HTTP 知识，不导入后端实现。 */
 export interface FieldDoc {
   name: string;
@@ -13,7 +14,7 @@ export interface FieldDoc {
 }
 export interface EndpointDoc {
   id: string;
-  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'character-cards' | 'attachments' | 'projects' | 'agent-profile';
+  module: 'models' | 'sessions' | 'generation' | 'context' | 'workspaces' | 'documents' | 'proposals' | 'skills' | 'skill-settings' | 'chats' | 'writing' | 'character-cards' | 'attachments' | 'projects' | 'agent-profile' | 'im';
   name: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
@@ -86,6 +87,7 @@ const sessionConfig = [id, provider, model, thinking, autoCompaction, projectApp
 const sessionConfigExample = { id: sessionExample.id, provider: configExample.provider, model: configExample.model, thinkingLevel: 'off', autoCompaction: true, capabilities: capabilityExample };
 
 export const API_MODULES = [
+  { id: 'im', name: '微信 IM', description: '扫码连接、会话收发与主动触达', number: '16' },
   { id: 'agent-profile', name: 'Agent 人设', description: '首用引导和全局协作偏好', number: '14' },
   { id: 'projects', name: '项目', description: '系统选择文件夹、登记项目及切换已有项目', number: '13' },
   { id: 'attachments', name: '聊天附件', description: '上传、读取及移除当前会话资料', number: '12' },
@@ -128,6 +130,7 @@ const agentProfileResponse = [
 const agentPersonaExample = { name: '小舟', style: '简洁直率', preferences: '先列出分歧，再给出选项。' };
 
 export const API_CATALOG: EndpointDoc[] = [
+  ...WEIXIN_CATALOG,
   { id: 'agent-profile.get', module: 'agent-profile', name: '读取全局人设', method: 'GET', path: '/api/agent-profile', success: 200,
     description: '读取所有项目会话与小说会话共用的 Agent 人设及首用状态。',
     note: '全新本机数据目录返回 pending 和空字段。异源浏览器请求返回 403 ORIGIN_FORBIDDEN。',
@@ -256,11 +259,12 @@ export const API_CATALOG: EndpointDoc[] = [
     examples: [{ name: '选择模型', body: { provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }], responseExample: configExample,
   },
   {
-    id: 'sessions.create', module: 'sessions', name: '创建项目会话', method: 'POST', path: '/api/sessions', success: 201,
-    description: '创建绑定本机目录的项目会话。小说会话使用 /api/workspaces/:workspaceId/sessions。',
-    note: '空会话立即保存。未指定名称时显示“新聊天”，首轮按原始提示词前 16 个字符命名。provider/model 必须同时提供。缺少 projectPath 返回 400 INVALID_REQUEST；目录必须是已存在且可访问的绝对目录，否则返回 422 PROJECT_PATH_INVALID。可用项目工具和条件见 GET /api/tools。目录固定，切换需新建聊天。',
-    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, { ...projectPath, required: true }], response: summary.map(value => value.name === 'projectPath' ? { ...value, required: true } : value),
-    examples: [{ name: '使用默认模型', body: { projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { projectPath: 'D:/projects/example', provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
+    id: 'sessions.create', module: 'sessions', name: '创建普通或项目会话', method: 'POST', path: '/api/sessions', success: 201,
+    description: '创建无工作区的普通会话，或绑定本机目录的项目会话。小说会话使用 /api/workspaces/:workspaceId/sessions。',
+    note: '空会话立即保存，未命名时首轮按原始提示词前 16 个字符命名。provider/model 必须同时提供。mode 与 projectPath 恰好提交一个，否则返回 400 INVALID_REQUEST。项目目录不可访问或无效返回 422 PROJECT_PATH_INVALID。普通会话沿用平台人设，省略 projectPath，且没有项目文件工具。',
+    request: [{ ...provider, required: false }, { ...model, required: false }, optionalThinking, { ...name, required: false }, projectPath,
+      field('mode', 'general', false, '普通聊天时提交 general，与 projectPath 二选一。', 'general')], response: summary,
+    examples: [{ name: '创建普通聊天', body: { mode: 'general' } }, { name: '使用默认模型创建项目会话', body: { projectPath: 'D:/projects/example' } }, { name: '指定模型', body: { projectPath: 'D:/projects/example', provider: 'krill-ai-codex', model: 'gpt-5.6-sol' } }],
     responseExample: { ...sessionExample, projectPath: 'D:/projects/example' },
   },
   {
@@ -571,6 +575,9 @@ export const SSE_EVENTS: ReadonlyArray<{ name: string; description: string; fiel
 ];
 
 export const API_ERRORS = [
+  { status: '404', code: 'IM_ACCOUNT_NOT_FOUND / IM_LOGIN_NOT_FOUND', description: '微信连接不存在或扫码请求已失效；重新查看连接或获取二维码。' },
+  { status: '409', code: 'IM_LOGIN_BUSY / IM_SESSION_BOUND / IM_ACCOUNT_DISABLED / IM_LOGIN_REQUIRED / IM_IDEMPOTENCY_CONFLICT', description: '扫码正在查询、会话已绑定、连接停用、凭据失效或幂等键复用冲突；按具体说明处理。' },
+  { status: '502 / 504', code: 'IM_PROTOCOL_ERROR / IM_UPSTREAM_HTTP / IM_NETWORK_ERROR / IM_REQUEST_TIMEOUT / IM_WEIXIN_REJECTED', description: '微信协议、网络或服务端异常。主动发送接口返回 200 和消息结果记录，仍须检查 rejected/unknown，不能当作已送达。' },
   { status: '422', code: 'INVALID_QUESTION_OPTION', description: '选项序号超出当前题目范围。' },
   { status: '409', code: 'QUESTION_UNAVAILABLE', description: '问题已处理、已取消或不属于当前会话。' },
   { status: '404', code: 'ATTACHMENT_NOT_FOUND / REFERENCE_NOT_FOUND', description: '附件不属于当前会话或指定文档版本不存在；重新查询附件或文档历史。' },

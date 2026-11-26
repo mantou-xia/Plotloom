@@ -19,6 +19,9 @@ const filePath = Type.String({ minLength: 1, maxLength: 1024 });
 const content = Type.String({ maxLength: maxFileBytes });
 const limit = Type.Optional(Type.Integer({ minimum: 1, maximum: 200 }));
 export type WrittenProjectFile = Pick<ToolApproval, 'path' | 'operation'> & { before: string; after: string };
+export type DeferredProjectWrite = Pick<ToolApproval, 'path' | 'operation' | 'preview'> & {
+  commit: () => WrittenProjectFile;
+};
 export type Approval = (callId: string, request: Pick<ToolApproval, 'operation' | 'path' | 'preview' | 'label'>, signal?: AbortSignal, requireDecision?: boolean) => Promise<ApprovalOutcome>;
 const rejected = { deny: '用户拒绝', cancelled: '请求取消', expired: '审批过期' };
 
@@ -84,7 +87,8 @@ const result = (text: string) => ({ content: [{ type: 'text' as const, text }], 
 const excerpt = (text: string) => text.length > 1600 ? text.slice(0, 1600) + '\n（其余内容已省略）' : text;
 
 /** 写入预览取自授权时点。获批后重新校验路径和内容，拒绝在变更后的文件上复用决定。 */
-export function createProjectTools(root: string, privateRoot: string, approve: Approval, recordWrite: (change: WrittenProjectFile) => void, scope?: FileToolScope) {
+export function createProjectTools(root: string, privateRoot: string, approve: Approval, recordWrite: (change: WrittenProjectFile) => void,
+  scope?: FileToolScope, defer?: (callId: string, write: DeferredProjectWrite) => boolean) {
   async function mutate(callId: string, input: string, proposed: (old: string | undefined) => string, editPreview: string | undefined, signal?: AbortSignal) {
     const edit = editPreview !== undefined;
     const target = projectTarget(root, privateRoot, input, !edit);
@@ -99,28 +103,37 @@ export function createProjectTools(root: string, privateRoot: string, approve: A
     // 展示实际变更文本，并明确预览省略；模型无法修改批准对应的内存快照。
     const operation = edit ? 'edit' : before === undefined ? 'create' : 'overwrite';
     const path = target.tail.replaceAll('\\', '/');
-    const decision = await approve(callId, { operation, path,
-      preview: editPreview ?? `${before === undefined ? '' : '原内容\n' + excerpt(before) + '\n\n'}写入后\n${excerpt(after)}` }, signal);
+    const preview = editPreview ?? `${before === undefined ? '' : '原内容\n' + excerpt(before) + '\n\n'}写入后\n${excerpt(after)}`;
+    // 两种审批在实际写入时都比较原始快照，并重新走路径校验。
+    function commit(): WrittenProjectFile {
+      const checked = projectTarget(root, privateRoot, input, !edit);
+      const latestParent = lstatSync(dirname(checked.path));
+      const latestFile = lstatSync(checked.path, { throwIfNoEntry: false });
+      const latest = latestFile ? readText(checked.path) : undefined;
+      if (checked.path !== target.path || latest !== before || latestParent.dev !== parent.dev || latestParent.ino !== parent.ino
+        || latestFile?.dev !== file?.dev || latestFile?.ino !== file?.ino || latestFile?.mtimeMs !== file?.mtimeMs)
+        throw new Error('审批期间目标已变更，请重新读取并请求审批。');
+      const temp = join(dirname(checked.path), '.plotloom-' + randomUUID());
+      try {
+        writeFileSync(temp, after, { flag: 'wx', mode: file ? file.mode & 0o777 : 0o644 });
+        // 创建不覆盖新出现的文件；覆盖以完整临时文件替换，避免把半写内容留作正式稿。
+        if (before === undefined) linkSync(temp, checked.path);
+        else renameSync(temp, checked.path);
+      } finally {
+        try { unlinkSync(temp); } catch { /* rename 已移走临时文件，或临时文件未创建 */ }
+      }
+      return { path, operation, before: before ?? '', after };
+    }
+    signal?.throwIfAborted();
+    if (defer) return defer(callId, { operation, path, preview, commit })
+      ? result('已生成待确认变更，文件尚未写入。结束本轮，等待用户下一条微信消息确认。')
+      : { ...result('文件尚未写入。本轮只提交一项变更，请等待用户确认后再处理下一项。'), isError: true };
+    const decision = await approve(callId, { operation, path, preview }, signal);
     if (decision !== 'approve') return { ...result('写入未执行：' + rejected[decision]), isError: true };
     signal?.throwIfAborted();
-    const checked = projectTarget(root, privateRoot, input, !edit);
-    const latestParent = lstatSync(dirname(checked.path));
-    const latestFile = lstatSync(checked.path, { throwIfNoEntry: false });
-    const latest = latestFile ? readText(checked.path) : undefined;
-    if (checked.path !== target.path || latest !== before || latestParent.dev !== parent.dev || latestParent.ino !== parent.ino
-      || latestFile?.dev !== file?.dev || latestFile?.ino !== file?.ino || latestFile?.mtimeMs !== file?.mtimeMs)
-      throw new Error('审批期间目标已变更，请重新读取并请求审批。');
-    const temp = join(dirname(checked.path), '.plotloom-' + randomUUID());
-    try {
-      writeFileSync(temp, after, { flag: 'wx', mode: file ? file.mode & 0o777 : 0o644 });
-      // 创建不覆盖新出现的文件；覆盖以完整临时文件替换，避免把半写内容留作正式稿。
-      if (before === undefined) linkSync(temp, checked.path);
-      else renameSync(temp, checked.path);
-    } finally {
-      try { unlinkSync(temp); } catch { /* rename 已移走临时文件，或临时文件未创建 */ }
-    }
+    const change = commit();
     // 仅提交成功后记录实际前后内容。写入已生效时单独说明记录失败，避免让用户误以为文件未改。
-    try { recordWrite({ path, operation, before: before ?? '', after }); }
+    try { recordWrite(change); }
     catch { return result('已写入 ' + target.tail + '，文件对比记录保存失败。'); }
     return result('已写入 ' + target.tail);
   }

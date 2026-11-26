@@ -21,7 +21,7 @@
 | `GET /api/models` | 无 | `{ models: [{ provider, id, name, configured, reasoning, thinkingLevels, contextWindow, maxTokens, input }] }` |
 | `GET /api/model-config` | 无 | `{ provider, model, configured, thinkingLevel }`；未选择时 provider/model 为 null |
 | `PUT /api/model-config` | `{ provider, model, thinkingLevel? }` | 同 GET；只影响以后新会话 |
-| `POST /api/sessions` | `{ projectPath, provider?, model?, thinkingLevel?, name? }`。项目目录为现存的绝对路径，模型标识成对 | `201 { id, projectPath, provider, model, thinkingLevel, name, status, activity }` |
+| `POST /api/sessions` | `{ mode: "general" }` 创建普通会话，或 `{ projectPath }` 创建项目会话。两者可选填 `provider`、`model`、`thinkingLevel`、`name`，其中模型标识成对提交 | `201 { id, projectPath?, provider, model, thinkingLevel, name, status, activity }`。普通会话省略 `projectPath` |
 | `POST /api/workspaces/:workspaceId/sessions` | `{ provider?, model?, thinkingLevel?, name? }`。小说归属由路径中的工作区 ID 固定 | `201 { id, workspaceId, provider, model, thinkingLevel, name, status, activity }` |
 | `GET /api/sessions` | 无 | `{ sessions: [{ id, provider, model, thinkingLevel, name, updatedAt, status, activity }] }` |
 | `GET /api/sessions/:id` | 无 | 会话摘要字段加 `messages` 和可选 `fileChanges`；必要时从磁盘重开 |

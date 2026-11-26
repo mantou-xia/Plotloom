@@ -2,6 +2,7 @@ import { CITATION_LINK_PREFIX, type AgentPersona } from '@plotloom/contracts';
 import { BOOTSTRAP_PROMPT } from './bootstrap.ts';
 
 const NOVEL_PROMPT = '你是 Plotloom 的小说创作助手，使用简体中文，围绕当前小说协助创作。';
+const GENERAL_PROMPT = '你是 Plotloom 的对话助手。当前是普通聊天，没有绑定项目或小说。根据对话回答用户，不声称能读取任何项目或小说资料。';
 const PROJECT_PROMPT = `你是 Plotloom 的项目助手，使用简体中文。根据用户任务读取、搜索、编辑项目文本文件。
 先检查项目的 AGENTS.md 和相关开发规则。修改前读取文件，遵守用户指定范围；完成后说明实际修改、验证结果和未完成项。不要把工具错误描述为成功。
 路径以当前项目为基准。文件变更遵循会话的审批模式。用户拒绝或停止后不要用其他工具尝试同一变更。`;
@@ -17,18 +18,22 @@ const CITATION_PROMPT = `
 interface SystemPromptOptions {
   externalPrompt?: string;
   writingPrompt?: string;
-  mode: 'project' | 'novel';
+  mode: 'project' | 'novel' | 'general';
   skillPrompt: string;
   persona?: AgentPersona;
   bootstrap?: boolean;
+  channel?: 'weixin';
 }
 
 /** 全局人设补充身份和协作偏好；会话职责、用户本轮任务与工具权限仍由原规则决定。 */
-export function buildSystemPrompt({ externalPrompt, writingPrompt, mode, skillPrompt, persona, bootstrap }: SystemPromptOptions): string {
-  const base = mode === 'project' ? PROJECT_PROMPT : [externalPrompt, writingPrompt ?? NOVEL_PROMPT].filter(Boolean).join('\n');
+export function buildSystemPrompt({ externalPrompt, writingPrompt, mode, skillPrompt, persona, bootstrap, channel }: SystemPromptOptions): string {
+  const base = mode === 'project' ? PROJECT_PROMPT : [externalPrompt, mode === 'general' ? GENERAL_PROMPT : writingPrompt ?? NOVEL_PROMPT].filter(Boolean).join('\n');
   const profile = persona && (persona.name || persona.style || persona.preferences)
     ? '\n用户确认的全局 Agent 人设（JSON）：' + JSON.stringify(persona)
       + '\nname 是你的称呼，style 是沟通风格，preferences 是协作偏好。空值沿用默认。按本轮任务采用合适的风格，始终遵守当前会话职责与工具权限。'
     : '';
-  return base + profile + BROWSER_PROMPT + QUESTION_PROMPT + CITATION_PROMPT + skillPrompt + (bootstrap ? BOOTSTRAP_PROMPT : '');
+  const presentation = channel === 'weixin'
+    ? '\n当前通过微信对话。始终沿用平台 Agent 人设的称呼、语气和协作偏好，包括问候、追问、确认及最终答复。先说重点，长内容分段，少用宽表格。文件工具返回待确认变更时，文件尚未写入。结束本轮并等待用户回复批准或拒绝，不要再次调用写入工具或声称写入成功。需要确认时说清事项与回复方式。用户明确需要详细内容时可完整展开。'
+    : '';
+  return base + profile + BROWSER_PROMPT + QUESTION_PROMPT + CITATION_PROMPT + skillPrompt + (bootstrap ? BOOTSTRAP_PROMPT : '') + presentation;
 }

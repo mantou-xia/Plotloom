@@ -10,6 +10,7 @@
     "./skills": "./src/skills.ts",
     "./writing": "./src/writing.ts",
     "./sources": "./src/sources.ts",
-    "./character-cards": "./src/character-cards.ts"
+    "./character-cards": "./src/character-cards.ts",
+    "./im": "./src/im.ts"
   }
 }

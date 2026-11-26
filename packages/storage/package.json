@@ -1,4 +1,4 @@
 {
-  "name": "@plotloom/storage", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts", "./sources": "./src/sources.ts", "./projects": "./src/projects.ts", "./agent-profile": "./src/agent-profile.ts" },
+  "name": "@plotloom/storage", "private": true, "type": "module", "exports": { ".": "./src/workspaces.ts", "./skills": "./src/skills.ts", "./sources": "./src/sources.ts", "./projects": "./src/projects.ts", "./agent-profile": "./src/agent-profile.ts", "./weixin": "./src/weixin.ts" },
   "dependencies": { "@plotloom/application": "workspace:*", "@plotloom/domain": "workspace:*", "@plotloom/contracts": "workspace:*" }
 }

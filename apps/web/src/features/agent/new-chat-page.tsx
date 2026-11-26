@@ -14,6 +14,7 @@ import { ChapterQuoteList } from './chapter-quotes';
 import type { ChapterQuoteDraft } from './chapter-quote';
 import { consumeAgentStream } from './client';
 import { selectThinkingLevel, thinkingLabels } from './thinking-levels';
+import { NewChatWelcome } from './new-chat-welcome';
 import './new-chat-page.css';
 
 export const modelKey = (provider: string, model: string) => JSON.stringify([provider, model]);
@@ -64,25 +65,18 @@ export function NewChatPage({ modelRevision, modelSnapshotRef, skillRevision, dr
   const modelState = useNewChatModels(modelRevision, modelSnapshotRef);
   const [pending, setPending] = useState(false);
   const attachmentDropTarget = useRef<HTMLElement>(null);
-  const root = projectPath.trim();
   return <section ref={attachmentDropTarget} className="plotloom-work-start" aria-label="工作初始页">
     <AsciiOcean className="plotloom-work-start__ocean" />
-    <div className="plotloom-work-start__welcome">
-      <p className="plotloom-work-start__eyebrow">{workspaceId ? '小说对话' : '项目对话'}</p>
-      <div className="plotloom-work-start__heading" role="heading" aria-level={1}>
-        {workspaceId ? (workspaceTitle ? <>继续创作《{workspaceTitle}》</> : '小说对话') : root ? <>你想在 {renderProjectControl(pending)} 中完成什么？</> : renderProjectControl(pending)}
-      </div>
-      <p>{workspaceId ? '把旧稿（TXT 或 Markdown）发给我，说「导入这些章节」。我也能从正文整理角色卡、提炼全书设定，或按大纲起草新章。'
-        : root ? '从这里开始一段新的对话。' : '选择或新建项目后开始对话。'}</p>
-    </div>
+    <NewChatWelcome workspaceSelected={!!workspaceId} workspaceTitle={workspaceTitle} projectSelected={!!projectPath.trim()}
+      projectControl={workspaceId ? undefined : renderProjectControl(pending)} />
     <NewChatDraft draftRevision={draftRevision} projectPath={workspaceId ? novelRoot ?? '' : projectPath} workspaceId={workspaceTitle ? workspaceId ?? undefined : undefined} attachmentDropTarget={attachmentDropTarget}
-      modelState={modelState} skillRevision={skillRevision} pending={pending} setPending={setPending} onStarted={onStarted} quoteDraft={quoteDraft} />
+      ready={!workspaceId || Boolean(workspaceTitle)} modelState={modelState} skillRevision={skillRevision} pending={pending} setPending={setPending} onStarted={onStarted} quoteDraft={quoteDraft} />
   </section>;
 }
 
 /** 草稿拥有会话、附件及发送生命周期；切换项目后旧异步结果不能操作新草稿。 */
-function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, skillRevision, pending, setPending, onStarted, attachmentDropTarget, quoteDraft }: {
-  draftRevision: number; projectPath: string; workspaceId?: string; modelState: ReturnType<typeof useNewChatModels>; skillRevision: number;
+function NewChatDraft({ draftRevision, projectPath, workspaceId, ready, modelState, skillRevision, pending, setPending, onStarted, attachmentDropTarget, quoteDraft }: {
+  draftRevision: number; projectPath: string; workspaceId?: string; ready: boolean; modelState: ReturnType<typeof useNewChatModels>; skillRevision: number;
   attachmentDropTarget: RefObject<HTMLElement | null>;
   pending: boolean; setPending: (pending: boolean) => void; onStarted: (session: SessionSummary) => void;
   quoteDraft?: ChapterQuoteDraft;
@@ -103,11 +97,11 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
     mounted.current = false; stream.current?.abort(); setPending(false);
   }; }, [scope, setPending]);
   const chosen = models.find(model => modelKey(model.provider, model.id) === selected);
-  const canStart = Boolean(root || workspaceId);
+  const scoped = Boolean(root || workspaceId);
   const [skillOptions, setSkillOptions] = useState<{ workspaceId?: string; revision: number; skills: SkillInfo[] }>();
   // 新聊天尚未建会话。用公开目录和小说默认设置过滤候选，发送时仍以服务端准入为准。
   useEffect(() => {
-    if (!canStart) return;
+    if (!scoped || !ready) return;
     const abort = new AbortController();
     void Promise.all([
       requestJson<{ skills: SkillInfo[] }>('/api/skills', 'GET', undefined, abort.signal),
@@ -120,17 +114,17 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
       setSkillOptions({ workspaceId, revision: skillRevision, skills });
     }).catch(error => { if (!abort.signal.aborted) notifyRequestError(error, 'new-chat-skills'); });
     return () => abort.abort();
-  }, [canStart, workspaceId, skillRevision]);
+  }, [ready, scoped, workspaceId, skillRevision]);
 
   /** 并发附件共用创建请求；目录绑定后固定，发送失败重试复用同一会话。 */
   function ensureSession(): Promise<SessionSummary> {
-    if (!canStart) return Promise.reject(new Error('请先选择项目或小说。'));
+    if (!ready) return Promise.reject(new Error('请等待小说资料加载。'));
     if (!loaded || failed || !chosen?.configured) return Promise.reject(new Error('请先选择已配置的模型。'));
     if (!draft.current) {
       const path = workspaceId ? `/api/workspaces/${encodeURIComponent(workspaceId)}/sessions` : '/api/sessions';
       draft.current = requestJson<SessionSummary>(path, 'POST', {
         provider: chosen.provider, model: chosen.id, thinkingLevel: thinking,
-        ...(workspaceId ? {} : { projectPath: root }),
+        ...(workspaceId ? {} : root ? { projectPath: root } : { mode: 'general' }),
       }).catch(cause => { draft.current = null; throw cause; });
     }
     return draft.current;
@@ -140,7 +134,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
   async function send(message: ComposerMessage): Promise<boolean> {
     const sent = quoteDraft?.items ?? [];
     const body = composerRequest(message, sent);
-    if (!canStart || sending.current || (!body.text && !body.attachmentIds?.length && !body.references?.length)) return false;
+    if (!ready || sending.current || (!body.text && !body.attachmentIds?.length && !body.references?.length)) return false;
     sending.current = true; setPending(true);
     const acceptance = Promise.withResolvers<boolean>();
     void (async () => {
@@ -150,7 +144,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
         const path = '/api/sessions/' + encodeURIComponent(session.id);
         // 附件可能已提前创建会话，发送前以当前草稿权限保存配置。
         await requestJson(path + '/config', 'PUT', { provider: chosen!.provider, model: chosen!.id, thinkingLevel: thinking,
-          projectApprovalMode });
+          ...(scoped ? { projectApprovalMode } : {}) });
         if (!mounted.current) return;
         const abort = new AbortController();
         stream.current = abort;
@@ -177,7 +171,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
           : !loaded ? null : !chosen ? '在「设置 → 模型服务」配置好模型后，就可以开始对话了。' : pending ? '正在开始对话…' : null}
       </div>
       <TaskComposer draftContext={quoteDraft?.items.length ? <ChapterQuoteList draft={quoteDraft} /> : null}
-        options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !canStart || !loaded || !chosen || failed, busy: pending,
+        options={{ height: 0, draftKey: draftKey + ':' + draftRevision, ...chatDraft(draftKey), disabled: !ready || !loaded || !chosen || failed, busy: pending,
         hasDraftContext: Boolean(quoteDraft?.items.length),
         models: models.filter(model => model.configured).map(model => modelKey(model.provider, model.id)),
         modelLabels: Object.fromEntries(models.map(model => [modelKey(model.provider, model.id), model.name + ' · ' + model.provider])),
@@ -189,7 +183,7 @@ function NewChatDraft({ draftRevision, projectPath, workspaceId, modelState, ski
         permissionOptions: root || workspaceId ? 'project' : false,
         permission: projectApprovalMode === 'full_access' ? 'full_access' : 'default',
         onPermissionChange: value => setApproval({ draftRevision, draftKey, mode: value === 'full_access' ? 'full_access' : 'required' }),
-        placeholder: '输入消息，/ 调用技能，@ 引用文件',
+        placeholder: scoped ? '输入消息，/ 调用技能，@ 引用文件' : '输入消息',
         advancedMentions: false, projectPath: root || undefined,
         skills: skillOptions?.workspaceId === workspaceId && skillOptions?.revision === skillRevision ? skillOptions.skills : undefined,
         onSearchFiles: root || workspaceId ? async query => { const session = await ensureSession(); return requestJson<ProjectFiles>('/api/sessions/' + encodeURIComponent(session.id) + '/project-files', 'POST', { query }); } : undefined,
